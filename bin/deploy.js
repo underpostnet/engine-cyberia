@@ -2,7 +2,6 @@ import fs from 'fs-extra';
 import axios from 'axios';
 
 import dotenv from 'dotenv';
-import plantuml from 'plantuml';
 
 import { pbcopy, shellCd, shellExec } from '../src/server/process.js';
 import { loggerFactory } from '../src/server/logger.js';
@@ -26,6 +25,7 @@ import {
   restoreMacroDb,
   fixDependencies,
   setUpProxyMaintenanceServer,
+  writeEnv,
 } from '../src/server/conf.js';
 import { buildClient } from '../src/server/client-build.js';
 import { range, setPad, timer, uniqueArray } from '../src/client/components/core/CommonJs.js';
@@ -546,13 +546,7 @@ try {
             ? envInstanceObj.port
             : envInstanceObj.port + port - singleReplicaHosts.length - (replicaHost ? 1 : 0);
 
-          fs.writeFileSync(
-            envPath,
-            Object.keys(envObj)
-              .map((key) => `${key}=${envObj[key]}`)
-              .join(`\n`),
-            'utf8',
-          );
+          writeEnv(envPath, envObj);
         }
         const serverConf = loadReplicas(
           JSON.parse(fs.readFileSync(`${baseConfPath}/${deployId}/conf.server.json`, 'utf8')),
@@ -596,6 +590,7 @@ try {
     }
     case 'build-uml':
       {
+        const plantuml = await import('plantuml');
         const folder = process.argv[3] ? process.argv[3] : `./src/client/public/default/plantuml`;
         const confData = Config.default;
 

@@ -1,5 +1,7 @@
 ARG BASE_DEBIAN=buster
 
+USER root
+
 FROM debian:${BASE_DEBIAN}
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -39,10 +41,30 @@ RUN npm --version
 
 RUN npm install -g underpost
 
+COPY ./.env.underpost ./.env.underpost
+
+RUN underpost secret underpost --create-from-file ./.env.underpost
+
+RUN sudo rm -rf ./.env.underpost
+
+RUN underpost clone underpostnet/engine-cyberia
+
+RUN sudo mv ./engine-cyberia ./engine
+
+WORKDIR /home/dd/engine
+
+RUN underpost clone underpostnet/engine-cyberia-private
+
+RUN sudo mv ./engine-cyberia-private ./engine-private
+
+RUN underpost install
+
+RUN underpost dockerfile-node-script dd-cyberia development
+
 VOLUME [ "/home/dd/engine/logs" ]
 
 EXPOSE 22
 
-EXPOSE 4000-4004
+EXPOSE 4005-4012
 
-CMD [ "underpost", "new", "service" ]
+CMD [ "npm", "run", "dev-img", "dd-cyberia", "deploy" ]

@@ -90,16 +90,19 @@ const generateContent = async (prompt) => {
   return result.response.text();
 };
 
-const buildAsset = async (displayId, options = { flip: false }) => {
+const buildAsset = async (mediaObject, options = { flip: false }) => {
   const frameColor = 'rgba(255, 255, 255)';
   const commonCyberiaPath = `src/client/components/cyberia/CommonCyberia.js`;
+  let { id, itemType } = mediaObject;
+  const displayId = id;
   const basePath = `./src/client/public/cyberia/assets/ai-resources/media/${displayId}`;
+  if (itemType === 'questItem') itemType = 'quest';
   const buildFrame = async (pos) => {
     return await new Promise((resolve) => {
       Jimp.read(`${basePath}/0${pos}.png`).then(async (image) => {
         const dim = image.bitmap.width > image.bitmap.height ? image.bitmap.width : image.bitmap.height;
-        if (!fs.existsSync(`./src/client/public/cyberia/assets/skin/${displayId}/0${pos}`))
-          fs.mkdirSync(`./src/client/public/cyberia/assets/skin/${displayId}/0${pos}`, { recursive: true });
+        if (!fs.existsSync(`./src/client/public/cyberia/assets/${itemType}/${displayId}/0${pos}`))
+          fs.mkdirSync(`./src/client/public/cyberia/assets/${itemType}/${displayId}/0${pos}`, { recursive: true });
 
         const frame = new Jimp(dim + dim * 0.25, dim + dim * 0.25, frameColor);
 
@@ -113,14 +116,14 @@ const buildAsset = async (displayId, options = { flip: false }) => {
 
         if (`${options.flip}` === `${pos}`) frame.flip(true, false);
 
-        const outPath = `/home/dd/engine/src/client/public/cyberia/assets/skin/${displayId}/0${pos}/0.png`;
+        const outPath = `/home/dd/engine/src/client/public/cyberia/assets/${itemType}/${displayId}/0${pos}/0.png`;
 
         await setTransparency(frame);
 
         frame.write(outPath);
 
-        if (!fs.existsSync(`./src/client/public/cyberia/assets/skin/${displayId}/1${pos}`))
-          fs.mkdirSync(`./src/client/public/cyberia/assets/skin/${displayId}/1${pos}`, { recursive: true });
+        if (!fs.existsSync(`./src/client/public/cyberia/assets/${itemType}/${displayId}/1${pos}`))
+          fs.mkdirSync(`./src/client/public/cyberia/assets/${itemType}/${displayId}/1${pos}`, { recursive: true });
 
         for (const _pos of range(0, 1)) {
           const frame = new Jimp(dim + dim * 0.25, dim + dim * 0.25, frameColor);
@@ -135,7 +138,7 @@ const buildAsset = async (displayId, options = { flip: false }) => {
 
           if (`${options.flip}` === `${pos}`) frame.flip(true, false);
 
-          const outPath = `/home/dd/engine/src/client/public/cyberia/assets/skin/${displayId}/1${pos}/${_pos}.png`;
+          const outPath = `/home/dd/engine/src/client/public/cyberia/assets/${itemType}/${displayId}/1${pos}/${_pos}.png`;
 
           await setTransparency(frame);
 
@@ -230,7 +233,7 @@ program
       },
       null,
       4,
-    )}. The 'itemType' value attribute of the 'displaySearchObjects' elements can only be: ${Object.keys(
+    )}. The 'itemType' value attribute of the 'displaySearchObjects' and 'provide.displayIds' elements can only be: ${Object.keys(
       CyberiaItemsType,
     )} chose appropriate. ${
       questsAlreadyCreated.length > 0
@@ -242,7 +245,8 @@ program
             })
             .join(', ')}.`
         : ''
-    } It must have narrative consistency with the previous chapters. Add review of chapter after json`;
+    } , all image resource paths following this format 'assets/<item-type>/<item-id>/<side-number>/<frame-number>.png' with side number chose: '08' front side, '02' back side, '04' left side, and '06' 
+    right side, e. g. 'assets/skin/aiko-ishikawa/08/0.png'. It must have narrative consistency with the previous chapters. Add review of chapter after json`;
 
     console.log('prompt:', prompt);
 
@@ -279,7 +283,11 @@ program
   .option('--import')
   .action(async (sagaId, questId, options = { prompt: false, import: false, id: '', flip: '' }) => {
     if (options.import === true) {
-      await buildAsset(options.id, options);
+      const mediaObject = JSON.parse(
+        fs.readFileSync(`./src/client/public/cyberia/assets/ai-resources/lore/${sagaId}/media.json`, 'utf8'),
+      ).find((i) => i.id === options.id);
+      logger.info('mediaObject', mediaObject);
+      await buildAsset(mediaObject, options);
       return;
     }
     const quests = await fs.readdir(`./src/client/public/cyberia/assets/ai-resources/lore/${sagaId}/quests`);
@@ -297,27 +305,18 @@ program
 
       for (const media of mediaObjects) {
         const { itemType, id, aestheticKeywords } = media;
+        if (options.id && typeof options.id === 'string' && options.id !== id) continue;
         if (fs.existsSync(`./src/client/public/cyberia/assets/ai-resources/media/${id}`)) {
-          switch (itemType) {
-            case 'skin':
-              {
-                shellExec(
-                  `${bgCmd}` +
-                    ` -i ./src/client/public/cyberia/assets/ai-resources/media/${id}/${id}.jpeg` +
-                    ` -o ./src/client/public/cyberia/assets/ai-resources/media/${id}/${id}-alpha.jpeg`,
-                );
-                shellExec(
-                  `python ../lab/src/cv2-sprite-sheet-0.py` +
-                    ` ${process.cwd()}/src/client/public/cyberia/assets/ai-resources/media/${id}/${id}-alpha.jpeg` +
-                    ` ${process.cwd()}/src/client/public/cyberia/assets/ai-resources/media/${id}/${id}`,
-                );
-              }
-
-              break;
-
-            default:
-              break;
-          }
+          shellExec(
+            `${bgCmd}` +
+              ` -i ./src/client/public/cyberia/assets/ai-resources/media/${id}/${id}.jpeg` +
+              ` -o ./src/client/public/cyberia/assets/ai-resources/media/${id}/${id}-alpha.jpeg`,
+          );
+          shellExec(
+            `python ../lab/src/cv2-sprite-sheet-0.py` +
+              ` ${process.cwd()}/src/client/public/cyberia/assets/ai-resources/media/${id}/${id}-alpha.jpeg` +
+              ` ${process.cwd()}/src/client/public/cyberia/assets/ai-resources/media/${id}/${id}`,
+          );
         }
       }
       return;
@@ -363,6 +362,10 @@ program
         const { id, itemType } = searchObject;
         idItems[id] = itemType;
       }
+      for (const provide of questData.provide.displayIds) {
+        const { id, itemType } = provide;
+        idItems[id] = itemType;
+      }
     }
 
     idItems = Object.keys(idItems).map((id) => {
@@ -370,13 +373,14 @@ program
         id,
         aestheticKeywords: [],
         itemType: idItems[id],
+        questKeyContext: '',
       };
     });
 
     const prompt = `According to this context '${fs.readFileSync(
       `${lorePath}/${sagaId}/saga.md`,
       'utf8',
-    )}' and aesthetic description of some characters, complete 'aestheticKeywords' of this json: ${JSON.stringify(
+    )}' and aesthetic description of some characters, complete 'aestheticKeywords' and 'questKeyContext' (provide, displaySearchObjects, or seller) of this json: ${JSON.stringify(
       idItems,
       null,
       4,

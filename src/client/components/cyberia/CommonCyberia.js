@@ -458,6 +458,9 @@ Stat.get['kael-cipher'] = () => ({ ...Stat.get['anon'](), vel: 0.14, dim: 2 });
 DisplayComponent.get['anya-echo'] = () => ({ ...DisplayComponent.get['anon'](), displayId: 'anya-echo' });
 Stat.get['anya-echo'] = () => ({ ...Stat.get['anon'](), vel: 0.14, dim: 2 });
 
+DisplayComponent.get['kenzo-ishikawa'] = () => ({ ...DisplayComponent.get['anon'](), displayId: 'kenzo-ishikawa' });
+Stat.get['kenzo-ishikawa'] = () => ({ ...Stat.get['anon'](), vel: 0.14 });
+
 /*replace-display-instance*/
 
 DisplayComponent.get['odisea'] = () => ({
@@ -534,7 +537,7 @@ const QuestComponent = {
             quantity: 2,
             current: 0,
             step: 0,
-            assetFolder: 'skin',
+            itemType: 'skin',
           },
           {
             id: 'punk',
@@ -543,7 +546,7 @@ const QuestComponent = {
             quantity: 1,
             current: 0,
             step: 1,
-            assetFolder: 'skin',
+            itemType: 'skin',
           },
         ],
         provide: {
@@ -614,7 +617,7 @@ const QuestComponent = {
             quantity: 1,
             current: 0,
             step: 0,
-            assetFolder: 'skin',
+            itemType: 'skin',
           },
           {
             id: 'agent',
@@ -623,7 +626,7 @@ const QuestComponent = {
             quantity: 1,
             current: 0,
             step: 1,
-            assetFolder: 'skin',
+            itemType: 'skin',
           },
         ],
         provide: {
@@ -799,8 +802,8 @@ const QuestComponent = {
         maxStep: 3,
         currentStep: 0,
         displaySearchObjects: [
-          { id: 'bone', quantity: 2, current: 0, step: 0, assetFolder: 'quest' },
-          { id: 'bone-brown', quantity: 1, current: 0, step: 0, assetFolder: 'quest' },
+          { id: 'bone', quantity: 2, current: 0, step: 0, itemType: 'questItem' },
+          { id: 'bone-brown', quantity: 1, current: 0, step: 0, itemType: 'questItem' },
           {
             id: 'ayleen',
             actionIcon: 'assets/ui-icons/hand.png',
@@ -809,10 +812,10 @@ const QuestComponent = {
             current: 0,
             step: 1,
             delivery: true,
-            assetFolder: 'skin',
+            itemType: 'skin',
           },
-          { id: 'bone', quantity: 1, current: 0, step: 2, assetFolder: 'quest' },
-          { id: 'bone-brown', quantity: 1, current: 0, step: 2, assetFolder: 'quest' },
+          { id: 'bone', quantity: 1, current: 0, step: 2, itemType: 'questItem' },
+          { id: 'bone-brown', quantity: 1, current: 0, step: 2, itemType: 'questItem' },
           {
             id: 'ayleen',
             actionIcon: 'assets/ui-icons/hand.png',
@@ -821,7 +824,7 @@ const QuestComponent = {
             current: 0,
             step: 3,
             delivery: true,
-            assetFolder: 'skin',
+            itemType: 'skin',
           },
         ],
         reward: [

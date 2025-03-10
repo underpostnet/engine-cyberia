@@ -9,7 +9,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CyberiaItemsType, LoreCyberia, QuestComponent } from '../src/client/components/cyberia/CommonCyberia.js';
 import { loggerFactory } from '../src/server/logger.js';
 import keyword_extractor from 'keyword-extractor';
-import { random, s4 } from '../src/client/components/core/CommonJs.js';
+import { random, range, s4, uniqueArray } from '../src/client/components/core/CommonJs.js';
+import { pbcopy, shellExec } from '../src/server/process.js';
+import read from 'read';
+import { setTransparency } from '../src/api/cyberia-tile/cyberia-tile.service.js';
+import Jimp from 'jimp';
 
 dotenv.config();
 
@@ -21,8 +25,6 @@ const path = process.env.DEFAULT_DEPLOY_PATH;
 const confServerPath = `./engine-private/conf/${deployId}/conf.server.json`;
 const confServer = JSON.parse(fs.readFileSync(confServerPath, 'utf8'));
 const { db } = confServer[host][path];
-const platformSuffix = process.platform === 'linux' ? '' : 'C:';
-const commonCyberiaPath = `src/client/components/cyberia/CommonCyberia.js`;
 const lorePath = `./src/client/public/cyberia/assets/ai-resources/lore`;
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -88,6 +90,77 @@ const generateContent = async (prompt) => {
   return result.response.text();
 };
 
+const buildAsset = async (displayId, options = { flip: false }) => {
+  const frameColor = 'rgba(255, 255, 255)';
+  const commonCyberiaPath = `src/client/components/cyberia/CommonCyberia.js`;
+  const basePath = `./src/client/public/cyberia/assets/ai-resources/media/${displayId}`;
+  const buildFrame = async (pos) => {
+    return await new Promise((resolve) => {
+      Jimp.read(`${basePath}/0${pos}.png`).then(async (image) => {
+        const dim = image.bitmap.width > image.bitmap.height ? image.bitmap.width : image.bitmap.height;
+        if (!fs.existsSync(`./src/client/public/cyberia/assets/skin/${displayId}/0${pos}`))
+          fs.mkdirSync(`./src/client/public/cyberia/assets/skin/${displayId}/0${pos}`, { recursive: true });
+
+        const frame = new Jimp(dim + dim * 0.25, dim + dim * 0.25, frameColor);
+
+        frame.composite(
+          image,
+          (frame.bitmap.width - image.bitmap.width) / 2,
+          (frame.bitmap.height - image.bitmap.height) / 2,
+        );
+
+        frame.resize(500, 500);
+
+        if (`${options.flip}` === `${pos}`) frame.flip(true, false);
+
+        const outPath = `/home/dd/engine/src/client/public/cyberia/assets/skin/${displayId}/0${pos}/0.png`;
+
+        await setTransparency(frame);
+
+        frame.write(outPath);
+
+        if (!fs.existsSync(`./src/client/public/cyberia/assets/skin/${displayId}/1${pos}`))
+          fs.mkdirSync(`./src/client/public/cyberia/assets/skin/${displayId}/1${pos}`, { recursive: true });
+
+        for (const _pos of range(0, 1)) {
+          const frame = new Jimp(dim + dim * 0.25, dim + dim * 0.25, frameColor);
+
+          frame.composite(
+            image,
+            (frame.bitmap.width - image.bitmap.width) / 2,
+            (frame.bitmap.height - image.bitmap.height) / (_pos === 0 ? 2.3 : 1.7),
+          );
+
+          frame.resize(500, 500);
+
+          if (`${options.flip}` === `${pos}`) frame.flip(true, false);
+
+          const outPath = `/home/dd/engine/src/client/public/cyberia/assets/skin/${displayId}/1${pos}/${_pos}.png`;
+
+          await setTransparency(frame);
+
+          frame.write(outPath);
+        }
+
+        return resolve();
+      });
+    });
+  };
+  for (const position of [2, 8, 6, 4]) await buildFrame(position);
+
+  fs.writeFileSync(
+    commonCyberiaPath,
+    fs.readFileSync(commonCyberiaPath, 'utf8').replace(
+      `/*replace-display-instance*/`,
+      `DisplayComponent.get['${displayId}'] = () => ({ ...DisplayComponent.get['anon'](), displayId: '${displayId}' });
+Stat.get['${displayId}'] = () => ({ ...Stat.get['anon'](), vel: 0.14 });
+
+/*replace-display-instance*/`,
+    ),
+    'utf8',
+  );
+};
+
 const program = new Command();
 
 program.name('cyberia').description(`content generator cli ${Underpost.version}`).version(Underpost.version);
@@ -137,13 +210,14 @@ program
     const questsPath = `${lorePath}/${sagaId}/quests`;
     if (!fs.existsSync(questsPath)) fs.mkdirSync(questsPath, { recursive: true });
 
-    const questsAlreadyCreated = await fs.readdir(questsPath);
+    let questsAlreadyCreated = await fs.readdir(questsPath);
+    if (questsAlreadyCreated.length > 3) questsAlreadyCreated = questsAlreadyCreated.slice(-(3 * 2)); // last 3 chapters context
 
     const prompt = `${metanarrative}, and the current saga is about: ${fs.readFileSync(
       `${lorePath}/${sagaId}/saga.md`,
       'utf8',
     )}, Generate a new ${
-      questsAlreadyCreated.length > 0 ? 'first ' : ''
+      questsAlreadyCreated.length === 0 ? 'first ' : ''
     }quest saga json example instance, following this JSON format example:
     ${JSON.stringify(
       {
@@ -152,31 +226,29 @@ program
           en: '<insert-default-dialog-here>',
           es: '<insertar-default-dialogo-aqui>',
         },
-        questId: '<insert-new-sub-quest-id>',
+        questId: '<insert-saga-name>-000',
       },
       null,
       4,
-    )}. The 'assetFolder' value attribute options available for the elements of 'displaySearchObjects' array are the following: ${Object.keys(
+    )}. The 'itemType' value attribute of the 'displaySearchObjects' elements can only be: ${Object.keys(
       CyberiaItemsType,
-    )} ${
+    )} chose appropriate. ${
       questsAlreadyCreated.length > 0
-        ? `keep in mind that quest already created: ${questsAlreadyCreated
+        ? `Keep in mind that quest already created: ${questsAlreadyCreated
             .filter((s) => s.match('.json'))
             .map((s) => {
               const _q = JSON.parse(fs.readFileSync(`${questsPath}/${s}`, 'utf8'));
               return `${s} quest: ${s} description: ${_q.description.en} ${s} successDescription: ${_q.successDescription.en}`;
             })
-            .join(', ')}, so create a new quest id on JSON`
+            .join(', ')}.`
         : ''
-    }.`;
+    } It must have narrative consistency with the previous chapters. Add review of chapter after json`;
 
     console.log('prompt:', prompt);
 
     let response = await generateContent(prompt);
 
     console.log('response:', response);
-
-    console.log(response);
 
     response = response.split('```');
 
@@ -194,14 +266,93 @@ program
     fs.writeFileSync(`${questsPath}/${json.questId}.json`, JSON.stringify(json, null, 4), 'utf8');
     fs.writeFileSync(`${questsPath}/${json.questId}.md`, md, 'utf8');
   })
-  .description('Quest json data gameplay data generator');
+  .description('Quest gameplay json  data generator');
 
 program
   .command('media')
-  .argument('<saga-id>')
+  .argument('[saga-id]')
   .argument('[quest-id]')
-  .action(async (sagaId, questId) => {
+  .option('--prompt')
+  .option('--build')
+  .option('--flip <flip-position>')
+  .option('--id <media-id>')
+  .option('--import')
+  .action(async (sagaId, questId, options = { prompt: false, import: false, id: '', flip: '' }) => {
+    if (options.import === true) {
+      await buildAsset(options.id, options);
+      return;
+    }
     const quests = await fs.readdir(`./src/client/public/cyberia/assets/ai-resources/lore/${sagaId}/quests`);
+
+    if (options.build === true) {
+      // https://github.com/nadermx/backgroundremover
+      // other option: ../lab/src/python pil-rembg.py
+      // other option: rembg i
+
+      const bgCmd = 'python -m backgroundremover.cmd.cli';
+
+      const mediaObjects = JSON.parse(
+        fs.readFileSync(`./src/client/public/cyberia/assets/ai-resources/lore/${sagaId}/media.json`, 'utf8'),
+      );
+
+      for (const media of mediaObjects) {
+        const { itemType, id, aestheticKeywords } = media;
+        if (fs.existsSync(`./src/client/public/cyberia/assets/ai-resources/media/${id}`)) {
+          switch (itemType) {
+            case 'skin':
+              {
+                shellExec(
+                  `${bgCmd}` +
+                    ` -i ./src/client/public/cyberia/assets/ai-resources/media/${id}/${id}.jpeg` +
+                    ` -o ./src/client/public/cyberia/assets/ai-resources/media/${id}/${id}-alpha.jpeg`,
+                );
+                shellExec(
+                  `python ../lab/src/cv2-sprite-sheet-0.py` +
+                    ` ${process.cwd()}/src/client/public/cyberia/assets/ai-resources/media/${id}/${id}-alpha.jpeg` +
+                    ` ${process.cwd()}/src/client/public/cyberia/assets/ai-resources/media/${id}/${id}`,
+                );
+              }
+
+              break;
+
+            default:
+              break;
+          }
+        }
+      }
+      return;
+    }
+
+    if (options.prompt === true) {
+      const mediaObjects = JSON.parse(
+        fs.readFileSync(`./src/client/public/cyberia/assets/ai-resources/lore/${sagaId}/media.json`, 'utf8'),
+      );
+
+      for (const media of mediaObjects) {
+        const { itemType, id, aestheticKeywords } = media;
+        // use https://deepai.org/machine-learning-model/text2img
+        switch (itemType) {
+          case 'skin':
+            pbcopy(
+              `generate 1 side profile sprite and 1 back sprite and 1 front sprite, of ${id}, ${aestheticKeywords}, Chibi, Cartoon, pixel art, 8bit `,
+            );
+            await read({ prompt: `Prompt '${id}' copy to clipboard, press enter to continue.\n` });
+
+            break;
+
+          default:
+            pbcopy(`generate spreed sheet, of '${id}', ${aestheticKeywords}, rpg item, pixel art, 8bit`);
+            await read({ prompt: `Prompt '${id}' copy to clipboard, press enter to continue.\n` });
+
+            break;
+        }
+      }
+
+      return;
+    }
+
+    let idItems = {};
+
     for (const quest of quests) {
       if (!quest.match('.json') || (questId && !quest.match(questId))) continue;
       const questPath = `./src/client/public/cyberia/assets/ai-resources/lore/${sagaId}/quests/${quest}`;
@@ -209,10 +360,46 @@ program
       const questData = JSON.parse(fs.readFileSync(questPath, 'utf8'));
 
       for (const searchObject of questData.displaySearchObjects) {
-        const { id } = searchObject;
-        console.log('gen media', searchObject);
+        const { id, itemType } = searchObject;
+        idItems[id] = itemType;
       }
     }
+
+    idItems = Object.keys(idItems).map((id) => {
+      return {
+        id,
+        aestheticKeywords: [],
+        itemType: idItems[id],
+      };
+    });
+
+    const prompt = `According to this context '${fs.readFileSync(
+      `${lorePath}/${sagaId}/saga.md`,
+      'utf8',
+    )}' and aesthetic description of some characters, complete 'aestheticKeywords' of this json: ${JSON.stringify(
+      idItems,
+      null,
+      4,
+    )}`;
+
+    console.log('prompt:', prompt);
+
+    let response = await generateContent(prompt);
+
+    console.log('response:', response);
+
+    response = response.split('```');
+
+    const md = response.pop();
+
+    const json = JSON.parse(
+      response
+        .join('```')
+        .replace(/```json/g, '')
+        .replace(/```/g, ''),
+    );
+
+    fs.writeFileSync(`${lorePath}/${sagaId}/media.json`, JSON.stringify(json, null, 4), 'utf8');
   })
   .description('Media generator related quest id');
 

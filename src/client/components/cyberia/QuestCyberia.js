@@ -1,3 +1,4 @@
+import { CoreService } from '../../services/core/core.service.js';
 import { CyberiaQuestService } from '../../services/cyberia-quest/cyberia-quest.service.js';
 import { Auth } from '../core/Auth.js';
 import { BtnIcon } from '../core/BtnIcon.js';
@@ -22,7 +23,7 @@ import { Translate } from '../core/Translate.js';
 import { append, getLang, getProxyPath, htmls, s, sa } from '../core/VanillaJs.js';
 import { BagCyberia, Slot } from './BagCyberia.js';
 import { CharacterCyberia } from './CharacterCyberia.js';
-import { CyberiaShopStorage, QuestComponent, isElementCollision } from './CommonCyberia.js';
+import { CyberiaShopStorage, DisplayComponent, QuestComponent, Stat, isElementCollision } from './CommonCyberia.js';
 import { ElementsCyberia } from './ElementsCyberia.js';
 import { InteractionPanelCyberia } from './InteractionPanelCyberia.js';
 import { MainUserCyberia } from './MainUserCyberia.js';
@@ -41,6 +42,21 @@ const QuestManagementCyberia = {
     const radius = 5;
     const typeTarget = 'bot';
     this.questClosePanels = [];
+
+    for (const questData of WorldCyberiaManagement.Data[type][id].model.world.quests) {
+      const { id } = questData;
+      if (!(id in QuestComponent.Data)) {
+        const media = await fetch(`${getProxyPath()}/assets/ai-resources/lore/${id}/media.json`);
+
+        const questData = JSON.parse(
+          await CoreService.getRaw({
+            url: `${getProxyPath()}/assets/ai-resources/lore/${id}/quests/${id}-001.json`,
+          }),
+        );
+
+        QuestComponent.loadMediaQuestComponents(id, questData, media);
+      }
+    }
 
     // const instanceDisplayIdQuest = uniqueArray(
     //   WorldCyberiaManagement.Data[type][id].model.world.instance

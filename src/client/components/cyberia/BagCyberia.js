@@ -132,6 +132,27 @@ const ItemModal = {
                 return;
               }
               const result = await CyberiaItemService.post({ id: `buy/${storageBotId}/${item.type}/${item.id}` });
+              if (result.status === 'success') {
+                ElementsCyberia.Data[elementOwnerType][elementOwnerId].coin -= basePrice;
+                Slot.coin.update({ bagId: 'cyberia-bag', type: elementOwnerType, id: elementOwnerId });
+
+                ElementsCyberia.Data[elementOwnerType][elementOwnerId][item.type].tree.push({ id: item.id });
+                if (
+                  !ElementsCyberia.Data[elementOwnerType][elementOwnerId].components[item.type].find(
+                    (c) => c.displayId === item.id,
+                  )
+                ) {
+                  ElementsCyberia.Data[elementOwnerType][elementOwnerId].components[item.type].push(
+                    DisplayComponent.get[item.id](),
+                  );
+                }
+                Slot[item.type].update({
+                  bagId: 'cyberia-bag',
+                  displayId: item.id,
+                  type: elementOwnerType,
+                  id: elementOwnerId,
+                });
+              }
             });
 
             const onChangeQuantitySellItemInput = () => {
@@ -145,6 +166,10 @@ const ItemModal = {
             EventsUI.onClick(`.btn-sell-${item.type}-${idModal}`, () => {});
           }
           break;
+
+        case 'reward': {
+          break;
+        }
 
         default:
           {
@@ -480,8 +505,8 @@ const Slot = {
             class="abs center bag-slot-img"
             src="${getProxyPath()}assets/resources/${displayId}/08/0.${componentData.extension}"
           />
-          <div class="in bag-slot-type-text">resource</div>
-          <div class="in bag-slot-name-text">${displayId}</div>
+          <div class="abs bag-slot-type-text">resource</div>
+          <div class="abs bag-slot-name-text">${displayId}</div>
         `,
       );
     },
@@ -532,8 +557,8 @@ const Slot = {
             </div>
           </div>
           <img class="abs center bag-slot-img" src="${getProxyPath()}assets/quest/${displayId}/animation.gif" />
-          <div class="in bag-slot-type-text">quest item</div>
-          <div class="in bag-slot-name-text">${displayId}</div>
+          <div class="abs bag-slot-type-text">quest item</div>
+          <div class="abs bag-slot-name-text">${displayId}</div>
         `,
       );
     },
@@ -563,24 +588,26 @@ const Slot = {
     },
   },
   coin: {
-    renderBagCyberiaSlots: ({ bagId, indexBagCyberia, quantity }) => {
+    render: ({ slotId, quantity }) => {
       htmls(
-        `.${bagId}-${indexBagCyberia}`,
+        `.${slotId}`,
         html` <div class="abs bag-slot-count">
-            <div class="abs center">
-              x<span class="bag-slot-value-${bagId}-${indexBagCyberia}"
-                >${getK(
-                  quantity !== undefined
-                    ? quantity
-                    : ElementsCyberia.Data[BagCyberia.Tokens[bagId].owner.type][BagCyberia.Tokens[bagId].owner.id].coin,
-                )}</span
-              >
-            </div>
+            <div class="abs center">x<span class="bag-slot-value-${slotId}">${getK(quantity)}</span></div>
           </div>
           <img class="abs center bag-slot-img" src="${getProxyPath()}assets/coin/animation.gif" />
-          <div class="in bag-slot-type-text">currency</div>
-          <div class="in bag-slot-name-text">coin</div>`,
+          <div class="abs bag-slot-type-text">currency</div>
+          <div class="abs bag-slot-name-text">coin</div>`,
       );
+    },
+    renderBagCyberiaSlots: ({ bagId, indexBagCyberia, quantity }) => {
+      const slotId = `${bagId}-${indexBagCyberia}`;
+      Slot.coin.render({
+        slotId,
+        quantity:
+          quantity !== undefined
+            ? quantity
+            : ElementsCyberia.Data[BagCyberia.Tokens[bagId].owner.type][BagCyberia.Tokens[bagId].owner.id].coin,
+      });
       if (!ElementsCyberia.Data[BagCyberia.Tokens[bagId].owner.type][BagCyberia.Tokens[bagId].owner.id].coin) {
         const bagId = 'cyberia-bag';
         if (s(`.${bagId}-${indexBagCyberia}`)) s(`.${bagId}-${indexBagCyberia}`).classList.add('hide');
@@ -622,8 +649,8 @@ const Slot = {
             class="abs center bag-slot-img"
             src="${getProxyPath()}assets/skin/${displayId}/08/0.${componentData.extension}"
           />
-          <div class="in bag-slot-type-text">skin</div>
-          <div class="in bag-slot-name-text">${displayId}</div>
+          <div class="abs bag-slot-type-text">skin</div>
+          <div class="abs bag-slot-name-text">${displayId}</div>
         `,
       );
       if (['ghost'].includes(displayId)) s(`.${slotId}`).classList.add('hide');
@@ -662,25 +689,27 @@ const Slot = {
     },
   },
   weapon: {
-    render: function ({ bagId, slotId, displayId, disabledCount, itemData, context, storageBotId }) {
+    render: function ({ bagId, slotId, displayId, disabledCount, itemData, context, storageBotId, quantity }) {
       SlotEvents[slotId] = {};
       if (!s(`.${slotId}`)) return;
-      const count = ElementsCyberia.Data[BagCyberia.Tokens[bagId].owner.type][
-        BagCyberia.Tokens[bagId].owner.id
-      ].weapon.tree.filter((i) => i.id === displayId).length;
+      const count = quantity
+        ? quantity
+        : ElementsCyberia.Data[BagCyberia.Tokens[bagId].owner.type][
+            BagCyberia.Tokens[bagId].owner.id
+          ].weapon.tree.filter((i) => i.id === displayId).length;
 
       let basePrice;
       if (itemData) {
         const itemStat = Stat.get[itemData.id]();
         basePrice = itemStat.basePrice;
       }
-
+      const componentData = DisplayComponent.get[displayId]();
       htmls(
         `.${slotId}`,
         html`
           <div class="abs bag-slot-count">
             <div class="abs center ${disabledCount ? 'hide' : ''}">
-              x<span class="bag-slot-value-${slotId}">${getK(count)}</span>
+              x<span class="bag-slot-value-${slotId} bag-slot-value-${bagId}-${displayId}">${getK(count)}</span>
             </div>
             ${basePrice
               ? html`
@@ -692,9 +721,12 @@ const Slot = {
                 `
               : ''}
           </div>
-          <img class="abs center bag-slot-img" src="${getProxyPath()}assets/weapon/${displayId}/animation.gif" />
-          <div class="in bag-slot-type-text">weapon</div>
-          <div class="in bag-slot-name-text">${displayId}</div>
+          <img
+            class="abs center bag-slot-img"
+            src="${getProxyPath()}assets/weapon/${displayId}/06/0.${componentData.extension}"
+          />
+          <div class="abs bag-slot-type-text">weapon</div>
+          <div class="abs bag-slot-name-text">${displayId}</div>
         `,
       );
       SlotEvents[slotId].onClick = async (e) => {
@@ -733,6 +765,20 @@ const Slot = {
       }
       return indexBagCyberia;
     },
+    update: async ({ bagId, displayId, type, id }) => {
+      if (!s(`.modal-bag`)) return;
+      if (!s(`.bag-slot-value-${bagId}-${displayId}`)) {
+        BagCyberia.indexBagCyberia = await Slot.weapon.renderBagCyberiaSlots({
+          bagId,
+          indexBagCyberia: BagCyberia.Tokens[bagId].indexBagCyberia,
+          displayId,
+        });
+      }
+      const count = ElementsCyberia.Data[BagCyberia.Tokens[bagId].owner.type][
+        BagCyberia.Tokens[bagId].owner.id
+      ].weapon.tree.filter((s) => s.id === displayId).length;
+      htmls(`.bag-slot-value-${bagId}-${displayId}`, getK(count));
+    },
   },
   breastplate: {
     render: function ({ bagId, slotId, displayId, disabledCount }) {
@@ -750,8 +796,8 @@ const Slot = {
             </div>
           </div>
           <img class="abs center bag-slot-img" src="${getProxyPath()}assets/breastplate/${displayId}/animation.gif" />
-          <div class="in bag-slot-type-text">breastplate</div>
-          <div class="in bag-slot-name-text">${displayId}</div>
+          <div class="abs bag-slot-type-text">breastplate</div>
+          <div class="abs bag-slot-name-text">${displayId}</div>
         `,
       );
       SlotEvents[slotId].onClick = async (e) => {
@@ -807,8 +853,8 @@ const Slot = {
             class="abs center bag-slot-img"
             src="${getProxyPath()}assets/${SkillCyberiaData[displayId].folder}/${displayId}/animation.gif"
           />
-          <div class="in bag-slot-type-text">${SkillCyberiaData[displayId].type}<br />skill</div>
-          <div class="in bag-slot-name-text">${displayId}</div>
+          <div class="abs bag-slot-type-text">${SkillCyberiaData[displayId].type}<br />skill</div>
+          <div class="abs bag-slot-name-text">${displayId}</div>
         `,
       );
       SlotEvents[slotId].onClick = async (e) => {
@@ -853,8 +899,8 @@ const Slot = {
             <div class="abs center">x<span class="bag-slot-value-${bagId}-${indexBagCyberia}">0</span></div>
           </div>
           <div class="abs center text-icon">XP</div>
-          <div class="in bag-slot-type-text">experience</div>
-          <div class="in bag-slot-name-text">level 0</div>`,
+          <div class="abs bag-slot-type-text">experience</div>
+          <div class="abs bag-slot-name-text">level 0</div>`,
       );
       indexBagCyberia++;
       return indexBagCyberia;
@@ -868,8 +914,8 @@ const Slot = {
             <div class="abs center">x<span class="bag-slot-value-${bagId}-${indexBagCyberia}">1</span></div>
           </div>
           <img class="abs center bag-slot-img" src="${getProxyPath()}assets/ui-icons/wallet.png" />
-          <div class="in bag-slot-type-text">wallet</div>
-          <div class="in bag-slot-name-text">simple leather</div>`,
+          <div class="abs bag-slot-type-text">wallet</div>
+          <div class="abs bag-slot-name-text">simple leather</div>`,
       );
       const slotId = `${bagId}-${indexBagCyberia}`;
       SlotEvents[slotId] = {};

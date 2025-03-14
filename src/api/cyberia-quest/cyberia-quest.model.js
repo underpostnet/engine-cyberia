@@ -27,8 +27,6 @@ const CyberiaQuestSchema = new Schema({
         stepData: [
           {
             image: { type: String },
-            customTargetDisplayId: { type: String },
-            customMainDisplayId: { type: String },
             imageStyle: { type: Schema.Types.Mixed },
             bubble: {
               type: Boolean,
@@ -38,6 +36,17 @@ const CyberiaQuestSchema = new Schema({
               es: { type: String },
               en: { type: String },
             },
+            customTargetDisplayId: { type: String },
+            customMainDisplayId: { type: String },
+            talkingDialog: [
+              {
+                image: { type: String },
+                dialog: {
+                  es: { type: String },
+                  en: { type: String },
+                },
+              },
+            ],
           },
         ],
       },
@@ -77,12 +86,26 @@ const CyberiaQuestSchema = new Schema({
     type: Boolean,
     default: false,
   },
+  nextQuestIds: [{ id: { type: String }, sagaId: { type: String } }],
+  prevQuestIds: [{ id: { type: String }, sagaId: { type: String } }],
+  sagaId: { type: String },
+  components: [
+    {
+      id: { type: String },
+      questKeyContext: { type: String },
+      defaultDialog: {
+        es: { type: String },
+        en: { type: String },
+      },
+    },
+  ],
 });
 
 const CyberiaQuestModel = model('CyberiaQuest', CyberiaQuestSchema);
 
 const QuestStatusSchema = new Schema({
   id: { type: String },
+  sagaId: { type: String },
   currentStep: { type: Number, default: 0 },
   complete: { type: Boolean, default: false },
   displaySearchObjects: {

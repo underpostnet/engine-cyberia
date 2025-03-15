@@ -1,5 +1,6 @@
 import { CoreService } from '../../services/core/core.service.js';
 import { CyberiaBiomeService } from '../../services/cyberia-biome/cyberia-biome.service.js';
+import { range } from '../core/CommonJs.js';
 import { Responsive } from '../core/Responsive.js';
 import { append, getProxyPath, s } from '../core/VanillaJs.js';
 import { QuestComponent } from './CommonCyberia.js';
@@ -15,36 +16,24 @@ const MatrixCyberia = {
       dimAmplitude: 3, // 8,
       ...data,
     };
-    for (const questData of [{ id: 'ashes-of-orion' }]) {
-      // data.quests
-      const { id } = questData;
-      if (!(id in QuestComponent.Data)) {
-        const media = JSON.parse(
-          await CoreService.getRaw({
-            url: `${getProxyPath()}/assets/ai-resources/lore/${id}/media.json`,
-          }),
-        );
+    for (const questId of Object.keys(QuestComponent.Data))
+      await QuestComponent.loadMediaQuestComponents({
+        id: questId,
+        ...QuestComponent.Data[questId](),
+      });
 
-        {
-          const questData = JSON.parse(
+    for (const sagaData of QuestComponent.questResourcesRef)
+      for (const questNumber of range(...sagaData.range))
+        await QuestComponent.loadMediaQuestComponents({
+          id: `${sagaData.sagaId}-${questNumber}`,
+          ...JSON.parse(
             await CoreService.getRaw({
-              url: `${getProxyPath()}/assets/ai-resources/lore/${id}/quests/${id}-001.json`,
+              url: `${getProxyPath()}assets/ai-resources/lore/${sagaData.sagaId}/quests/${
+                sagaData.sagaId
+              }-${questNumber}.json`,
             }),
-          );
-
-          QuestComponent.loadMediaQuestComponents(id, questData, media);
-        }
-        {
-          const questData = JSON.parse(
-            await CoreService.getRaw({
-              url: `${getProxyPath()}/assets/ai-resources/lore/${id}/quests/${id}-002.json`,
-            }),
-          );
-
-          QuestComponent.loadMediaQuestComponents(id, questData, []);
-        }
-      }
-    }
+          ),
+        });
 
     append('body', html`<div class="abs map-name-icon-container"></div>`);
   },

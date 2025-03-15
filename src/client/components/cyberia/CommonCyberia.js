@@ -950,6 +950,12 @@ const QuestComponent = {
       };
     },
   },
+  questResourcesRef: [
+    {
+      sagaId: 'ashes-of-orion',
+      range: [1, 2],
+    },
+  ],
   getQuestByDisplayId: function ({ displayId }) {
     const questData = [];
     for (const id of Object.keys(this.Data)) {
@@ -979,39 +985,46 @@ const QuestComponent = {
   },
   componentsScope: {},
   components: [],
-  loadMediaQuestComponents: (id, questData, media) => {
-    const provideIds = questData.provide.displayIds.map((s) => s.id);
+  loadMediaQuestComponents: (questData) => {
+    const { id, components, reward } = questData;
 
-    QuestComponent.Data[id] = () => {
-      return questData;
-    };
+    if (!(id in QuestComponent.Data))
+      QuestComponent.Data[id] = () => {
+        return questData;
+      };
 
-    for (const mediaData of media) {
-      const { id, questKeyContext, itemType } = mediaData;
+    for (const component of components.concat(reward)) {
+      let { id, itemType, type } = component;
+      if (type) {
+        if (['coin'].includes(type)) continue;
+        else itemType = type;
+      }
+
       let assetFolder, dim;
       switch (itemType) {
         case 'questItem':
           assetFolder = 'quest';
           dim = 1;
           break;
-
+        case 'weapon':
+          assetFolder = itemType;
+          dim = 1;
+          break;
         default:
           assetFolder = itemType;
           dim = 2;
           break;
       }
-      DisplayComponent.get[id] = () => ({
-        ...DisplayComponent.get['anon'](),
-        displayId: id,
-        assetFolder,
-      });
+      if (!(id in DisplayComponent.get))
+        DisplayComponent.get[id] = () => ({
+          ...DisplayComponent.get['anon'](),
+          displayId: id,
+          assetFolder,
+        });
 
-      Stat.get[id] = () => ({ ...Stat.get['anon'](), vel: 0.14, dim });
+      if (!(id in Stat.get)) Stat.get[id] = () => ({ ...Stat.get['anon'](), vel: 0.14, dim });
 
-      QuestComponent.componentsScope[id] = {
-        questKeyContext,
-        defaultDialog: provideIds.includes(id) ? questData.defaultDialog : undefined,
-      };
+      QuestComponent.componentsScope[id] = component;
 
       const componentIndex = QuestComponent.components.findIndex((c) => c.displayId === id);
 

@@ -1210,7 +1210,7 @@ const QuestManagementCyberia = {
           });
       if (result.status === 'success') {
         await InteractionPanelCyberia.PanelRender.removeAllActionPanel();
-        // delete InteractionPanelCyberia.PanelRender.questTokens[interactionPanelQuestId];
+        delete InteractionPanelCyberia.PanelRender.questTokens[interactionPanelQuestId];
       }
       s(`.btn-close-${idModal}`).click();
     });

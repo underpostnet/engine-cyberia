@@ -195,7 +195,7 @@ const InteractionPanelCyberia = {
         (s) => s.displayId === questData.provide.displayIds[0].id,
       );
 
-      const { currentStep } = questData;
+      const { currentStep } = currentQuestData;
 
       if (!s(`.quest-interaction-panel-${id}`))
         append(

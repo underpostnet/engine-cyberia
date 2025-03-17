@@ -983,18 +983,19 @@ const QuestComponent = {
   getQuestByDisplayId: function ({ displayId }) {
     const questData = [];
     for (const id of Object.keys(this.Data)) {
-      const provideDemand = this.Data[id]().provide.displayIds.filter((q) => q.id === displayId);
+      const _questData = QuestComponent.Data[id]();
+      const provideDemand = _questData.provide.displayIds.filter((q) => q.id === displayId);
 
       if (provideDemand.length > 0)
         for (const demandUnit of range(0, provideDemand.reduce((sum, el) => sum + el.quantity[0], 0) - 1))
-          questData.push({ id, ...this.Data[id](), demandUnit });
+          questData.push({ id, ..._questData, demandUnit });
 
-      // if (this.Data[id]().provide.displayIds.find((q) => q.id === displayId)) {
-      //   questData.push({ id, ...this.Data[id]() });
+      // if (_questData.provide.displayIds.find((q) => q.id === displayId)) {
+      //   questData.push({ id, ..._questData });
       // }
-      if (this.Data[id]().displaySearchObjects.find((q) => q.id === displayId)) {
+      if (_questData.displaySearchObjects.find((q) => q.id === displayId)) {
         if (['displaySearchDialog', 'displaySearchObjects'].includes(this.componentsScope[displayId].questKeyContext))
-          questData.push({ id, ...this.Data[id]() });
+          questData.push({ id, ..._questData });
       }
     }
     return questData;
@@ -1010,11 +1011,12 @@ const QuestComponent = {
   componentsScope: {},
   components: [],
   loadMediaQuestComponents: (questData) => {
-    const { id, components, reward } = questData;
+    const _questData = newInstance(questData);
+    const { id, components, reward } = _questData;
 
     if (!(id in QuestComponent.Data))
       QuestComponent.Data[id] = () => {
-        return questData;
+        return newInstance(_questData);
       };
 
     for (const component of components.concat(reward)) {

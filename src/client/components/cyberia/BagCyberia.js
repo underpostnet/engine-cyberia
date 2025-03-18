@@ -186,21 +186,21 @@ const ItemModal = {
                 label: renderViewTitle({
                   'ui-icon': `equip.png`,
                   text: html`${Translate.Render('equip')}`,
-                  dim: 30,
-                  top: 4,
+                  top: 2,
+                  topText: 0,
                 }),
                 type: 'button',
-                class: `btn-equip-${item.type}-${idModal} inl wfa`,
+                class: `btn-equip-${item.type}-${idModal} section-mp-btn inl wfa`,
               })}
               ${await BtnIcon.Render({
                 label: renderViewTitle({
                   'ui-icon': `unequip.png`,
                   text: html`${Translate.Render('unequip')}`,
-                  dim: 30,
-                  top: 4,
+                  top: 2,
+                  topText: 0,
                 }),
                 type: 'button',
-                class: `btn-unequip-${item.type}-${idModal} inl wfa`,
+                class: `btn-unequip-${item.type}-${idModal} section-mp-btn inl wfa`,
               })} `,
             );
             EventsUI.onClick(`.btn-equip-${item.type}-${idModal}`, () => {
@@ -599,7 +599,7 @@ const Slot = {
   },
   questItem: {
     render: function ({ bagId, slotId, displayId, disabledCount }) {
-      SlotEvents[slotId] = {};
+      SlotEvents[slotId] = { displayId: `${displayId}` };
       if (!s(`.${slotId}`)) return;
       let count = 0;
 
@@ -656,15 +656,24 @@ const Slot = {
       );
 
       for (const displayId of setQuestItem) {
+        if (s(`.bag-slot-value-${bagId}-${displayId}`)) continue;
         const slotId = `${bagId}-${indexBagCyberia}`;
         this.render({ bagId, slotId, displayId });
         indexBagCyberia++;
       }
       return indexBagCyberia;
     },
-    update: ({ bagId, displayId, type, id }) => {
+    update: async ({ bagId, displayId, type, id }) => {
       const value = QuestManagementCyberia.countQuestItems({ type, id, displayId });
-      if (s(`.bag-slot-value-${bagId}-${displayId}`)) htmls(`.bag-slot-value-${bagId}-${displayId}`, getK(value));
+      if (value > 0 && !s(`.bag-slot-value-${bagId}-${displayId}`)) {
+        BagCyberia.indexBagCyberia = await Slot.questItem.renderBagCyberiaSlots({
+          bagId,
+          indexBagCyberia: BagCyberia.Tokens[bagId].indexBagCyberia,
+          displayId,
+        });
+      } else if (value === 0 && s(`.bag-slot-value-${bagId}-${displayId}`)) {
+        htmls(`.${Object.keys(SlotEvents).find((slotId) => SlotEvents[slotId].displayId === displayId)}`, '');
+      } else htmls(`.bag-slot-value-${bagId}-${displayId}`, getK(value));
     },
   },
   coin: {

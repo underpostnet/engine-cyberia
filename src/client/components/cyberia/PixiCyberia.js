@@ -44,6 +44,8 @@ import { LoadingAnimation } from '../core/LoadingAnimation.js';
 import { Auth } from '../core/Auth.js';
 import { getNumberByHex } from '../core/ColorPalette.js';
 import { EventsUI } from '../core/EventsUI.js';
+import { Translate } from '../core/Translate.js';
+import { borderChar } from '../core/Css.js';
 
 // https://pixijs.com/8.x/examples/sprite/animated-sprite-jet
 // https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame
@@ -79,7 +81,20 @@ const PixiCyberia = {
             left: 0px;
             z-index: 1;
           }
+          .dead-timer-modal {
+            color: black;
+            top: 23.5%;
+            z-index: 3;
+          }
+          .dead-timer-modal-img {
+            height: 80px;
+          }
+          .dead-timer-count {
+            font-size: 35px;
+            color: white;
+          }
         </style>
+        ${borderChar(2, 'red', ['.dead-timer-modal'])}
         <div class="fix pixi-container">
           <div class="abs adjacent-map adjacent-map-limit-top">
             <div class="abs adjacent-map-background adjacent-map-background-top"></div>
@@ -108,6 +123,13 @@ const PixiCyberia = {
           </div>
         </div>
         <div class="fix pixi-container-top-level" style="opacity: 1"></div>
+        <div class="abs center dead-timer-modal hide">
+          <img class="inl dead-timer-modal-img" src="${getProxyPath()}assets/util/dead.png" />
+          <br />
+          <span>${Translate.Render('you-are-dead')}</span>
+          <br /><br />
+          <span class="dead-timer-count"></span>
+        </div>
       `,
     );
     this.App = new Application({
@@ -460,17 +482,17 @@ const PixiCyberia = {
             const componentInstance = Sprite.from(src);
             componentInstance.width = dim * 0.5;
             componentInstance.height = dim * 0.4;
-            componentInstance.x = (dim * ElementsCyberia.Data[type][id].dim) / 2 - (dim * 0.5) / 2;
+            componentInstance.x = (dim * ElementsCyberia.Data[type][id].dim) / 2 - dim / 4;
 
             componentInstance.visible = false;
             this.Data[type][id].components[componentType][`pointer-arrow`] = componentInstance;
             this.Data[type][id].addChild(componentInstance);
 
-            const frames = [-1.8, -2.0];
+            const frames = [0, dim / 8];
             let frame = 0;
             const callBack = function () {
               if (!componentInstance.visible || !ElementsCyberia.Data[type] || !ElementsCyberia.Data[type][id]) return;
-              componentInstance.y = frames[frame] * dim * ElementsCyberia.Data[type][id].dim * 0.5;
+              componentInstance.y = -4 * (dim / 3) - frames[frame];
               frame++;
               if (frame === frames.length) frame = 0;
             };
@@ -505,38 +527,42 @@ const PixiCyberia = {
           break;
 
         case 'lifeBar':
-          const componentInstance = new Sprite(Texture.WHITE);
-          componentInstance.x = 0;
-          componentInstance.y = -1 * dim * ElementsCyberia.Data[type][id].dim * 0.2;
+          {
+            const componentInstance = new Sprite(Texture.WHITE);
+            componentInstance.x = 0;
+            componentInstance.y = -1 * (dim / 3);
 
-          // maxLife -> 100%
-          // life -> x%
+            // maxLife -> 100%
+            // life -> x%
 
-          componentInstance.height = dim * ElementsCyberia.Data[type][id].dim * 0.2;
-          componentInstance.tint = '#00e622ff';
-          componentInstance.visible = ElementsCyberia.Data[type][id].behavior !== 'item-quest';
-          this.Data[type][id].components[componentType] = componentInstance;
-          this.updateLifeBarWidth({ type, id, dim });
-          this.Data[type][id].addChild(componentInstance);
+            componentInstance.height = dim / 3;
+            componentInstance.tint = '#00e622ff';
+            componentInstance.visible = ElementsCyberia.Data[type][id].behavior !== 'item-quest';
+            this.Data[type][id].components[componentType] = componentInstance;
+            this.updateLifeBarWidth({ type, id, dim });
+            this.Data[type][id].addChild(componentInstance);
+          }
 
           break;
 
         case 'coinIndicator':
           {
+            const elementDataDim = 1; // ElementsCyberia.Data[type][id].dim
             const componentInstance = new Container();
-            componentInstance.x = [-2.5, 2][random(0, 1)] * ((dim * ElementsCyberia.Data[type][id].dim) / 2);
-            componentInstance.y = [-2.5, 2][random(0, 1)] * dim * ElementsCyberia.Data[type][id].dim * 0.8;
-            componentInstance.width = dim * ElementsCyberia.Data[type][id].dim;
-            componentInstance.height = dim * ElementsCyberia.Data[type][id].dim * 0.4;
+            componentInstance.x = [-2.5, 2][random(0, 1)] * ((dim * elementDataDim) / 2);
+            componentInstance.y = [-2.5, 2][random(0, 1)] * dim * elementDataDim * 0.8;
+            componentInstance.width = dim * elementDataDim;
+            componentInstance.height = dim * elementDataDim * 0.4;
             this.Data[type][id].components[componentType].container = componentInstance;
             this.Data[type][id].addChild(componentInstance);
           }
           {
+            const elementDataDim = 1; // ElementsCyberia.Data[type][id].dim
             const componentInstance = new Sprite(); // Texture.WHITE
             componentInstance.x = 0;
             componentInstance.y = 0;
-            componentInstance.width = dim * ElementsCyberia.Data[type][id].dim;
-            componentInstance.height = dim * ElementsCyberia.Data[type][id].dim * 0.4;
+            componentInstance.width = dim * elementDataDim;
+            componentInstance.height = dim * elementDataDim * 0.4;
             // componentInstance.tint = '#000000ff';
             componentInstance.visible = true;
             this.Data[type][id].components[componentType].background = componentInstance;
@@ -579,20 +605,22 @@ const PixiCyberia = {
           break;
         case 'lifeIndicator':
           {
+            const elementDataDim = 1; // ElementsCyberia.Data[type][id].dim
             const componentInstance = new Container();
-            componentInstance.x = [-1.5, 1][random(0, 1)] * ((dim * ElementsCyberia.Data[type][id].dim) / 2);
-            componentInstance.y = -1.6 * dim * ElementsCyberia.Data[type][id].dim * 0.8;
-            componentInstance.width = dim * ElementsCyberia.Data[type][id].dim;
-            componentInstance.height = dim * ElementsCyberia.Data[type][id].dim * 0.4;
+            componentInstance.x = [-1.5, 1][random(0, 1)] * ((dim * elementDataDim) / 2);
+            componentInstance.y = -1.6 * dim * elementDataDim * 0.8;
+            componentInstance.width = dim * elementDataDim;
+            componentInstance.height = dim * elementDataDim * 0.4;
             this.Data[type][id].components[componentType].container = componentInstance;
             this.Data[type][id].addChild(componentInstance);
           }
           {
+            const elementDataDim = 1; // ElementsCyberia.Data[type][id].dim
             const componentInstance = new Sprite(); // Texture.WHITE
             componentInstance.x = 0;
             componentInstance.y = 0;
-            componentInstance.width = dim * ElementsCyberia.Data[type][id].dim;
-            componentInstance.height = dim * ElementsCyberia.Data[type][id].dim * 0.4;
+            componentInstance.width = dim * elementDataDim;
+            componentInstance.height = dim * elementDataDim * 0.4;
             // componentInstance.tint = '#000000ff';
             componentInstance.visible = true;
             this.Data[type][id].components[componentType].background = componentInstance;
@@ -1242,15 +1270,15 @@ const PixiCyberia = {
         break;
       case 'username':
         componentInstance.x = 0;
-        componentInstance.y = -1 * dim * element.dim * 0.5;
+        componentInstance.y = -2 * (dim / 3);
         componentInstance.width = dim * element.dim;
-        componentInstance.height = dim * element.dim * 0.4;
+        componentInstance.height = dim / 3;
         break;
       case 'title':
         componentInstance.x = 0;
-        componentInstance.y = -1 * dim * element.dim * 0.75;
+        componentInstance.y = -3 * (dim / 3);
         componentInstance.width = dim * element.dim;
-        componentInstance.height = dim * element.dim * 0.4;
+        componentInstance.height = dim / 3;
         break;
 
       default:

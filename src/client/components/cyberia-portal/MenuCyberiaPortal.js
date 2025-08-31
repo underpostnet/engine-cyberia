@@ -148,15 +148,19 @@ const MenuCyberiaPortal = {
         </div>
       `,
       htmlMainBody: async () => {
-        return await ServerCyberiaPortal.Render({
-          idModal: 'modal-server-body',
-          events: {
-            'change-server-body': async ({ name }) => {
-              const { protocol, hostname } = window.location;
-              return (location.href = `${protocol}//${hostname}/${name}`);
-            },
-          },
-        });
+        // return await ServerCyberiaPortal.Render({
+        //   idModal: 'modal-server-body',
+        //   events: {
+        //     'change-server-body': async ({ name }) => {
+        //       const { protocol, hostname } = window.location;
+        //       return (location.href = `${protocol}//${hostname}/${name}`);
+        //     },
+        //   },
+        // });
+        await import(`${getProxyPath()}components/core/ObjectLayerEngine.js`);
+        // await import(`${getProxyPath()}components/core/WebComponent.js`);
+
+        return html`<object-layer-engine id="ole" width="20" height="10" pixel-size="20"></object-layer-engine>`;
       },
       barConfig: newInstance(barConfig),
       title: NameApp,

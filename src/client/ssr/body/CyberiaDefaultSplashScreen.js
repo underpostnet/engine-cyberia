@@ -1,18 +1,16 @@
 SrrComponent = ({ backgroundImage, metadata }) => html`
-  ${false
-    ? backgroundImage
-      ? html`<style>
-          .ssr-background-image {
-            background-image: url('${backgroundImage}');
-          }
-        </style>`
-      : metadata?.themeColor
-      ? html`<style>
-          .ssr-background-image {
-            background: ${metadata.themeColor};
-          }
-        </style>`
-      : ''
+  ${backgroundImage
+    ? html`<style class="style-ssr-background-image">
+        .ssr-background-image {
+          background-image: url('${backgroundImage}');
+        }
+      </style>`
+    : metadata?.themeColor
+    ? html`<style class="style-ssr-background-image">
+        .ssr-background-image {
+          background: ${metadata.themeColor};
+        }
+      </style>`
     : ''}
 
   <style>

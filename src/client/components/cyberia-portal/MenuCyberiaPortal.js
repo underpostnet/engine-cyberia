@@ -102,7 +102,7 @@ const MenuCyberiaPortal = {
             tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('settings')),
           })}
           ${await BtnIcon.Render({
-            class: 'in wfa main-btn-menu main-btn-server',
+            class: 'in wfa main-btn-menu main-btn-server hide',
             label: renderMenuLabel({
               icon: html`<i class="fas fa-server"></i>`,
               text: html`<span class="menu-label-text">${Translate.Render('server')}</span>`,
@@ -159,6 +159,7 @@ const MenuCyberiaPortal = {
         </div>
       `,
       htmlMainBody: async () => {
+        return '';
         return await ServerCyberiaPortal.Render({
           idModal: 'modal-server-body',
           events: {
@@ -173,13 +174,6 @@ const MenuCyberiaPortal = {
       title: NameApp,
       // titleClass: 'hide',
       titleRender: () => {
-        ThemeEvents['titleRender'] = () => {
-          const srcLogo = darkTheme
-            ? `${getProxyPath()}assets/splash/favicon-white-alpha.png`
-            : `${getProxyPath()}assets/splash/favicon-black-alpha.png`;
-          htmls('.action-btn-app-icon-render', html`<img class="inl top-bar-app-icon" src="${srcLogo}" />`);
-        };
-        setTimeout(ThemeEvents['titleRender']);
         return '';
       },
       // mode: 'slide-menu-right',
@@ -237,6 +231,34 @@ const MenuCyberiaPortal = {
         // evt.pullMode; // when item is in another sortable: `"clone"` if cloning, `true` if moving
       },
     });
+
+    ThemeEvents['portal-main-theme-event'] = () => {
+      const srcLogo = darkTheme
+        ? `${getProxyPath()}assets/splash/favicon-white-alpha.png`
+        : `${getProxyPath()}assets/splash/favicon-black-alpha.png`;
+      htmls('.action-btn-app-icon-render', html`<img class="inl top-bar-app-icon" src="${srcLogo}" />`);
+
+      if (darkTheme) {
+        htmls(
+          `.style-ssr-background-image`,
+          css`
+            .ssr-background-image {
+              background: #191919;
+            }
+          `,
+        );
+      } else {
+        htmls(
+          `.style-ssr-background-image`,
+          css`
+            .ssr-background-image {
+              background: #e8e8e8;
+            }
+          `,
+        );
+      }
+    };
+    setTimeout(ThemeEvents['portal-main-theme-event']);
 
     EventsUI.onClick(`.main-btn-sign-up`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();

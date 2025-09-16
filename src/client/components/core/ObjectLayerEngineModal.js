@@ -35,11 +35,9 @@ const ObjectLayerEngineModal = {
   Render: async (options = { idModal: '' }) => {
     await import(`${getProxyPath()}components/core/ObjectLayerEngine.js`);
     // await import(`${getProxyPath()}components/core/WebComponent.js`);
-
     const directionCodes = ['08', '18', '02', '12', '04', '14', '06', '16'];
-
     const itemTypes = ['skin', 'weapon', 'armor', 'artifact', 'floor'];
-
+    const statTypes = ['effect', 'resistance', 'agility', 'range', 'intelligence', 'utility'];
     let itemActivable = false;
 
     for (const url of [
@@ -57,6 +55,7 @@ const ObjectLayerEngineModal = {
     const cells = 26;
     const pixelSize = parseInt(320 / cells);
     const idSectionA = 'template-section-a';
+    const idSectionB = 'template-section-b';
 
     let directionsCodeBarRender = '';
 
@@ -93,7 +92,7 @@ const ObjectLayerEngineModal = {
         });
       });
       directionsCodeBarRender += html`
-        <div class="in direction-code-bar-frames">
+        <div class="in section-mp-border">
           <div class="fl">
             <div class="in fll">
               <div class="in direction-code-bar-frames-title">${directionCode}</div>
@@ -110,13 +109,26 @@ const ObjectLayerEngineModal = {
       `;
     }
 
+    let statsInputsRender = '';
+    for (const statType of statTypes) {
+      statsInputsRender += html`
+        ${await Input.Render({
+          id: `ol-input-item-stats-${statType}`,
+          label: html`<div class="inl" style="width: 120px; font-size: 16px; overflow: hidden">
+            <i class="fa-solid fa-chart-simple"></i> ${statType}
+          </div>`,
+          containerClass: 'inl',
+          type: 'number',
+          min: 0,
+          max: 10,
+          placeholder: true,
+          value: 0,
+        })}
+      `;
+    }
+
     return html`
       <style>
-        .direction-code-bar-frames {
-          border: 1px solid #ccc;
-          padding: 0.5rem;
-          margin: 0.5rem;
-        }
         .direction-code-bar-frames-title {
           font-weight: bold;
           font-size: 1.2rem;
@@ -132,6 +144,11 @@ const ObjectLayerEngineModal = {
           left: 3px;
           background: red;
           color: white;
+        }
+        .ol-btn-save {
+          padding: 0.5rem;
+          font-size: 30px;
+          font-weight: bold;
         }
       </style>
       ${dynamicCol({ containerSelector: options.idModal, id: idSectionA })}
@@ -152,6 +169,17 @@ const ObjectLayerEngineModal = {
               }),
             })}
           </div>
+        </div>
+        <div class="in fll ${idSectionA}-col-b">
+          <object-layer-engine id="ole" width="${cells}" height="${cells}" pixel-size="${pixelSize}">
+          </object-layer-engine>
+        </div>
+      </div>
+      ${directionsCodeBarRender}
+      ${dynamicCol({ containerSelector: options.idModal, id: idSectionB, type: 'a-50-b-50' })}
+
+      <div class="fl">
+        <div class="in fll ${idSectionB}-col-a">
           <div class="in section-mp section-mp-border">
             <div class="in sub-title-modal"><i class="fa-solid fa-database"></i> Item data</div>
             ${await Input.Render({
@@ -180,10 +208,12 @@ const ObjectLayerEngineModal = {
                   };
                 }),
               })}
+            </div>
+            <div class="in section-mp">
               ${await ToggleSwitch.Render({
                 id: 'ol-toggle-item-activable',
                 wrapper: true,
-                wrapperLabel: html`<i class="fa-solid fa-pen-to-square"></i> ${Translate.Render('item-activable')}`,
+                wrapperLabel: html`${Translate.Render('item-activable')}`,
                 disabledOnClick: true,
                 checked: itemActivable,
                 on: {
@@ -200,12 +230,20 @@ const ObjectLayerEngineModal = {
             </div>
           </div>
         </div>
-        <div class="in fll ${idSectionA}-col-b">
-          <object-layer-engine id="ole" width="${cells}" height="${cells}" pixel-size="${pixelSize}">
-          </object-layer-engine>
+        <div class="in fll ${idSectionB}-col-b">
+          <div class="in section-mp section-mp-border">
+            <div class="in sub-title-modal"><i class="fa-solid fa-database"></i> Stats data</div>
+            ${statsInputsRender}
+          </div>
         </div>
       </div>
-      ${directionsCodeBarRender}
+
+      <div class="in section-mp">
+        ${await BtnIcon.Render({
+          label: html`<i class="fa-solid fa-save"></i> ${Translate.Render('save')}`,
+          class: `in ol-btn-save`,
+        })}
+      </div>
     `;
   },
 };

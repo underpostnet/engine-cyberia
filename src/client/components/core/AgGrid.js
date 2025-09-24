@@ -27,6 +27,12 @@ const AgGrid = {
           filter: true,
           autoHeight: true,
         },
+        rowClassRules: {
+          'row-new-highlight': (params) => {
+            // a temporary flag we can set on new rows to highlight them
+            return params.data && params.data._new;
+          },
+        },
         // domLayout: 'autoHeight', || 'normal'
         // Column Definitions: Defines & controls grid columns.
         columnDefs: options?.gridOptions?.rowData?.[0]
@@ -144,6 +150,10 @@ const AgGrid = {
           ${darkTheme
             ? html`
                 <style>
+                  .ag-row.row-new-highlight {
+                    background-color: #6d68ff !important;
+                    transition: background-color 1s ease-out;
+                  }
                   .ag-cell-data-changed,
                   .ag-cell-data-changed-animation {
                     background-color: #6d68ff !important;
@@ -153,6 +163,10 @@ const AgGrid = {
                 </style>
               `
             : html`<style>
+                .ag-row.row-new-highlight {
+                  background-color: #d0eaf8 !important;
+                  transition: background-color 1s ease-out;
+                }
                 .ag-cell-data-changed,
                 .ag-cell-data-changed-animation {
                   background-color: #d1d1d1 !important;

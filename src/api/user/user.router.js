@@ -29,6 +29,7 @@ const UserRouter = (options) => {
             password: hashedPassword,
             role: 'admin',
             emailConfirmed: true,
+            secret: s4() + s4() + s4() + s4(),
             publicKey: [],
           });
           logger.warn('Default admin user created. Please change the default password immediately!', result._doc);
@@ -92,6 +93,13 @@ const UserRouter = (options) => {
       #swagger.ignore = true
     */
     return await UserController.get(req, res, options);
+  });
+
+  router.post('/refresh-token', async (req, res) => {
+    /*  
+      #swagger.ignore = true
+    */
+    return await UserController.refreshToken(req, res, options);
   });
 
   router.post(`/:id`, async (req, res) => {

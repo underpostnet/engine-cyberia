@@ -1,4 +1,3 @@
-import { authMiddleware } from '../../server/auth.js';
 import { loggerFactory } from '../../server/logger.js';
 import { ObjectLayerController } from './object-layer.controller.js';
 import express from 'express';
@@ -7,6 +6,7 @@ const logger = loggerFactory(import.meta);
 
 const ObjectLayerRouter = (options) => {
   const router = express.Router();
+  const authMiddleware = options.authMiddleware;
   router.post(
     `/frame-image/:itemType/:itemId/:directionCode`,
     async (req, res) => await ObjectLayerController.post(req, res, options),

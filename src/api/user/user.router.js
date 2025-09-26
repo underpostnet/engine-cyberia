@@ -1,4 +1,4 @@
-import { authMiddleware, hashPassword } from '../../server/auth.js';
+import { hashPassword } from '../../server/auth.js';
 import fs from 'fs-extra';
 import { loggerFactory } from '../../server/logger.js';
 import { UserController } from './user.controller.js';
@@ -11,6 +11,7 @@ const logger = loggerFactory(import.meta);
 
 const UserRouter = (options) => {
   const router = express.Router();
+  const authMiddleware = options.authMiddleware;
 
   (async () => {
     // admin user seed

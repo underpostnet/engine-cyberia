@@ -1,4 +1,3 @@
-import { authMiddleware } from '../../server/auth.js';
 import { loggerFactory } from '../../server/logger.js';
 import { DocumentController } from './document.controller.js';
 import express from 'express';
@@ -7,6 +6,7 @@ const logger = loggerFactory(import.meta);
 
 const DocumentRouter = (options) => {
   const router = express.Router();
+  const authMiddleware = options.authMiddleware;
   router.post(`/:id`, authMiddleware, async (req, res) => await DocumentController.post(req, res, options));
   router.post(`/`, authMiddleware, async (req, res) => await DocumentController.post(req, res, options));
   router.get(`/public`, async (req, res) => await DocumentController.get(req, res, options));

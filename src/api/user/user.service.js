@@ -36,8 +36,8 @@ const UserService = {
 
       if (!user) throw new Error('Email address does not exist');
 
-      const token = jwtSign({ email: req.body.email });
-      const payloadToken = jwtSign({ email: req.body.email });
+      const token = jwtSign({ email: req.body.email }, options, '15m');
+      const payloadToken = jwtSign({ email: req.body.email }, options, '15m');
       const id = `${options.host}${options.path}`;
       const translate = MailerProvider.instance[id].translateTemplates.recoverEmail;
       const recoverUrl = `${process.env.NODE_ENV === 'development' ? 'http://' : 'https://'}${req.body.hostname}${
@@ -74,7 +74,7 @@ const UserService = {
     if (req.path.startsWith('/mailer') && req.params.id === 'verify-email') {
       if (!validator.isEmail(req.body.email)) throw { message: 'invalid email' };
 
-      const token = jwtSign({ email: req.body.email });
+      const token = jwtSign({ email: req.body.email }, options, '15m');
       const id = `${options.host}${options.path}`;
       const user = await User.findById(req.auth.user._id);
 
@@ -155,17 +155,11 @@ const UserService = {
                   },
                 );
 
-                const { sessionId } = await createSessionAndUserToken(user, User, req, res);
+                const { jwtid } = await createSessionAndUserToken(user, User, req, res, options);
                 return {
                   token: jwtSign(
-                    UserDto.auth.payload(
-                      user,
-                      sessionId,
-                      req.ip,
-                      req.headers['user-agent'],
-                      options.host,
-                      options.path,
-                    ),
+                    UserDto.auth.payload(user, jwtid, req.ip, req.headers['user-agent'], options.host, options.path),
+                    options,
                   ),
                   user,
                 };
@@ -223,6 +217,7 @@ const UserService = {
         return {
           token: jwtSign(
             UserDto.auth.payload(user, null, req.ip, req.headers['user-agent'], options.host, options.path),
+            options,
           ),
           user: selectDtoFactory(user, UserDto.select.get()),
         };
@@ -249,7 +244,7 @@ const UserService = {
     if (req.path.startsWith('/recover')) {
       let payload;
       try {
-        payload = verifyJWT(req.params.id);
+        payload = verifyJWT(req.params.id, options);
       } catch (error) {
         logger.error(error, { 'req.params.id': req.params.id });
         options.png.header(res);
@@ -276,7 +271,7 @@ const UserService = {
     if (req.path.startsWith('/mailer')) {
       let payload;
       try {
-        payload = verifyJWT(req.params.id);
+        payload = verifyJWT(req.params.id, options);
       } catch (error) {
         logger.error(error, { 'req.params.id': req.params.id });
         options.png.header(res);
@@ -443,7 +438,7 @@ const UserService = {
     }
 
     if (req.path.startsWith('/recover')) {
-      const payload = verifyJWT(req.params.id);
+      const payload = verifyJWT(req.params.id, options);
       const user = await User.findOne({
         email: payload.email,
       });

@@ -184,6 +184,9 @@ const PanelForm = {
           initEdit: async function ({ data }) {
             s(`.modal-${options.route}`).scrollTo({ top: 0, behavior: 'smooth' });
           },
+          noResultFound: async function () {
+            LoadingAnimation.spinner.stop(`.panel-placeholder-bottom-${idPanel}`);
+          },
           add: async function ({ data, editId }) {
             let mdFileId;
             const mdFileName = `${getCapVariableName(data.title)}.md`;
@@ -504,12 +507,13 @@ const PanelForm = {
       LoadingAnimation.spinner.play(`.panel-placeholder-bottom-${idPanel}`, 'dual-ring-mini');
 
       const scrollContainerSelector = `.modal-${options.route}`;
-      if (this.Data[idPanel].removeScrollEvent) {
-        this.Data[idPanel].removeScrollEvent();
-      }
+
       if (cid) {
         LoadingAnimation.spinner.stop(`.panel-placeholder-bottom-${idPanel}`);
         return;
+      }
+      if (this.Data[idPanel].removeScrollEvent) {
+        this.Data[idPanel].removeScrollEvent();
       }
       const { removeEvent } = Scroll.setEvent(scrollContainerSelector, async (payload) => {
         const panelData = PanelForm.Data[idPanel];
@@ -542,7 +546,7 @@ const PanelForm = {
             originData: [],
             data: [],
             filesData: [],
-            skip: 0,
+            // skip: 0,
             limit: 3, // Load 5 items per page
             hasMore: true,
             loading: false,

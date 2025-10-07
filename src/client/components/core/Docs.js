@@ -5,7 +5,7 @@ import { DropDown } from './DropDown.js';
 import { buildBadgeToolTipMenuOption, Modal, renderMenuLabel, renderViewTitle } from './Modal.js';
 import { listenQueryPathInstance, setQueryPath, closeModalRouteChangeEvent, getProxyPath } from './Router.js';
 import { Translate } from './Translate.js';
-import { htmls, s } from './VanillaJs.js';
+import { htmls, s, sa } from './VanillaJs.js';
 import Sortable from 'sortablejs';
 
 // https://mintlify.com/docs/quickstart
@@ -159,7 +159,9 @@ const Docs = {
         id: options.idModal,
         routeId: 'docs',
         event: (path) => {
-          if (s(`.btn-docs-${path}`)) s(`.btn-docs-${path}`).click();
+          console.error('btn doc click', path);
+          // Modal.subMenuBtnClass['docs'].disabled = true;
+          // if (s(`.btn-docs-${path}`)) s(`.btn-docs-${path}`).click();
         },
       });
     });
@@ -183,98 +185,48 @@ const Docs = {
       tabHref = docData.url();
       docMenuRender += html`
         ${await BtnIcon.Render({
-          class: `in wfa main-btn-menu btn-docs-${docData.type}`,
+          class: `in wfa btn-docs btn-docs-${docData.type}`,
           label: html`<span class="menu-btn-icon">${docData.icon}</span
-            ><span class="menu-label-text"> ${docData.text} </span>`,
+            ><span class="menu-label-text menu-label-text-docs"> ${docData.text} </span>`,
           tabHref,
-          handleContainerClass: 'handle-btn-container',
+
           tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption(docData.text, 'right')),
-          attrs: `data-id="${docData.type}"`,
-          handleContainerClass: 'handle-btn-container',
         })}
       `;
     }
+    // s(`.menu-btn-container-children`).classList.remove('hide');
+    //
+    if (!s(`.menu-btn-container-docs`))
+      htmls(
+        '.menu-btn-container-children-docs',
+        html` <style>
+            .btn-docs {
+              height: 51px;
+              text-align: left;
+              border: none;
+            }
+          </style>
 
-    htmls('.menu-btn-container-children', html` <div class="fl menu-btn-container-docs">${docMenuRender}</div>`);
-    if (s(`.menu-btn-container-main`)) s(`.menu-btn-container-main`).classList.add('hide');
-    htmls(`.nav-path-display-${'modal-menu'}`, location.pathname);
+          <div class="in menu-btn-container-docs hide">${docMenuRender}</div>`,
+      );
+    sa(`.main-btn-menu`).forEach((el) => {
+      //  if (!el.classList.contains('btn-docs')) el.classList.add('hide');
+    });
+    // htmls(`.nav-path-display-${'modal-menu'}`, location.pathname);
+    const _hBtn = 51;
+    s(`.main-btn-docs`).style.height = `${_hBtn}px`;
 
-    this.Tokens[idModal] = new Sortable(s(`.menu-btn-container-docs`), {
-      animation: 150,
-      group: `docs-sortable`,
-      forceFallback: true,
-      fallbackOnBody: true,
-      handle: '.handle-btn-container',
-      store: {
-        /**
-         * Get the order of elements. Called once during initialization.
-         * @param   {Sortable}  sortable
-         * @returns {Array}
-         */
-        get: function (sortable) {
-          const order = localStorage.getItem(sortable.options.group.name);
-          return order ? order.split('|') : [];
-        },
+    s(`.main-btn-docs`).style.height = `${_hBtn * 8}px`;
 
-        /**
-         * Save the order of elements. Called onEnd (when the item is dropped).
-         * @param {Sortable}  sortable
-         */
-        set: function (sortable) {
-          const order = sortable.toArray();
-          localStorage.setItem(sortable.options.group.name, order.join('|'));
-        },
-      },
-      // chosenClass: 'css-class',
-      // ghostClass: 'css-class',
-      // Element dragging ended
-      onEnd: function (/**Event*/ evt) {
-        // console.log('Sortable onEnd', evt);
-        // console.log('evt.oldIndex', evt.oldIndex);
-        // console.log('evt.newIndex', evt.newIndex);
-        const slotId = Array.from(evt.item.classList).pop();
-        // console.log('slotId', slotId);
-        if (evt.oldIndex === evt.newIndex) s(`.${slotId}`).click();
+    setTimeout(() => {
+      s(`.menu-btn-container-docs`).classList.remove('hide');
+    }, 250);
 
-        // var itemEl = evt.item; // dragged HTMLElement
-        // evt.to; // target list
-        // evt.from; // previous list
-        // evt.oldIndex; // element's old index within old parent
-        // evt.newIndex; // element's new index within new parent
-        // evt.oldDraggableIndex; // element's old index within old parent, only counting draggable elements
-        // evt.newDraggableIndex; // element's new index within new parent, only counting draggable elements
-        // evt.clone; // the clone element
-        // evt.pullMode; // when item is in another sortable: `"clone"` if cloning, `true` if moving
-      },
+    setTimeout(() => {
+      s(`.down-arrow-submenu-docs`).style.rotate = '180deg';
     });
 
-    return '';
-    return html` <div class="in section-mp">${docMenuRender}</div>`;
-    return html` <div class="in section-mp">
-      ${await DropDown.Render({
-        id: 'dropdown-docs',
-        disableClose: true,
-        disableSelectLabel: true,
-        disableSelectOptionsLabel: true,
-        disableSearchBox: true,
-        open: true,
-        lastSelectClass: 'hover-active',
-        label: renderMenuLabel({
-          icon: html`<i class="fas fa-book"></i>`,
-          text: html`${Translate.Render('docs')}`,
-        }),
-        containerClass: '',
-        data: this.Data.map((docTypeData) => {
-          return {
-            display: docTypeData.label,
-            value: docTypeData.type,
-            onClick: async () => {
-              console.warn(this.viewUrl[docTypeData.type]());
-            },
-          };
-        }),
-      })}
-    </div>`;
+    return html`test`;
   },
 };
 

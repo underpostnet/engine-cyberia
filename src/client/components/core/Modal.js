@@ -110,11 +110,7 @@ const Modal = {
           if (options && options.slideMenu) s(`.btn-close-${options.slideMenu}`).click();
           options.zIndexSync = true;
 
-          options.style = {
-            ...options.style,
-            'min-width': `${minWidth}px`,
-            width: '100%',
-          };
+          options.style = { width: '100%', ...options.style, 'min-width': `${minWidth}px` };
 
           if (this.mobileModal()) {
             options.barConfig.buttons.restore.disabled = true;
@@ -1301,7 +1297,7 @@ const Modal = {
               await NotificationManager.RenderBoard(options);
 
               const { removeEvent } = Scroll.setEvent('.main-body', async (payload) => {
-                console.warn('scroll', payload);
+                // console.warn('scroll', payload);
                 if (payload.scrollTop > 100) {
                   if (!s(`.main-body-btn-ui-close`).classList.contains('hide')) s(`.main-body-btn-ui-close`).click();
 
@@ -1536,12 +1532,13 @@ const Modal = {
       case 'slide-menu-right':
       case 'slide-menu-left':
         const backMenuButtonEvent = async () => {
-          if (s(`.menu-btn-container-children`)) htmls(`.menu-btn-container-children`, '');
           // htmls(`.nav-title-display-${'modal-menu'}`, html`<i class="fas fa-home"></i> ${Translate.Render('home')}`);
           htmls(`.nav-title-display-${'modal-menu'}`, html``);
           htmls(`.nav-path-display-${idModal}`, '');
           s(`.btn-icon-menu-back`).classList.add('hide');
-          if (s(`.menu-btn-container-main`)) s(`.menu-btn-container-main`).classList.remove('hide');
+          // sa(`.main-btn-menu`).forEach((el) => {
+          //   el.classList.remove('hide');
+          // });
         };
         s(`.main-btn-home`).onclick = async () => {
           // await this.onHomeRouterEvent();
@@ -1557,6 +1554,7 @@ const Modal = {
             s(`.btn-icon-menu-mode-right`).classList.add('hide');
           }
           if (slideMenuWidth === originSlideMenuWidth) {
+            Modal.subMenuBtnClass = {};
             slideMenuWidth = collapseSlideMenuWidth;
             setTimeout(() => {
               s(`.main-body-btn-container`).style[
@@ -1571,8 +1569,6 @@ const Modal = {
                 sa(`.tooltip-menu`).forEach((el) => el.classList.remove('hide'));
                 s(`.${idModal}`).style.overflow = 'visible';
               }
-              if (s(`.menu-btn-container-main`) && s(`.menu-btn-container-main`).classList.contains('hide'))
-                s(`.btn-icon-menu-back`).classList.add('hide');
             }
             if (options.onCollapseMenu) options.onCollapseMenu();
             s(`.sub-menu-title-container-${'modal-menu'}`).classList.add('hide');
@@ -1589,13 +1585,12 @@ const Modal = {
             }, 1);
 
             sa(`.handle-btn-container`).forEach((el) => el.classList.remove('hide'));
-            sa(`.menu-label-text`).forEach((el) => el.classList.remove('hide'));
+
+            Modal.menuTextLabelAnimation(idModal);
             if (!Modal.mobileModal()) {
               sa(`.tooltip-menu`).forEach((el) => el.classList.add('hide'));
               s(`.${idModal}`).style.overflow = null;
             }
-            if (s(`.menu-btn-container-main`) && s(`.menu-btn-container-main`).classList.contains('hide'))
-              s(`.btn-icon-menu-back`).classList.remove('hide');
 
             if (options.onExtendMenu) options.onExtendMenu();
             s(`.sub-menu-title-container-${'modal-menu'}`).classList.remove('hide');
@@ -1918,6 +1913,7 @@ const Modal = {
     };
 
     const btnMenuEvent = () => {
+      Modal.menuTextLabelAnimation(idModal);
       Object.keys(this.Data[idModal].onMenuListener).map((keyListener) =>
         this.Data[idModal].onMenuListener[keyListener](),
       );
@@ -1958,6 +1954,8 @@ const Modal = {
       ...this.Data[idModal],
     };
   },
+  subMenuBtnClass: {},
+
   onHomeRouterEvent: async () => {
     // 1. Get list of modals to close.
     const modalsToClose = Object.keys(Modal.Data).filter((idModal) => {
@@ -1986,11 +1984,13 @@ const Modal = {
     }
 
     // 4. Finally, handle UI cleanup for the slide-menu.
-    if (s(`.menu-btn-container-children`)) htmls(`.menu-btn-container-children`, '');
+
     if (s(`.nav-title-display-modal-menu`)) htmls(`.nav-title-display-modal-menu`, '');
     if (s(`.nav-path-display-modal-menu`)) htmls(`.nav-path-display-modal-menu`, '');
     if (s(`.btn-icon-menu-back`)) s(`.btn-icon-menu-back`).classList.add('hide');
-    if (s(`.menu-btn-container-main`)) s(`.menu-btn-container-main`).classList.remove('hide');
+    // sa(`.main-btn-menu`).forEach((el) => {
+    //   el.classList.remove('hide');
+    // });
 
     // And close the slide menu if it's open
     if (s(`.btn-close-modal-menu`) && !s(`.btn-close-modal-menu`).classList.contains('hide')) {
@@ -2135,6 +2135,46 @@ const Modal = {
         resolve({ status: 'confirm' });
       };
     });
+  },
+  menuTextLabelAnimation: (idModal) => {
+    if (
+      !s(
+        `.btn-icon-menu-mode-${Modal.Data[idModal].options.barMode === 'top-bottom-bar' ? 'left' : 'right'}`,
+      ).classList.contains('hide')
+    ) {
+      return;
+    }
+    const btnSelector = `.menu-label-text`;
+    const labelSelector = `.menu-label-text`;
+
+    const _data =
+      Object.keys(Modal.subMenuBtnClass).length > 0 ? Modal.subMenuBtnClass : { _: { btnSelector, labelSelector } };
+
+    for (const keyDataBtn of Object.keys(_data)) {
+      const { btnSelector, labelSelector, open } = _data[keyDataBtn];
+      if (open) continue;
+      if (Modal.subMenuBtnClass[keyDataBtn]) Modal.subMenuBtnClass[keyDataBtn].open = true;
+      sa(labelSelector).forEach((el) => {
+        el.classList.add('hide');
+      });
+      sa(btnSelector).forEach((el) => {
+        el.classList.overflow = 'hidden';
+      });
+      setTimeout(() => {
+        sa(labelSelector).forEach((el) => {
+          el.style.top = '-40px';
+          el.classList.remove('hide');
+        });
+      }, 300);
+      setTimeout(() => {
+        sa(labelSelector).forEach((el) => {
+          el.style.top = '-3px';
+        });
+        sa(btnSelector).forEach((el) => {
+          el.classList.overflow = null;
+        });
+      }, 400);
+    }
   },
   // Move modal title element into the bar's render container so it aligns with control buttons
   /**

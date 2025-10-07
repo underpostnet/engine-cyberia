@@ -139,10 +139,11 @@ const CssCommonCore = async () => {
         font-size: 21px !important;
       }
       .down-arrow-submenu {
-        top: -20px;
-        text-align: right;
-        padding-right: 42px;
+        top: 0px;
         color: #5f5f5f;
+        left: 115px;
+        transform-origin: center;
+        width: 0px;
       }
       .main-body-btn {
         width: 50px;
@@ -218,6 +219,13 @@ const CssCommonCore = async () => {
       .panel-placeholder-bottom {
         height: 100px;
         color: gray;
+      }
+      .menu-label-text {
+        transition: 0.3s;
+        position: relative;
+      }
+      .menu-btn-container-children {
+        transition: 0.3s;
       }
     </style>
     ${boxShadow({ selector: '.account-profile-image' })}

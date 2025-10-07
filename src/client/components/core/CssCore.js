@@ -224,9 +224,6 @@ const CssCommonCore = async () => {
         transition: 0.3s;
         position: relative;
       }
-      .menu-btn-container-children {
-        transition: 0.3s;
-      }
     </style>
     ${boxShadow({ selector: '.account-profile-image' })}
     <div class="ag-grid-style"></div>`;
@@ -337,8 +334,8 @@ const CssCoreDark = {
         }
         .main-btn-menu {
           text-align: left;
+          transition: none; /* sortable necessary */
           padding: 15px;
-          transition: none;
           margin: 0;
           border: 0;
           height: 52px;
@@ -657,8 +654,8 @@ const CssCoreLight = {
         }
         .main-btn-menu {
           text-align: left;
+          transition: none; /* sortable necessary */
           padding: 15px;
-          transition: none;
           margin: 0;
           border: 0;
           height: 52px;

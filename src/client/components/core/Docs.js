@@ -185,46 +185,18 @@ const Docs = {
       tabHref = docData.url();
       docMenuRender += html`
         ${await BtnIcon.Render({
-          class: `in wfa btn-docs btn-docs-${docData.type}`,
+          class: `in wfa main-btn-menu btn-docs btn-docs-${docData.type} hide`,
           label: html`<span class="menu-btn-icon">${docData.icon}</span
             ><span class="menu-label-text menu-label-text-docs"> ${docData.text} </span>`,
           tabHref,
-
           tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption(docData.text, 'right')),
         })}
       `;
     }
     // s(`.menu-btn-container-children`).classList.remove('hide');
-    //
-    if (!s(`.menu-btn-container-docs`))
-      htmls(
-        '.menu-btn-container-children-docs',
-        html` <style>
-            .btn-docs {
-              height: 51px;
-              text-align: left;
-              border: none;
-            }
-          </style>
-
-          <div class="in menu-btn-container-docs hide">${docMenuRender}</div>`,
-      );
-    sa(`.main-btn-menu`).forEach((el) => {
-      //  if (!el.classList.contains('btn-docs')) el.classList.add('hide');
-    });
     // htmls(`.nav-path-display-${'modal-menu'}`, location.pathname);
-    const _hBtn = 51;
-    s(`.main-btn-docs`).style.height = `${_hBtn}px`;
 
-    s(`.main-btn-docs`).style.height = `${_hBtn * 8}px`;
-
-    setTimeout(() => {
-      s(`.menu-btn-container-docs`).classList.remove('hide');
-    }, 250);
-
-    setTimeout(() => {
-      s(`.down-arrow-submenu-docs`).style.rotate = '180deg';
-    });
+    htmls('.menu-btn-container-children-docs', docMenuRender);
 
     return html`test`;
   },

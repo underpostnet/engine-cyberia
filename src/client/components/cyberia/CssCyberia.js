@@ -593,9 +593,6 @@ const CssCyberiaDark = {
             width: 80%;
             height: 80%;
           }
-          .main-btn-menu {
-            text-align: left;
-          }
           .main-btn-menu-text {
             font-size: 14px;
             color: #ffcc00;

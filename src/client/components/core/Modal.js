@@ -2164,14 +2164,18 @@ const Modal = {
       if (Modal.subMenuBtnClass[keyDataBtn]) Modal.subMenuBtnClass[keyDataBtn].open = true;
       sa(labelSelector).forEach((el) => {
         el.classList.add('hide');
+        el.style.transition = null;
       });
       sa(btnSelector).forEach((el) => {
         el.classList.overflow = 'hidden';
       });
       setTimeout(() => {
         sa(labelSelector).forEach((el) => {
-          el.style.top = '-40px';
           el.classList.remove('hide');
+          el.style.transition = null;
+        });
+        sa(labelSelector).forEach((el) => {
+          el.style.top = '-40px';
         });
       }, 300);
       setTimeout(() => {

@@ -70,7 +70,7 @@ const Modal = {
     let slideMenuWidth = originSlideMenuWidth;
     const minWidth = width;
     const heightDefaultTopBar = 50;
-    const heightDefaultBottomBar = 50;
+    const heightDefaultBottomBar = 0;
     const idModal = options && 'id' in options ? options.id : getId(this.Data, 'modal-');
     this.Data[idModal] = {
       options,
@@ -90,6 +90,11 @@ const Modal = {
       getTop: () => {
         const result =
           window.innerHeight - (options.heightBottomBar ? options.heightBottomBar : heightDefaultBottomBar);
+        // TODO: mobile padding gap on init size top height, Iphone SE responsive case
+        logger.warn('getTop', {
+          top: result,
+          height: Modal.Data[idModal].getHeight(),
+        });
         return result;
       },
       getHeight: () => {
@@ -1312,6 +1317,8 @@ const Modal = {
                   removeEvent();
                 }
               });
+              // TODO: mobile padding gap on init size top height, Iphone SE responsive case
+              setTimeout(window.onresize);
             });
           })();
           break;
@@ -2159,7 +2166,11 @@ const Modal = {
       Object.keys(Modal.subMenuBtnClass).length > 0 ? Modal.subMenuBtnClass : { _: { btnSelector, labelSelector } };
 
     for (const keyDataBtn of Object.keys(_data)) {
-      const { btnSelector, labelSelector, open } = _data[keyDataBtn];
+      const { btnSelector, labelSelector, open, top } = _data[keyDataBtn];
+      if (top)
+        setTimeout(() => {
+          top();
+        });
       if (open) continue;
       if (Modal.subMenuBtnClass[keyDataBtn]) Modal.subMenuBtnClass[keyDataBtn].open = true;
       sa(labelSelector).forEach((el) => {

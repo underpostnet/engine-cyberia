@@ -113,7 +113,7 @@ const Modal = {
       left = `${windowGetW() / 2 - width / 2}px`;
     }
     if (options && 'mode' in options) {
-      this.Data[idModal][options.mode] = {};
+      Modal.Data[idModal][options.mode] = {};
       switch (options.mode) {
         case 'view':
           // if (options && options.slideMenu) s(`.btn-close-${options.slideMenu}`).click();
@@ -251,7 +251,7 @@ const Modal = {
               }
             };
             barConfig.buttons.menu.onClick = () => {
-              this.Data[idModal][options.mode].width = slideMenuWidth;
+              Modal.Data[idModal][options.mode].width = slideMenuWidth;
               s(`.btn-menu-${idModal}`).classList.add('hide');
               s(`.btn-close-${idModal}`).classList.remove('hide');
               s(`.${idModal}`).style.width = `${this.Data[idModal][options.mode].width}px`;
@@ -274,7 +274,7 @@ const Modal = {
               Responsive.Event[`slide-menu-${idModal}`]();
             };
             barConfig.buttons.close.onClick = () => {
-              this.Data[idModal][options.mode].width = 0;
+              Modal.Data[idModal][options.mode].width = 0;
               s(`.btn-close-${idModal}`).classList.add('hide');
               s(`.btn-menu-${idModal}`).classList.remove('hide');
               s(`.${idModal}`).style.width = `${this.Data[idModal][options.mode].width}px`;
@@ -1130,7 +1130,7 @@ const Modal = {
                 });
                 EventsUI.onClick(`.action-btn-center`, (e) => {
                   e.preventDefault();
-                  this.actionBtnCenter();
+                  Modal.actionBtnCenter();
                 });
                 EventsUI.onClick(`.action-btn-right`, (e) => {
                   e.preventDefault();
@@ -1611,6 +1611,8 @@ const Modal = {
               this.Data[idModal].onExtendMenuListener[keyListener](),
             );
           }
+          Modal.Data[idModal][options.mode].width = slideMenuWidth;
+          Responsive.Event[`slide-menu-${idModal}`]();
         });
 
         break;
@@ -1927,7 +1929,7 @@ const Modal = {
         this.Data[idModal].onMenuListener[keyListener](),
       );
       if (options && 'barConfig' in options && options.barConfig.buttons.menu.onClick)
-        return options.barConfig.buttons.menu.onClick();
+        options.barConfig.buttons.menu.onClick();
     };
     s(`.btn-menu-${idModal}`).onclick = btnMenuEvent;
 

@@ -108,10 +108,6 @@ const Modal = {
       },
     };
 
-    if (idModal !== 'main-body' && options.mode !== 'view' && !options.disableCenter) {
-      top = `${windowGetH() / 2 - height / 2}px`;
-      left = `${windowGetW() / 2 - width / 2}px`;
-    }
     if (options && 'mode' in options) {
       Modal.Data[idModal][options.mode] = {};
       switch (options.mode) {
@@ -212,7 +208,7 @@ const Modal = {
             }
             const { barConfig } = options;
             options.style = {
-              position: 'absolute',
+              // position: 'absolute',
               height: `${windowGetH() - options.heightTopBar - options.heightBottomBar}px`,
               width: `${slideMenuWidth}px`,
               // 'overflow-x': 'hidden',
@@ -220,6 +216,7 @@ const Modal = {
               'z-index': 6,
               resize: 'none',
               top: `${options.heightTopBar ? options.heightTopBar : heightDefaultTopBar}px`,
+              left: `${options.barMode === 'top-bottom-bar' ? `${windowGetW() - originSlideMenuWidth}px` : '0px'}`,
             };
             options.mode === 'slide-menu-right' ? (options.style.right = '0px') : (options.style.left = '0px');
             const contentIconClass = 'abs center';
@@ -227,9 +224,8 @@ const Modal = {
             else options.class = 'hide';
             options.dragDisabled = true;
             options.titleClass = 'hide';
-            top = '0px';
-            left = 'auto';
-            width = 'auto';
+            options.disableCenter = true;
+
             // barConfig.buttons.maximize.disabled = true;
             // barConfig.buttons.minimize.disabled = true;
             // barConfig.buttons.restore.disabled = true;
@@ -254,7 +250,7 @@ const Modal = {
               Modal.Data[idModal][options.mode].width = slideMenuWidth;
               s(`.btn-menu-${idModal}`).classList.add('hide');
               s(`.btn-close-${idModal}`).classList.remove('hide');
-              s(`.${idModal}`).style.width = `${this.Data[idModal][options.mode].width}px`;
+              // s(`.${idModal}`).style.width = `${this.Data[idModal][options.mode].width}px`;
               s(`.html-${idModal}`).style.display = 'block';
               // s(`.title-modal-${idModal}`).style.display = 'block';
               setTimeout(() => {
@@ -264,9 +260,7 @@ const Modal = {
                   s(`.btn-bar-center-icon-close`).classList.remove('hide');
                   s(`.btn-bar-center-icon-menu`).classList.add('hide');
                 }
-              });
 
-              setTimeout(() => {
                 s(`.main-body-btn-container`).style[
                   true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
                 ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
@@ -277,8 +271,8 @@ const Modal = {
               Modal.Data[idModal][options.mode].width = 0;
               s(`.btn-close-${idModal}`).classList.add('hide');
               s(`.btn-menu-${idModal}`).classList.remove('hide');
-              s(`.${idModal}`).style.width = `${this.Data[idModal][options.mode].width}px`;
-              s(`.html-${idModal}`).style.display = 'none';
+              // s(`.${idModal}`).style.width = `${this.Data[idModal][options.mode].width}px`;
+              // s(`.html-${idModal}`).style.display = 'none';
               // s(`.title-modal-${idModal}`).style.display = 'none';
               setTimeout(() => {
                 s(`.main-body-btn-ui-menu-close`).classList.add('hide');
@@ -1348,10 +1342,17 @@ const Modal = {
           break;
       }
     }
+
     if (options.zIndexSync) this.zIndexSync({ idModal });
+
     if (s(`.${idModal}`)) {
       s(`.btn-maximize-${idModal}`).click();
       return;
+    }
+
+    if (idModal !== 'main-body' && options.mode !== 'view' && !options.disableCenter) {
+      top = `${windowGetH() / 2 - height / 2}px`;
+      left = `${windowGetW() / 2 - width / 2}px`;
     }
 
     const render = html` <style class="style-${idModal}">

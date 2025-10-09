@@ -1,5 +1,6 @@
 import { renderCssAttr } from './Css.js';
 import { append, s } from './VanillaJs.js';
+import { Modal } from './Modal.js';
 
 const ToolTip = {
   Tokens: {},
@@ -52,7 +53,13 @@ const ToolTip = {
     const tooltipEl = s(`.${tooltipId}`);
 
     containerEl.addEventListener('mouseenter', () => {
-      if (options.useMenuBtn && s(`.btn-icon-menu-mode-left`).classList.contains('hide')) return;
+      if (
+        options.useMenuBtn &&
+        s(
+          `.btn-icon-menu-mode-${Modal.Data['modal-menu'].options.mode === 'slide-menu-right' ? 'left' : 'right'}`,
+        ).classList.contains('hide')
+      )
+        return;
 
       const containerRect = containerEl.getBoundingClientRect();
       const tooltipRect = tooltipEl.getBoundingClientRect();

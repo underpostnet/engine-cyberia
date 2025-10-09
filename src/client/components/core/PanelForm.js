@@ -42,6 +42,7 @@ const PanelForm = {
       limit: 3, // Load 5 items per page
       hasMore: true,
       loading: false,
+      lasIdAvailable: null,
     };
 
     const formData = [
@@ -359,9 +360,10 @@ const PanelForm = {
             panelData.data = [];
           }
 
-          panelData.originData.push(...newInstance(result.data));
+          panelData.originData.push(...newInstance(result.data.data));
+          panelData.lasIdAvailable = result.data.lastId;
 
-          for (const documentObject of result.data) {
+          for (const documentObject of result.data.data) {
             let mdFileId, fileId;
             let mdBlob, fileBlob;
             let mdPlain, filePlain;
@@ -407,9 +409,9 @@ const PanelForm = {
             });
           }
 
-          panelData.skip += result.data.length;
-          panelData.hasMore = result.data.length === panelData.limit;
-          if (result.data.length < panelData.limit) {
+          panelData.skip += result.data.data.length;
+          panelData.hasMore = result.data.data.length === panelData.limit;
+          if (result.data.data.length === 0 || result.data.data.pop()._id === panelData.lasIdAvailable) {
             LoadingAnimation.spinner.stop(`.panel-placeholder-bottom-${idPanel}`);
             panelData.hasMore = false;
           }

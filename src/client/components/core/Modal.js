@@ -1120,6 +1120,7 @@ const Modal = {
                     //  <div class="in fll right-offset-menu-bottom-bar" style="height: 100%"></div>
                     // s(`.right-offset-menu-bottom-bar`).style.width = `${windowGetW() - slideMenuWidth}px`;
                     s(`.${id}`).style.top = `${Modal.Data['modal-menu'].getTop()}px`;
+                    s(`.${id}`).style.width = `${windowGetW()}px`;
                   };
                   // Responsive.Event[`view-${id}`]();
                 }
@@ -1561,6 +1562,7 @@ const Modal = {
         };
         EventsUI.onClick(`.btn-icon-menu-back`, backMenuButtonEvent);
         EventsUI.onClick(`.btn-icon-menu-mode`, () => {
+          Modal.subMenuBtnClass = {};
           if (s(`.btn-icon-menu-mode-right`).classList.contains('hide')) {
             s(`.btn-icon-menu-mode-right`).classList.remove('hide');
             s(`.btn-icon-menu-mode-left`).classList.add('hide');
@@ -1569,17 +1571,15 @@ const Modal = {
             s(`.btn-icon-menu-mode-right`).classList.add('hide');
           }
           if (slideMenuWidth === originSlideMenuWidth) {
-            Modal.subMenuBtnClass = {};
             slideMenuWidth = collapseSlideMenuWidth;
-            setTimeout(() => {
+            s(`.${idModal}`).style.width = `${slideMenuWidth}px`;
+            sa(`.menu-label-text`).forEach((el) => el.classList.add('hide'));
               s(`.main-body-btn-container`).style[
                 true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
               ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
-            }, 1);
-
-            if (!s(`.btn-bar-center-icon-close`).classList.contains('hide')) {
               sa(`.handle-btn-container`).forEach((el) => el.classList.add('hide'));
-              sa(`.menu-label-text`).forEach((el) => el.classList.add('hide'));
+            // TODO: tooltip refactor visible
+            if (!s(`.btn-bar-center-icon-close`).classList.contains('hide')) {
               if (!Modal.mobileModal()) {
                 sa(`.tooltip-menu`).forEach((el) => el.classList.remove('hide'));
                 // s(`.${idModal}`).style.overflow = 'visible';
@@ -1593,12 +1593,11 @@ const Modal = {
             );
           } else {
             slideMenuWidth = originSlideMenuWidth;
-            setTimeout(() => {
+            s(`.${idModal}`).style.width = `${slideMenuWidth}px`;
+            sa(`.menu-label-text`).forEach((el) => el.classList.remove('hide'));
               s(`.main-body-btn-container`).style[
                 true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
               ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
-            }, 1);
-
             sa(`.handle-btn-container`).forEach((el) => el.classList.remove('hide'));
 
             Modal.menuTextLabelAnimation(idModal);
@@ -1614,9 +1613,6 @@ const Modal = {
               this.Data[idModal].onExtendMenuListener[keyListener](),
             );
           }
-          // btn-bar-center-icon-menu
-          this.actionBtnCenter();
-          this.actionBtnCenter();
         });
 
         break;

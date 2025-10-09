@@ -91,10 +91,10 @@ const Modal = {
       getTop: () => {
         const result = windowGetH() - (options.heightBottomBar ? options.heightBottomBar : heightDefaultBottomBar);
         // TODO: mobile padding gap on init size top height, Iphone SE responsive case
-        logger.warn('getTop', {
-          top: result,
-          height: Modal.Data[idModal].getHeight(),
-        });
+        // logger.warn('getTop', {
+        //   top: result,
+        //   height: Modal.Data[idModal].getHeight(),
+        // });
         return result;
       },
       getHeight: () => {
@@ -106,6 +106,12 @@ const Modal = {
             : 0)
         );
       },
+      getMenuLeftStyle: (options = { open: false }) =>
+        `${
+          options.barMode === 'top-bottom-bar'
+            ? `${windowGetW() + (options?.open ? -1 * originSlideMenuWidth : originSlideMenuWidth)}px`
+            : `-${options?.open ? '0px' : originSlideMenuWidth}px`
+        }`,
     };
 
     if (options && 'mode' in options) {
@@ -208,7 +214,6 @@ const Modal = {
             }
             const { barConfig } = options;
             options.style = {
-              // position: 'absolute',
               height: `${windowGetH() - options.heightTopBar - options.heightBottomBar}px`,
               width: `${slideMenuWidth}px`,
               // 'overflow-x': 'hidden',
@@ -216,12 +221,11 @@ const Modal = {
               'z-index': 6,
               resize: 'none',
               top: `${options.heightTopBar ? options.heightTopBar : heightDefaultTopBar}px`,
-              left: `${options.barMode === 'top-bottom-bar' ? `${windowGetW() - originSlideMenuWidth}px` : '0px'}`,
             };
-            options.mode === 'slide-menu-right' ? (options.style.right = '0px') : (options.style.left = '0px');
             const contentIconClass = 'abs center';
-            if (options.class) options.class += ' hide';
-            else options.class = 'hide';
+            top = 'auto';
+            left = 'auto';
+            transition = '.3s';
             options.dragDisabled = true;
             options.titleClass = 'hide';
             options.disableCenter = true;
@@ -238,6 +242,7 @@ const Modal = {
                   this.Data[_idModal].slideMenu.callBack();
               }
               s(`.${idModal}`).style.height = `${Modal.Data[idModal].getHeight()}px`;
+              s(`.${idModal}`).style.left = Modal.Data[idModal].getMenuLeftStyle({ open: true });
               if (s(`.main-body-top`)) {
                 if (Modal.mobileModal()) {
                   if (s(`.btn-menu-${idModal}`).classList.contains('hide') && collapseSlideMenuWidth !== slideMenuWidth)
@@ -265,6 +270,11 @@ const Modal = {
                   true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
                 ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
               });
+              if (options.barMode === 'top-bottom-bar') {
+                s(`.${idModal}`).style.left = `${windowGetW() - originSlideMenuWidth}px`;
+              } else {
+                s(`.${idModal}`).style.left = `0px`;
+              }
               Responsive.Event[`slide-menu-${idModal}`]();
             };
             barConfig.buttons.close.onClick = () => {
@@ -285,11 +295,17 @@ const Modal = {
                   true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
                 ] = `${0}px`;
               });
+              if (options.barMode === 'top-bottom-bar') {
+                s(`.${idModal}`).style.left = `${windowGetW() + originSlideMenuWidth}px`;
+              } else {
+                s(`.${idModal}`).style.left = `-${originSlideMenuWidth}px`;
+              }
               Responsive.Event[`slide-menu-${idModal}`]();
             };
             transition += `, width 0.3s`;
 
             setTimeout(() => {
+              Responsive.Event[`slide-menu-${idModal}`]();
               append(
                 'body',
                 html`
@@ -298,7 +314,7 @@ const Modal = {
                     style="top: ${options.heightTopBar + 50}px; z-index: 9; ${true ||
                     (options.mode && options.mode.match('right'))
                       ? 'right'
-                      : 'left'}: 50px; width: 50px; height: 150px; transition: .3s"
+                      : 'left'}: 0px; width: 50px; height: 150px; transition: .3s"
                   >
                     <div
                       class="abs main-body-btn main-body-btn-ui"
@@ -1573,10 +1589,10 @@ const Modal = {
             slideMenuWidth = collapseSlideMenuWidth;
             s(`.${idModal}`).style.width = `${slideMenuWidth}px`;
             sa(`.menu-label-text`).forEach((el) => el.classList.add('hide'));
-              s(`.main-body-btn-container`).style[
-                true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
-              ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
-              sa(`.handle-btn-container`).forEach((el) => el.classList.add('hide'));
+            s(`.main-body-btn-container`).style[
+              true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
+            ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
+            sa(`.handle-btn-container`).forEach((el) => el.classList.add('hide'));
             // TODO: tooltip refactor visible
             if (!s(`.btn-bar-center-icon-close`).classList.contains('hide')) {
               if (!Modal.mobileModal()) {
@@ -1594,9 +1610,9 @@ const Modal = {
             slideMenuWidth = originSlideMenuWidth;
             s(`.${idModal}`).style.width = `${slideMenuWidth}px`;
             sa(`.menu-label-text`).forEach((el) => el.classList.remove('hide'));
-              s(`.main-body-btn-container`).style[
-                true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
-              ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
+            s(`.main-body-btn-container`).style[
+              true || (options.mode && options.mode.match('right')) ? 'right' : 'left'
+            ] = options.mode && options.mode.match('right') ? `${slideMenuWidth}px` : '0px';
             sa(`.handle-btn-container`).forEach((el) => el.classList.remove('hide'));
 
             Modal.menuTextLabelAnimation(idModal);

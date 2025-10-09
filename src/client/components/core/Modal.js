@@ -1353,10 +1353,6 @@ const Modal = {
       s(`.btn-maximize-${idModal}`).click();
       return;
     }
-    if (options.slideMenu) {
-      if (options.titleClass) options.titleClass = ' title-view-modal ' + options.titleClass;
-      options.titleClass = ' title-view-modal ';
-    }
 
     const render = html` <style class="style-${idModal}">
         .${idModal} {
@@ -1473,7 +1469,9 @@ const Modal = {
               ? html` <div class="abs modal-icon-container">${renderStatus(options.status)}</div> `
               : ''}
             <div
-              class="inl title-modal-${idModal} ${options && options.titleClass ? options.titleClass : 'title-modal'}"
+              class="inl title-modal-${idModal} ${options && options.titleClass
+                ? options.titleClass
+                : 'title-main-modal'}"
             >
               ${options && options.titleRender ? options.titleRender() : options.title ? options.title : ''}
             </div>

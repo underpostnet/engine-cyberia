@@ -1,7 +1,7 @@
 {
     "type": "module",
     "main": "src/index.js",
-    "name": "engine-cyberia",
+    "name": "cyberia",
     "version": "2.8.885",
     "description": "pwa api rest template",
     "scripts": {
@@ -26,7 +26,7 @@
         "changelog": "auto-changelog"
     },
     "bin": {
-        "underpost": "bin/index.js"
+        "cyberia": "bin/index.js"
     },
     "repository": {
         "type": "git",

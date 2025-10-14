@@ -3,7 +3,7 @@
 import dotenv from 'dotenv';
 import { Command } from 'commander';
 import fs from 'fs-extra';
-import { shellExec } from '../src/server/process.js';
+import { shellExec, shellCd } from '../src/server/process.js';
 import { loggerFactory } from '../src/server/logger.js';
 import { DataBaseProvider } from '../src/db/DataBaseProvider.js';
 import {
@@ -14,9 +14,10 @@ import {
   generateRandomStats,
   itemTypes,
 } from '../src/server/object-layer.js';
-import { packageVersionFactory } from '../src/server/conf.js';
 
 import crypto from 'crypto';
+
+shellCd(`/home/dd/engine`);
 
 const logger = loggerFactory(import.meta);
 
@@ -50,7 +51,7 @@ await ObjectLayer.deleteMany();
 
 const program = new Command();
 
-const version = packageVersionFactory('cyberia');
+const version = JSON.parse(fs.readFileSync('./package.json', 'utf8')).version;
 
 program
   .name('cyberia')

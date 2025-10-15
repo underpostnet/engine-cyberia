@@ -33,14 +33,10 @@
         "url": "git+https://github.com/underpostnet/engine-cyberia.git"
     },
     "keywords": [
-        "pwa",
-        "microservices",
-        "template",
-        "builder",
-        "engine",
-        "server",
-        "proxy",
-        "client"
+        "cyberia",
+        "object-layer",
+        "game-engine",
+        "assets-management"
     ],
     "author": "https://github.com/underpostnet",
     "license": "MIT",

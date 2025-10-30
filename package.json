@@ -3,7 +3,7 @@
     "main": "src/index.js",
     "name": "cyberia",
     "version": "2.85.7",
-    "description": "pwa api rest template",
+    "description": "Cyberia Engine - Object Layer and Assets Management Microservice",
     "scripts": {
         "start": "env-cmd -f .env.production node --max-old-space-size=8192 src/server",
         "build": "node bin/deploy build-full-client",
@@ -35,7 +35,8 @@
         "cyberia",
         "object-layer",
         "game-engine",
-        "assets-management"
+        "assets-management",
+        "web3"
     ],
     "author": "https://github.com/underpostnet",
     "license": "MIT",

@@ -81,10 +81,7 @@ const ObjectLayerEngineModal = {
             `.frames-${directionCode}`,
             html`
               <div class="in fll ${id}">
-                <img
-                  class="in fll direction-code-bar-frames-img direction-code-bar-frames-img-${id}"
-                  src="${URL.createObjectURL(image)}"
-                />
+                <img class="in fll direction-code-bar-frames-img" src="${URL.createObjectURL(image)}" />
                 ${await BtnIcon.Render({
                   label: html`<i class="fa-solid fa-trash"></i>`,
                   class: `abs direction-code-bar-trash-btn direction-code-bar-trash-btn-${id}`,
@@ -92,13 +89,6 @@ const ObjectLayerEngineModal = {
               </div>
             `,
           );
-
-          EventsUI.onClick(`.direction-code-bar-frames-img-${id}`, async () => {
-            const frameData = ObjectLayerEngineModal.ObjectLayerData[directionCode].find((frame) => frame.id === id);
-            if (frameData && frameData.json) {
-              s('object-layer-engine').importMatrixJSON(frameData.json);
-            }
-          });
 
           EventsUI.onClick(`.direction-code-bar-trash-btn-${id}`, async () => {
             s(`.${id}`).remove();
@@ -109,46 +99,6 @@ const ObjectLayerEngineModal = {
         });
 
         EventsUI.onClick(`.ol-btn-save`, async () => {
-          const requiredDirectionCodes = ['08', '02', '04', '06'];
-          const missingFrames = [];
-
-          for (const directionCode of requiredDirectionCodes) {
-            if (
-              !ObjectLayerEngineModal.ObjectLayerData[directionCode] ||
-              ObjectLayerEngineModal.ObjectLayerData[directionCode].length === 0
-            ) {
-              missingFrames.push(directionCode);
-            }
-          }
-
-          if (missingFrames.length > 0) {
-            NotificationManager.Push({
-              html: `At least one frame must exist for directions: ${missingFrames.join(', ')}`,
-              status: 'error',
-            });
-            return;
-          }
-
-          // Validate minimum frame_duration 100ms
-          const frameDuration = parseInt(s(`.ol-input-render-frame-duration`).value);
-          if (!frameDuration || frameDuration < 100) {
-            NotificationManager.Push({
-              html: 'Frame duration must be at least 100ms',
-              status: 'error',
-            });
-            return;
-          }
-
-          // Validate that item.id is not empty
-          const itemId = s(`.ol-input-item-id`).value;
-          if (!itemId || itemId.trim() === '') {
-            NotificationManager.Push({
-              html: 'Item ID is required',
-              status: 'error',
-            });
-            return;
-          }
-
           const objectLayer = {
             data: {
               render: {
@@ -249,23 +199,10 @@ const ObjectLayerEngineModal = {
           {
             delete objectLayer.data.render.frames;
             delete objectLayer.data.render.color;
-            const { status, data, message } = await ObjectLayerService.post({
+            const { status, data } = await ObjectLayerService.post({
               id: `metadata/${objectLayer.data.item.type}/${objectLayer.data.item.id}`,
               body: objectLayer,
             });
-
-            if (status === 'success') {
-              NotificationManager.Push({
-                html: `Object layer "${objectLayer.data.item.id}" created successfully!`,
-                status: 'success',
-              });
-              ObjectLayerEngineModal.toManagement();
-            } else {
-              NotificationManager.Push({
-                html: `Error creating object layer: ${message}`,
-                status: 'error',
-              });
-            }
           }
         });
       });
@@ -287,72 +224,21 @@ const ObjectLayerEngineModal = {
       `;
     }
 
-    const statDescriptions = {
-      effect: {
-        title: 'Effect',
-        icon: 'fa-solid fa-burst',
-        description: 'Amount of life removed when an entity collides or deals an impact.',
-        detail: 'Measured in life points.',
-      },
-      resistance: {
-        title: 'Resistance',
-        icon: 'fa-solid fa-shield',
-        description: "Adds to the owner's maximum life (survivability cap).",
-        detail:
-          "This value is summed with the entity's base max life. It also increases the amount of life restored when a regeneration event occurs (adds directly to current life).",
-      },
-      agility: {
-        title: 'Agility',
-        icon: 'fa-solid fa-person-running',
-        description: 'Increases the movement speed of entities.',
-        detail: 'Higher values result in faster movement.',
-      },
-      range: {
-        title: 'Range',
-        icon: 'fa-solid fa-bullseye',
-        description: 'Increases the lifetime of a cast/summoned entity.',
-        detail: 'Measured in milliseconds.',
-      },
-      intelligence: {
-        title: 'Intelligence',
-        icon: 'fa-solid fa-brain',
-        description: 'Probability-based stat that increases the chance to spawn/trigger a summoned entity.',
-        detail: 'Higher values increase summoning success rate.',
-      },
-      utility: {
-        title: 'Utility',
-        icon: 'fa-solid fa-wrench',
-        description: 'Reduces the cooldown time between actions, allowing for more frequent actions.',
-        detail: 'It also increases the chance to trigger life-regeneration events.',
-      },
-    };
-
     let statsInputsRender = '';
     for (const statType of statTypes) {
-      const statInfo = statDescriptions[statType];
       statsInputsRender += html`
-        <div class="inl" style="margin-bottom: 10px; position: relative;">
-          ${await Input.Render({
-            id: `ol-input-item-stats-${statType}`,
-            label: html`<div
-              title="${statInfo.description} ${statInfo.detail}"
-              class="inl stat-label-container stat-info-icon"
-              style="width: 120px; font-size: 16px; overflow: visible; position: relative;"
-            >
-              <i class="${statInfo.icon}" style="margin-right: 5px;"></i> ${statInfo.title}
-            </div>`,
-            containerClass: 'inl',
-            type: 'number',
-            min: 0,
-            max: 10,
-            placeholder: true,
-            value: 0,
-          })}
-          <div class="in stat-description">
-            ${statInfo.description}<br />
-            <span style="color: #888; font-style: italic;">${statInfo.detail}</span>
-          </div>
-        </div>
+        ${await Input.Render({
+          id: `ol-input-item-stats-${statType}`,
+          label: html`<div class="inl" style="width: 120px; font-size: 16px; overflow: hidden">
+            <i class="fa-solid fa-chart-simple"></i> ${statType}
+          </div>`,
+          containerClass: 'inl',
+          type: 'number',
+          min: 0,
+          max: 10,
+          placeholder: true,
+          value: 0,
+        })}
       `;
     }
 
@@ -367,7 +253,6 @@ const ObjectLayerEngineModal = {
           width: 100px;
           height: auto;
           margin: 3px;
-          cursor: pointer;
         }
         .direction-code-bar-trash-btn {
           top: 3px;
@@ -388,19 +273,6 @@ const ObjectLayerEngineModal = {
         }
         .sub-title-modal {
           color: #ffcc00;
-        }
-        .stat-label-container {
-          display: flex;
-          align-items: center;
-        }
-        .stat-info-icon {
-          cursor: default;
-        }
-        .stat-description {
-          padding: 2px 5px;
-          border-left: 2px solid #444;
-          margin-bottom: 5px;
-          max-width: 200px;
         }
       </style>
       ${borderChar(2, 'black', ['.sub-title-modal'])}
@@ -576,11 +448,6 @@ const ObjectLayerEngineModal = {
     }
 
     return objectLayerFrameDirections;
-  },
-  toManagement: () => {
-    const _s = s(`.management-table-btn-reload-modal-object-layer-engine-management`);
-    if (_s) _s.click();
-    s(`.main-btn-object-layer-engine-management`).click();
   },
 };
 

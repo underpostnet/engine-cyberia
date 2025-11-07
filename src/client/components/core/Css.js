@@ -221,11 +221,8 @@ const borderChar = (px, color, selectors, hover = false) => {
         (selector) => html`
           <style>
             ${selector}${hover ? ':hover' : ''} {
-              text-shadow:
-                ${px}px -${px}px ${px}px ${color},
-                -${px}px ${px}px ${px}px ${color},
-                -${px}px -${px}px ${px}px ${color},
-                ${px}px ${px}px ${px}px ${color};
+              text-shadow: ${px}px -${px}px ${px}px ${color}, -${px}px ${px}px ${px}px ${color},
+                -${px}px -${px}px ${px}px ${color}, ${px}px ${px}px ${px}px ${color};
             }
           </style>
         `,
@@ -242,28 +239,20 @@ const boxShadow = ({ selector }) => html`
     ? html`
         <style>
           ${selector} {
-            box-shadow:
-              0 4px 8px 0 rgba(255, 255, 255, 0.1),
-              0 6px 20px 0 rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 8px 0 rgba(255, 255, 255, 0.1), 0 6px 20px 0 rgba(255, 255, 255, 0.08);
           }
           ${selector}:hover {
-            box-shadow:
-              0 8px 16px 0 rgba(255, 255, 255, 0.15),
-              0 10px 30px 0 rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 16px 0 rgba(255, 255, 255, 0.15), 0 10px 30px 0 rgba(255, 255, 255, 0.1);
           }
         </style>
       `
     : html`
         <style>
           ${selector} {
-            box-shadow:
-              0 4px 8px 0 rgba(0, 0, 0, 0.2),
-              0 6px 20px 0 rgba(0, 0, 0, 0.19);
+            box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
           }
           ${selector}:hover {
-            box-shadow:
-              0 8px 16px 0 rgba(0, 0, 0, 0.2),
-              0 10px 30px 0 rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.2), 0 10px 30px 0 rgba(0, 0, 0, 0.3);
           }
         </style>
       `}
@@ -463,9 +452,7 @@ const typeWriter = async function ({ id, html, seconds, endHideBlink, container 
           overflow: hidden;
           border-right: 0.15em solid orange;
           white-space: nowrap;
-          animation:
-            typing-${id} ${typingAnimationTransitionStyle[1]},
-            blink-caret-${id} 0.5s step-end infinite;
+          animation: typing-${id} ${typingAnimationTransitionStyle[1]}, blink-caret-${id} 0.5s step-end infinite;
           animation-fill-mode: forwards;
           width: 0;
         }
@@ -530,20 +517,12 @@ const dashRange = ({ selector, color }) => {
   return html`
     <style>
       .${selector} {
-        background:
-          linear-gradient(90deg, ${color} 50%, transparent 50%), linear-gradient(90deg, ${color} 50%, transparent 50%),
-          linear-gradient(0deg, ${color} 50%, transparent 50%), linear-gradient(0deg, ${color} 50%, transparent 50%);
+        background: linear-gradient(90deg, ${color} 50%, transparent 50%),
+          linear-gradient(90deg, ${color} 50%, transparent 50%), linear-gradient(0deg, ${color} 50%, transparent 50%),
+          linear-gradient(0deg, ${color} 50%, transparent 50%);
         background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
-        background-size:
-          16px 4px,
-          16px 4px,
-          4px 16px,
-          4px 16px;
-        background-position:
-          0% 0%,
-          100% 100%,
-          0% 100%,
-          100% 0px;
+        background-size: 16px 4px, 16px 4px, 4px 16px, 4px 16px;
+        background-position: 0% 0%, 100% 100%, 0% 100%, 100% 0px;
         border-radius: 5px;
         padding: 10px;
         animation: ${selector}_dash_range 5s linear infinite;
@@ -551,11 +530,7 @@ const dashRange = ({ selector, color }) => {
 
       @keyframes ${selector}_dash_range {
         to {
-          background-position:
-            100% 0%,
-            0% 100%,
-            0% 0%,
-            100% 100%;
+          background-position: 100% 0%, 0% 100%, 0% 0%, 100% 100%;
         }
       }
     </style>
@@ -685,8 +660,8 @@ const scrollBarLightRender = () => {
         ::-` +
         b +
         `-scrollbar {
-          width: 5px;
-          height: 5px;
+          width: 5px;      
+          height: 5px; 
         }
 
         /* Track */
@@ -715,10 +690,6 @@ const scrollBarLightRender = () => {
     .join('');
 };
 
-// adjustHex: supports #RGB #RGBA #RRGGBB #RRGGBBAA
-// preserves alpha channel if present (does not modify it)
-// usage: adjustHex('#24FBFFFF', 0.1)
-
 function adjustHex(hex, factor = 0.1, options = {}) {
   if (typeof hex !== 'string') throw new TypeError('hex must be a string');
   if (typeof factor !== 'number') throw new TypeError('factor must be a number');
@@ -730,34 +701,27 @@ function adjustHex(hex, factor = 0.1, options = {}) {
 
   const mode = options.mode === 'hsl' ? 'hsl' : 'mix';
 
-  // normalize hex: accept 3,4,6,8 (with or without #)
+  // normalize hex
   let h = hex.replace(/^#/, '').trim();
-  if (![3, 4, 6, 8].includes(h.length)) {
-    throw new Error('Invalid hex format — expected 3, 4, 6 or 8 hex digits');
-  }
-
-  // expand shorthand (#RGB or #RGBA -> #RRGGBB or #RRGGBBAA)
-  if (h.length === 3 || h.length === 4) {
+  if (!(h.length === 3 || h.length === 6)) throw new Error('Invalid hex format');
+  if (h.length === 3)
     h = h
       .split('')
       .map((c) => c + c)
       .join('');
-  }
-
-  const hasAlpha = h.length === 8;
 
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
   const b = parseInt(h.slice(4, 6), 16);
-  const a = hasAlpha ? parseInt(h.slice(6, 8), 16) : null; // keep alpha as-is if present
 
-  const clamp = (v, a0 = 0, z = 255) => Math.max(a0, Math.min(z, v));
+  const clamp = (v, a = 0, z = 255) => Math.max(a, Math.min(z, v));
 
-  const rgbToHex = (rr, gg, bb, aa = null) => {
-    const parts = [rr, gg, bb].map((v) => Math.round(v).toString(16).padStart(2, '0'));
-    if (aa !== null) parts.push(Math.round(aa).toString(16).padStart(2, '0'));
-    return '#' + parts.join('').toLowerCase();
-  };
+  const rgbToHex = (rr, gg, bb) =>
+    '#' +
+    [rr, gg, bb]
+      .map((v) => Math.round(v).toString(16).padStart(2, '0'))
+      .join('')
+      .toLowerCase();
 
   if (mode === 'mix') {
     // positive: mix toward white (255); negative: mix toward black (0)
@@ -765,15 +729,11 @@ function adjustHex(hex, factor = 0.1, options = {}) {
       if (factor >= 0) {
         return clamp(Math.round(c + (255 - c) * factor));
       } else {
-        const aFactor = Math.abs(factor);
-        return clamp(Math.round(c * (1 - aFactor)));
+        const a = Math.abs(factor);
+        return clamp(Math.round(c * (1 - a)));
       }
     };
-
-    const rr = mixChannel(r);
-    const gg = mixChannel(g);
-    const bb = mixChannel(b);
-    return rgbToHex(rr, gg, bb, a);
+    return rgbToHex(mixChannel(r), mixChannel(g), mixChannel(b));
   } else {
     // HSL mode: convert rgb to hsl, adjust L by factor, convert back
     const rgbToHsl = (r, g, b) => {
@@ -831,15 +791,9 @@ function adjustHex(hex, factor = 0.1, options = {}) {
     let newL = ll + factor;
     newL = Math.max(0, Math.min(1, newL));
     const { r: r2, g: g2, b: b2 } = hslToRgb(hh, ss, newL);
-    return rgbToHex(r2, g2, b2, a);
+    return rgbToHex(r2, g2, b2);
   }
 }
-
-// Examples (uncomment to test):
-// console.log(adjustHex('#24FBFFFF', 0.1)); // accepts 8-digit input
-// console.log(adjustHex('#24FBFF', 0.1));   // 6-digit
-// console.log(adjustHex('#4bf', -0.2));     // 3-digit
-// console.log(adjustHex('#4bf8', -0.2));    // 4-digit (with alpha)
 
 // Convenience helpers:
 function lightenHex(hex, percentOr01 = 0.1, options = {}) {
@@ -913,7 +867,7 @@ const scrollBarDarkRender = () => {
         b +
         `-scrollbar {
       width: 8px;
-      height: 8px;
+      height: 8px; 
       /* line-height: 1em; */
     }
 
@@ -1057,30 +1011,29 @@ const cssEffect = async (containerSelector, event) => {
   }, 600);
 };
 
-const imageShimmer = () =>
-  html`<div
-    class="abs center ssr-shimmer-search-box"
+const imageShimmer = () => html`<div
+  class="abs center ssr-shimmer-search-box"
+  style="${renderCssAttr({
+    style: {
+      width: '95%',
+      height: '95%',
+      'border-radius': '10px',
+      overflow: 'hidden',
+    },
+  })}"
+>
+  <div
+    class="abs center"
     style="${renderCssAttr({
       style: {
-        width: '95%',
-        height: '95%',
-        'border-radius': '10px',
-        overflow: 'hidden',
+        'font-size': '70px',
+        color: `#bababa`,
       },
     })}"
   >
-    <div
-      class="abs center"
-      style="${renderCssAttr({
-        style: {
-          'font-size': '70px',
-          color: `#bababa`,
-        },
-      })}"
-    >
-      <i class="fa-solid fa-photo-film"></i>
-    </div>
-  </div>`;
+    <i class="fa-solid fa-photo-film"></i>
+  </div>
+</div>`;
 
 const renderChessPattern = (patternSize = 20) =>
   `background: repeating-conic-gradient(#808080 0 25%, #0000 0 50%) 50% / ${patternSize}px ${patternSize}px`;

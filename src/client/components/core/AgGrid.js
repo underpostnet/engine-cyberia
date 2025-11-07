@@ -62,9 +62,7 @@ const AgGrid = {
       if (!options.style || !options.style.height) {
         if (options.parentModal && Modal.Data[options.parentModal].options.observer) {
           Modal.Data[options.parentModal].onObserverListener[id + '-observer'] = ({ width, height }) => {
-            if (s(`.${id}`))
-              s(`.${id}`).style.height =
-                `${height - 180 + (options.customHeightOffset ? options.customHeightOffset : 0)}px`;
+            if (s(`.${id}`)) s(`.${id}`).style.height = `${height - 180}px`;
             else delete Modal.Data[options.parentModal].onObserverListener[id + '-observer'];
           };
           s(`.${id}`).style.height = `${s(`.${options.parentModal}`).offsetHeight - 180}px`;

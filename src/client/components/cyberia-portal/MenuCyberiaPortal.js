@@ -259,9 +259,8 @@ const MenuCyberiaPortal = {
 
     ThemeEvents['portal-main-theme-event'] = () => {
       const srcLogo = darkTheme
-        ? `${getProxyPath()}assets/ui-icons/cyberia-white.png`
-        : `${getProxyPath()}assets/ui-icons/cyberia-white.png`;
-
+        ? `${getProxyPath()}assets/splash/favicon-white-alpha.png`
+        : `${getProxyPath()}assets/splash/favicon-black-alpha.png`;
       htmls('.action-btn-app-icon-render', html`<img class="inl top-bar-app-icon" src="${srcLogo}" />`);
 
       if (darkTheme) {

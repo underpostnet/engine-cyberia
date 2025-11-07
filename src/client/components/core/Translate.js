@@ -516,10 +516,6 @@ const TranslateCore = {
       en: 'Cron Management',
       es: 'Gestion de cron jobs',
     };
-    Translate.Data['success-reload-data'] = {
-      en: 'Data reloaded successfully.',
-      es: 'Datos recargados con éxito.',
-    };
   },
 };
 

@@ -11,8 +11,8 @@ const CssCommonCryptokoyn = async () => {
     classes: 'inl',
     style: 'width: 100px; height: 100px',
   });
-  subThemeManager.setDarkTheme('#ff0d0d');
-  subThemeManager.setLightTheme('#ffcc00');
+  subThemeManager.setDarkTheme('#00ff00');
+  subThemeManager.setLightTheme('#00cc00');
   Modal.labelSelectorTopOffsetEndAnimation = '-15px';
   await AgGrid.RenderStyle({
     eventThemeId: 'CssCommonCryptokoyn',
@@ -112,7 +112,7 @@ const CssCryptokoynDark = {
             color: black !important;
           }
         </style>
-        ${borderChar(2, `#ff0d0d`, ['.default-slide-menu-top-bar-fix-title-container-text'])}
+        ${borderChar(2, `#00ff00`, ['.default-slide-menu-top-bar-fix-title-container-text'])}
       `
     );
   },
@@ -137,7 +137,7 @@ const CssCryptokoynLight = {
           }
           .default-slide-menu-top-bar-fix-title-container-text {
             font-size: 40px !important;
-            color: yellow !important;
+            color: #00cc00 !important;
           }
         </style>
         ${borderChar(1, `#010101`, ['.default-slide-menu-top-bar-fix-title-container-text'])}

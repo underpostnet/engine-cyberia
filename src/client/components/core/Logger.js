@@ -5,16 +5,9 @@ const loggerFactory = (meta, options = { trace: false }) => {
   const types = ['error', 'warn', 'info', 'debug'];
   const logger = {
     log: function (type, args) {
-      if (location.hostname !== 'localhost' && console.log() !== null) {
-        console.log = () => null;
-        console.error = () => null;
-        console.info = () => null;
-        console.warn = () => null;
-      }
+      if (!window.renderPayload.dev) return;
       if (options.trace === true) args.push(getCurrentTrace().split('Logger.js:23')[1]);
-      return location.hostname === 'localhost'
-        ? console[type](`[${meta}] ${new Date().toISOString()} ${type}:`, ...args)
-        : null;
+      return console[type](`[${meta}] ${new Date().toISOString()} ${type}:`, ...args);
     },
   };
   types.map(

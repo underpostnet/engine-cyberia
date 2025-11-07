@@ -10,6 +10,7 @@ import {
   pngDirectoryIteratorByObjectLayerType,
   frameFactory,
   getKeyFramesDirectionsFromNumberFolderDirection,
+  processAndPushFrame,
   buildImgFromTile,
   generateRandomStats,
   itemTypes,
@@ -35,11 +36,23 @@ program
   .version(version);
 
 program
+  .command('underpost')
+  .description('Underpost cli passthrough')
+  .action(() => {
+    process.argv = process.argv.filter((c) => c !== 'underpost');
+    underpostProgram.parse();
+  });
+
+program
   .command('ol')
   .option('--import [object-layer-type]', 'Commas separated object layer types e.g. skin,floors')
   .option('--show-frame <show-frame-input>', 'View object layer frame e.g. anon_08_0')
   .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
-  .action(async (options = { import: false, showFrame: '', envPath: '' }) => {
+  .option('--mongo-host <mongo-host>', 'Mongo host override')
+  .action(async (options = { import: false, showFrame: '', envPath: '', mongoHost: '' }) => {
+    if (!options.envPath) options.envPath = `./env`;
+    dotenv.config({ path: options.envPath, override: true });
+
     const deployId = process.env.DEFAULT_DEPLOY_ID;
     const host = process.env.DEFAULT_DEPLOY_HOST;
     const path = process.env.DEFAULT_DEPLOY_PATH;
@@ -48,7 +61,7 @@ program
     const confServer = JSON.parse(fs.readFileSync(confServerPath, 'utf8'));
     const { db } = confServer[host][path];
 
-    db.host = db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
+    db.host = options.mongoHost ? options.mongoHost : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
     logger.info('env', {
       deployId,
@@ -67,9 +80,6 @@ program
     const ObjectLayer = DataBaseProvider.instance[`${host}${path}`].mongoose.models.ObjectLayer;
 
     await ObjectLayer.deleteMany();
-    if (!options.envPath) options.envPath = `./engine-private/conf/dd-cyberia/.env.production`;
-
-    dotenv.config({ path: options.envPath, override: true });
 
     const objectLayers = {};
 
@@ -101,16 +111,8 @@ program
                       stats: generateRandomStats(),
                     },
                   };
-              objectLayers[objectLayerId].data.render.colors = [];
-              objectLayers[objectLayerId].data.render.frames = {};
             }
-            const frameFactoryResult = await frameFactory(path, objectLayers[objectLayerId].data.render.colors);
-            objectLayers[objectLayerId].data.render.colors = frameFactoryResult.colors;
-            for (const objectLayerFrameDirection of getKeyFramesDirectionsFromNumberFolderDirection(direction)) {
-              if (!objectLayers[objectLayerId].data.render.frames[objectLayerFrameDirection])
-                objectLayers[objectLayerId].data.render.frames[objectLayerFrameDirection] = [];
-              objectLayers[objectLayerId].data.render.frames[objectLayerFrameDirection].push(frameFactoryResult.frame);
-            }
+            await processAndPushFrame(objectLayers[objectLayerId].data.render, path, direction);
           },
         );
       }
@@ -143,8 +145,8 @@ program
   .description('Object layer management');
 
 try {
+  // throw new Error('');
   program.parse();
 } catch (error) {
-  console.error('Cyberia cli reference not found', error);
-  underpostProgram.parse();
+  logger.error(error);
 }

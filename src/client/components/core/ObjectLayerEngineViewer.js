@@ -3,10 +3,13 @@ import { getProxyPath, listenQueryPathInstance, setPath, setQueryParams } from '
 import { ObjectLayerService } from '../../services/object-layer/object-layer.service.js';
 import { NotificationManager } from './NotificationManager.js';
 import { htmls, s } from './VanillaJs.js';
-import { BtnIcon } from './BtnIcon.js';
+
 import { darkTheme, ThemeEvents } from './Css.js';
 import { ObjectLayerManagement } from '../../services/object-layer/object-layer.management.js';
 import { ObjectLayerEngineModal } from './ObjectLayerEngineModal.js';
+import { Modal } from './Modal.js';
+import { DefaultManagement } from '../../services/default/default.management.js';
+import { AgGrid } from './AgGrid.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -40,23 +43,12 @@ const ObjectLayerEngineViewer = {
     return directionCodeMap[key] || null;
   },
 
-  // Get all possible direction names for a direction code
-  getDirectionsFromDirectionCode: function (directionCode) {
-    const directionMap = {
-      '08': ['down_idle', 'none_idle', 'default_idle'],
-      18: ['down_walking'],
-      '02': ['up_idle'],
-      12: ['up_walking'],
-      '04': ['left_idle', 'up_left_idle', 'down_left_idle'],
-      14: ['left_walking', 'up_left_walking', 'down_left_walking'],
-      '06': ['right_idle', 'up_right_idle', 'down_right_idle'],
-      16: ['right_walking', 'up_right_walking', 'down_right_walking'],
-    };
-    return directionMap[directionCode] || [];
-  },
-
   Render: async function ({ Elements }) {
     const id = 'object-layer-engine-viewer';
+
+    Modal.Data[`modal-${id}`].onReloadModalListener[id] = async () => {
+      ObjectLayerEngineViewer.Reload({ Elements });
+    };
 
     // Listen for cid query parameter
     listenQueryPathInstance(
@@ -74,25 +66,6 @@ const ObjectLayerEngineViewer = {
       'cid',
     );
 
-    setTimeout(async () => {
-      htmls(
-        `#${id}`,
-        html` <div class="inl section-mp">
-          <div class="in">
-            <div class="fl">
-              <div class="in fll">
-                ${await BtnIcon.Render({
-                  class: 'section-mp main-button',
-                  label: html`<i class="fa-solid fa-arrow-left"></i> ${' Back'}`,
-                  attrs: `data-id="btn-back"`,
-                })}
-              </div>
-            </div>
-          </div>
-        </div>`,
-      );
-    });
-
     return html`
       <div class="fl">
         <div class="in ${id}" id="${id}">
@@ -106,13 +79,19 @@ const ObjectLayerEngineViewer = {
 
   renderEmpty: async function ({ Elements }) {
     const id = 'object-layer-engine-viewer';
-    htmls(
-      `#${id}`,
-      await ObjectLayerManagement.RenderTable({
-        Elements,
-        idModal: 'modal-object-layer-engine-viewer',
-      }),
-    );
+    const idModal = 'modal-object-layer-engine-viewer';
+    const serviceId = 'object-layer-engine-management';
+    const gridId = `${serviceId}-grid-${idModal}`;
+    if (s(`.${serviceId}-grid-${idModal}`) && AgGrid.grids[gridId])
+      await DefaultManagement.loadTable(idModal, { reload: true });
+    else
+      htmls(
+        `#${id}`,
+        await ObjectLayerManagement.RenderTable({
+          Elements,
+          idModal,
+        }),
+      );
   },
 
   loadObjectLayer: async function (objectLayerId) {
@@ -179,8 +158,6 @@ const ObjectLayerEngineViewer = {
     const itemId = objectLayer.data.item.id;
     const itemDescription = objectLayer.data.item.description || '';
     const itemActivable = objectLayer.data.item.activable || false;
-    const frameDuration = objectLayer.data.render.frame_duration || 100;
-    const isStateless = objectLayer.data.render.is_stateless || false;
 
     // Get stats data
     const stats = objectLayer.data.stats || {};
@@ -699,16 +676,6 @@ const ObjectLayerEngineViewer = {
         this.toEngine();
       });
     }
-
-    // Back button
-    setTimeout(() => {
-      const backBtn = s('[data-id="btn-back"]');
-      if (backBtn) {
-        backBtn.addEventListener('click', () => {
-          window.history.back();
-        });
-      }
-    }, 100);
   },
 
   selectFirstAvailableDirectionMode: function () {

@@ -377,6 +377,7 @@ const ObjectLayerEngineModal = {
 
     setTimeout(async () => {
       const loadFrames = async () => {
+        showFrameLoading();
         for (const directionCode of directionCodes) {
           // Use IIFE to properly capture directionCode and handle async operations
           await (async (currentDirectionCode) => {
@@ -390,6 +391,9 @@ const ObjectLayerEngineModal = {
               const directions = ObjectLayerEngineModal.getDirectionsFromDirectionCode(currentDirectionCode);
 
               console.log(`Loading frames for direction code: ${currentDirectionCode}, directions:`, directions);
+
+              // reset frames
+              s(`.frames-${currentDirectionCode}`).innerHTML = '';
 
               // Check if frames exist for any direction mapped to this direction code
               const { frames } = loadedData.renderData.data.render;
@@ -443,12 +447,11 @@ const ObjectLayerEngineModal = {
             });
           })(directionCode);
         }
+        hideFrameLoading();
       };
       RouterEvents[`router-${options.idModal}`] = loadFrames;
 
-      showFrameLoading();
       await loadFrames();
-      hideFrameLoading();
       s('object-layer-engine').clear();
 
       EventsUI.onClick(`.ol-btn-save`, async () => {
@@ -947,6 +950,7 @@ const ObjectLayerEngineModal = {
     const subModalId = 'viewer' || 'management';
     const modalId = `modal-object-layer-engine-${subModalId}`;
     const queryParams = getQueryParams();
+    queryParams.cid = '';
     queryParams.page = 1;
     setQueryParams(queryParams);
     const managerComponent = DefaultManagement.Tokens[modalId];

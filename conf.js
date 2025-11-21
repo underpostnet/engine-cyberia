@@ -185,6 +185,7 @@ const DefaultConf = /**/ {
       },
       publicRef: 'cyberia',
       components: {
+        cyberia: ['MapEngineCyberia'],
         core: [
           'CommonJs',
           'VanillaJs',
@@ -247,7 +248,7 @@ const DefaultConf = /**/ {
           'TranslateCyberiaPortal',
           'SettingsCyberiaPortal',
           'SocketIoCyberiaPortal',
-          'ObjectLayerCyberiaPortal',
+          'MainBodyCyberiaPortal',
         ],
       },
       views: [
@@ -263,6 +264,7 @@ const DefaultConf = /**/ {
         { path: '/object-layer-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/object-layer-engine-management', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/object-layer-engine-viewer', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
+        { path: '/cyberia-map-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [
         {

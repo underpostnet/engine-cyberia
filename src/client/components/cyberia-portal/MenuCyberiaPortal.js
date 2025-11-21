@@ -20,7 +20,8 @@ import { Recover } from '../core/Recover.js';
 import { ObjectLayerEngineModal } from '../core/ObjectLayerEngineModal.js';
 import { ObjectLayerEngineViewer } from '../core/ObjectLayerEngineViewer.js';
 import { ObjectLayerManagement } from '../../services/object-layer/object-layer.management.js';
-import { ObjectLayerCyberiaPortal } from './ObjectLayerCyberiaPortal.js';
+import { MainBodyCyberiaPortal } from './MainBodyCyberiaPortal.js';
+import { MapEngineCyberia } from '../cyberia/MapEngineCyberia.js';
 
 const MenuCyberiaPortal = {
   Data: {},
@@ -195,6 +196,18 @@ const MenuCyberiaPortal = {
             handleContainerClass: 'handle-btn-container',
             tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('object-layer-engine-viewer')),
           })}
+          ${await BtnIcon.Render({
+            class: 'in wfa main-btn-menu main-btn-cyberia-map-engine',
+            useMenuBtn: true,
+            label: renderMenuLabel({
+              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
+              text: html`<span class="menu-label-text">${Translate.Render('cyberia-map-engine')}</span>`,
+            }),
+            attrs: `data-id="cyberia-map-engine"`,
+            tabHref: `${getProxyPath()}cyberia-map-engine`,
+            handleContainerClass: 'handle-btn-container',
+            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('cyberia-map-engine')),
+          })}
         </div>
       `,
       // htmlMainBody: async () => {
@@ -216,7 +229,7 @@ const MenuCyberiaPortal = {
         return '';
       },
       // mode: 'slide-menu-right',
-      htmlMainBody: async () => await ObjectLayerCyberiaPortal.Render(),
+      htmlMainBody: async () => await MainBodyCyberiaPortal.Render(),
       mode: 'slide-menu',
       RouterInstance,
       heightTopBar,
@@ -550,6 +563,28 @@ const MenuCyberiaPortal = {
           ObjectLayerEngineViewer.Render({
             Elements: ElementsCyberiaPortal,
           }),
+        handleType: 'bar',
+        maximize: true,
+        mode: 'view',
+        slideMenu: 'modal-menu',
+        RouterInstance,
+        heightTopBar,
+        heightBottomBar,
+        observer: true,
+      });
+    });
+
+    EventsUI.onClick(`.main-btn-cyberia-map-engine`, async () => {
+      const { barConfig } = await Themes[Css.currentTheme]();
+      await Modal.Render({
+        id: 'modal-cyberia-map-engine',
+        route: 'cyberia-map-engine',
+        barConfig,
+        title: renderViewTitle({
+          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
+          text: `<span class='inl cyberia-text-title-modal'>${Translate.Render('cyberia-map-engine')}</span>`,
+        }),
+        html: async () => await MapEngineCyberia.render(),
         handleType: 'bar',
         maximize: true,
         mode: 'view',

@@ -2,7 +2,7 @@
     "type": "module",
     "main": "src/index.js",
     "name": "cyberia",
-    "version": "2.97.5",
+    "version": "2.98.0",
     "description": "Cyberia Engine - Object Layer and Assets Management Microservice",
     "scripts": {
         "start": "env-cmd -f .env.production node --max-old-space-size=8192 src/server",

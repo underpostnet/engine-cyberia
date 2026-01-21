@@ -104,7 +104,9 @@
         "uglify-js": "^3.17.4",
         "validator": "^13.11.0",
         "vanilla-jsoneditor": "^2.3.2",
-        "winston": "^3.11.0"
+        "winston": "^3.11.0",
+        "maxrects-packer": "^2.7.3",
+        "pngjs": "^7.0.0"
     },
     "publishConfig": {
         "provenance": true,

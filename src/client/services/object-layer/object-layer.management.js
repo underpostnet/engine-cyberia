@@ -2,8 +2,8 @@ import { DefaultManagement } from '../default/default.management.js';
 import { ObjectLayerService } from './object-layer.service.js';
 import { commonUserGuard } from '../../components/core/CommonJs.js';
 import { getProxyPath, setPath, setQueryParams } from '../../components/core/Router.js';
-import { ObjectLayerEngineModal } from '../../components/core/ObjectLayerEngineModal.js';
-import { ObjectLayerEngineViewer } from '../../components/core/ObjectLayerEngineViewer.js';
+import { ObjectLayerEngineModal } from '../../components/cyberia/ObjectLayerEngineModal.js';
+import { ObjectLayerEngineViewer } from '../../components/cyberia/ObjectLayerEngineViewer.js';
 import { s } from '../../components/core/VanillaJs.js';
 import { Modal } from '../../components/core/Modal.js';
 import { BtnIcon } from '../../components/core/BtnIcon.js';
@@ -34,8 +34,9 @@ const ObjectLayerManagement = {
         })}`;
 
         setTimeout(() => {
-          if (s(`.btn-view-object-layer-${data._id}`))
-            s(`.btn-view-object-layer-${data._id}`).onclick = async () =>
+          const btn = this.eGui.querySelector(`.btn-view-object-layer-${data._id}`);
+          if (btn)
+            btn.onclick = async () =>
               setTimeout(async () => {
                 // Navigate to viewer route first
                 setPath(`${getProxyPath()}object-layer-engine-viewer`);
@@ -79,8 +80,9 @@ const ObjectLayerManagement = {
         })}`;
 
         setTimeout(() => {
-          if (s(`.btn-edit-object-layer-${data._id}`))
-            s(`.btn-edit-object-layer-${data._id}`).onclick = async () =>
+          const btn = this.eGui.querySelector(`.btn-edit-object-layer-${data._id}`);
+          if (btn)
+            btn.onclick = async () =>
               setTimeout(async () => {
                 // Navigate to editor route first
                 setPath(`${getProxyPath()}object-layer-engine`);
@@ -117,8 +119,23 @@ const ObjectLayerManagement = {
         const { type, id } = data.data.item;
         const imagePath = `${getProxyPath()}assets/${type}/${id}/08/0.png`;
 
+        // Container with both image and fallback
         this.eGui.innerHTML = html`
-          <img class="inl" src="${imagePath}" style="width: 100px; height: 100px;" alt="Frame 08" />
+          <div style="position: relative; width: 100px; height: 100px;">
+            <img
+              class="inl frame-08-preview"
+              src="${imagePath}"
+              style="width: 100px; height: 100px; display: block;"
+              alt="Frame 08"
+              onload="this.style.display='block'; this.nextElementSibling.style.display='none';"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            />
+            <div
+              style="position: absolute; top: 0; left: 0; width: 100px; height: 100px; display: none; align-items: center; justify-content: center; "
+            >
+              <i class="fas fa-image" style="font-size: 48px; color: #999;"></i>
+            </div>
+          </div>
         `;
       }
 
@@ -143,7 +160,6 @@ const ObjectLayerManagement = {
         field: 'data.item.id',
         headerName: 'Item ID',
         editable: role === 'user',
-        cellClassRules: { 'row-new-highlight': (params) => true },
       },
       { field: 'data.item.type', headerName: 'Item Type', editable: role === 'user' },
       { field: 'data.item.description', headerName: 'Description', flex: 1, editable: role === 'user' },

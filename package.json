@@ -37,7 +37,8 @@
         "object-layer",
         "game-engine",
         "assets-management",
-        "web3"
+        "web3",
+        "atlas-sprite-sheet"
     ],
     "author": "https://github.com/underpostnet",
     "license": "MIT",

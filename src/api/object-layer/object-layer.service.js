@@ -1,21 +1,64 @@
+/**
+ * Object Layer service module for handling CRUD operations on object layer assets.
+ * Provides REST API handlers for creating, reading, updating, and deleting object layers
+ * including frame image management, metadata processing, and WebP animation generation.
+ *
+ * Delegates shared object layer creation and update logic to {@link ObjectLayerEngine} in
+ * `src/server/object-layer.js` to keep a single source of truth shared with the Cyberia CLI.
+ *
+ * @module src/api/object-layer/object-layer.service.js
+ * @namespace CyberiaObjectLayerService
+ */
+
 import { DataBaseProvider } from '../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../server/logger.js';
 import { ObjectLayerRenderFramesDto } from '../object-layer-render-frames/object-layer-render-frames.model.js';
 import { FileFactory } from '../file/file.service.js';
 import fs from 'fs-extra';
-import crypto from 'crypto';
-import stringify from 'fast-json-stable-stringify';
 import { ObjectLayerDto } from './object-layer.model.js';
 import { ObjectLayerEngine } from '../../server/object-layer.js';
 import { shellExec } from '../../server/process.js';
 import { DataQuery } from '../../server/data-query.js';
 import { AtlasSpriteSheetService } from '../atlas-sprite-sheet/atlas-sprite-sheet.service.js';
 import { IpfsClient } from '../../server/ipfs-client.js';
-import { createPinRecord } from '../ipfs/ipfs.service.js';
+import { createPinRecord, removePinRecordsAndUnpin } from '../ipfs/ipfs.service.js';
 
+/**
+ * Logger instance for this module.
+ * @type {Function}
+ * @memberof CyberiaObjectLayerService
+ * @private
+ */
 const logger = loggerFactory(import.meta);
 
+/**
+ * Object Layer Service providing REST API handlers for object layer operations.
+ * @namespace CyberiaObjectLayerService.ObjectLayerService
+ * @memberof CyberiaObjectLayerService
+ */
 const ObjectLayerService = {
+  /**
+   * POST handler for creating object layers and uploading frame images.
+   *
+   * Supports three sub-routes:
+   * - `/frame-image/:itemType/:itemId/:directionCode` — Upload PNG frame images for a direction.
+   * - `/metadata/:itemType/:itemId` — Create an object layer from uploaded frames and metadata.
+   * - Default — Create an object layer directly from the request body.
+   *
+   * The `/metadata` and default routes delegate to {@link ObjectLayerEngine.createObjectLayerDocuments}
+   * for centralized document creation, atlas generation, SHA-256 computation, and IPFS pinning.
+   *
+   * @async
+   * @function post
+   * @memberof CyberiaObjectLayerService.ObjectLayerService
+   * @param {Object} req - Express request object.
+   * @param {Object} res - Express response object.
+   * @param {Object} options - Server options containing host and path.
+   * @param {string} options.host - The deployment host.
+   * @param {string} options.path - The deployment path.
+   * @returns {Promise<Object>} The created object layer document or frame upload result.
+   * @throws {Error} If file validation fails or required parameters are missing.
+   */
   post: async (req, res, options) => {
     /** @type {import('./object-layer.model.js').ObjectLayerModel} */
 
@@ -91,8 +134,10 @@ const ObjectLayerService = {
     }
 
     if (req.path.startsWith('/metadata')) {
-      const folder = `./src/client/public/cyberia/assets/${req.params.itemType}/${req.params.itemId}`;
-      const publicFolder = `./public/${options.host}${options.path}/assets/${req.params.itemType}/${req.params.itemId}`;
+      const itemType = req.params.itemType;
+      const itemId = req.params.itemId;
+      const folder = `./src/client/public/cyberia/assets/${itemType}/${itemId}`;
+      const publicFolder = `./public/${options.host}${options.path}/assets/${itemType}/${itemId}`;
 
       // Ensure both folders exist
       if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
@@ -103,133 +148,90 @@ const ObjectLayerService = {
       fs.writeFileSync(`${folder}/metadata.json`, metadataContent);
       fs.writeFileSync(`${publicFolder}/metadata.json`, metadataContent);
 
-      // Create object layer from PNG saved and metadata
+      // Build object layer data from the asset directory using centralized logic
       const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
       const ObjectLayerRenderFrames =
         DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
 
-      const objectLayerRenderFramesData = {
-        frame_duration: req.body.objectLayerRenderFramesData.frame_duration,
-        is_stateless: req.body.objectLayerRenderFramesData.is_stateless,
-        frames: {},
-        colors: [],
-      };
-
-      const objectLayerData = {
-        data: {
-          item: req.body.data.item,
-          stats: req.body.data.stats,
-          seed: crypto.randomUUID(),
-        },
-      };
-
-      // Process all PNG files to generate frames and colors
-      const directionFolders = await fs.readdir(folder);
-      for (const directionCode of directionFolders) {
-        const directionPath = `${folder}/${directionCode}`;
-        if (!fs.statSync(directionPath).isDirectory()) continue;
-
-        const frameFiles = await fs.readdir(directionPath);
-        // Sort frame files numerically
-        frameFiles.sort((a, b) => {
-          const numA = parseInt(a.split('.')[0]);
-          const numB = parseInt(b.split('.')[0]);
-          return numA - numB;
+      const { objectLayerRenderFramesData, objectLayerData } =
+        await ObjectLayerEngine.buildObjectLayerDataFromDirectory({
+          folder,
+          objectLayerType: itemType,
+          objectLayerId: itemId,
+          metadataOverride: req.body,
         });
 
-        for (const frameFile of frameFiles) {
-          if (!frameFile.endsWith('.png')) continue;
-
-          const framePath = `${directionPath}/${frameFile}`;
-
-          // Process image and push frame to render data with color palette management
-          await ObjectLayerEngine.processAndPushFrame(objectLayerRenderFramesData, framePath, directionCode);
-        }
-      }
-
-      // Create ObjectLayerRenderFrames document
-      const objectLayerRenderFramesDoc = await ObjectLayerRenderFrames.create(objectLayerRenderFramesData);
-
-      // Add reference to render frames (top-level, not in data)
-      objectLayerData.objectLayerRenderFramesId = objectLayerRenderFramesDoc._id;
-
-      // Add object layer data to IPFS and store the CID
-      try {
-        const itemId = objectLayerData.data.item.id;
-        const ipfsResult = await IpfsClient.addJsonToIpfs(
-          objectLayerData.data,
-          `${itemId}_data.json`,
-          `/object-layer/${itemId}/${itemId}_data.json`,
-        );
-        if (ipfsResult) {
-          objectLayerData.cid = ipfsResult.cid;
-          // Create pin record for the authenticated user
-          const userId = req.auth && req.auth.user ? req.auth.user._id : undefined;
-          if (userId) {
-            await createPinRecord({ cid: ipfsResult.cid, userId, pinType: 'recursive', options });
-          }
-        }
-      } catch (ipfsError) {
-        logger.warn('Failed to add object layer data to IPFS:', ipfsError.message);
-      }
-
-      // Generate SHA256 hash using fast-json-stable-stringify of objectLayer.data
-      objectLayerData.sha256 = crypto.createHash('sha256').update(stringify(objectLayerData.data)).digest('hex');
-
-      // Save to MongoDB
-      try {
-        const existingObjectLayer = await ObjectLayer.findOne({ sha256: objectLayerData.sha256 });
-        if (existingObjectLayer) {
-          logger.info(`ObjectLayer with sha256 ${objectLayerData.sha256} already exists, updating...`);
-          const updated = await ObjectLayer.findByIdAndUpdate(existingObjectLayer._id, objectLayerData, {
-            new: true,
-          }).populate('objectLayerRenderFramesId');
-
-          // Update atlas sprite sheet
-          try {
-            await AtlasSpriteSheetService.generate({ params: { id: updated._id }, objectLayer: updated }, res, options);
-          } catch (atlasError) {
-            logger.error('Failed to auto-update atlas for ObjectLayer:', atlasError);
-          }
-
-          return updated;
-        }
-        const newObjectLayer = await (await ObjectLayer.create(objectLayerData)).populate('objectLayerRenderFramesId');
-        logger.info(`ObjectLayer created successfully with id: ${newObjectLayer._id}`);
-
-        // Generate atlas sprite sheet
-        try {
-          await AtlasSpriteSheetService.generate(
-            { params: { id: newObjectLayer._id }, objectLayer: newObjectLayer },
+      // Create documents using centralized engine method (with atlas generation)
+      const { objectLayer } = await ObjectLayerEngine.createObjectLayerDocuments({
+        ObjectLayer,
+        ObjectLayerRenderFrames,
+        objectLayerRenderFramesData,
+        objectLayerData,
+        createOptions: {
+          generateAtlas: true,
+          atlasServiceContext: {
+            req,
             res,
             options,
-          );
-        } catch (atlasError) {
-          logger.error('Failed to auto-generate atlas for new ObjectLayer:', atlasError);
-        }
+            AtlasSpriteSheetService,
+            IpfsClient,
+            createPinRecord,
+          },
+        },
+      });
 
-        return newObjectLayer;
-      } catch (error) {
-        logger.error('Error creating ObjectLayer:', error);
-        throw error;
-      }
+      return objectLayer;
     }
 
     // create object layer from body
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
     const ObjectLayerRenderFrames =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
-    const newObjectLayer = await new ObjectLayer(req.body).save();
+    let newObjectLayer = await new ObjectLayer(req.body).save();
 
-    // Generate atlas sprite sheet
+    // Generate atlas sprite sheet – this sets data.atlasSpriteSheetCid and saves
     try {
-      await AtlasSpriteSheetService.generate({ params: { id: newObjectLayer._id } }, res, options);
+      await AtlasSpriteSheetService.generate({ params: { id: newObjectLayer._id }, auth: req.auth }, res, options);
     } catch (atlasError) {
       logger.error('Failed to auto-generate atlas for new ObjectLayer:', atlasError);
     }
 
+    // Re-read so data.atlasSpriteSheetCid is up-to-date, then recompute SHA-256 & IPFS CID
+    newObjectLayer = await ObjectLayer.findById(newObjectLayer._id).populate('objectLayerRenderFramesId');
+    if (newObjectLayer) {
+      newObjectLayer = await ObjectLayerEngine.computeAndSaveFinalSha256({
+        objectLayer: newObjectLayer,
+        ipfsClient: IpfsClient,
+        createPinRecord,
+        userId: req.auth && req.auth.user ? req.auth.user._id : undefined,
+        options,
+      });
+    }
+
     return newObjectLayer;
   },
+
+  /**
+   * GET handler for retrieving object layers.
+   *
+   * Supports multiple sub-routes:
+   * - `/frame-counts/:id` — Get frame counts for each direction using numeric codes.
+   * - `/render/:id` — Get only render data (populated ObjectLayerRenderFrames) for a specific object layer.
+   * - `/metadata/:id` — Get metadata (no full render frames/colors) with atlas sprite sheet validation.
+   * - `/:id` — Get a single object layer by ID.
+   * - `/` — Get a paginated list of object layers.
+   *
+   * @async
+   * @function get
+   * @memberof CyberiaObjectLayerService.ObjectLayerService
+   * @param {Object} req - Express request object.
+   * @param {Object} res - Express response object.
+   * @param {Object} options - Server options containing host and path.
+   * @param {string} options.host - The deployment host.
+   * @param {string} options.path - The deployment path.
+   * @returns {Promise<Object>} The requested object layer data, list, or frame counts.
+   * @throws {Error} If the requested object layer is not found.
+   */
   get: async (req, res, options) => {
     /** @type {import('./object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
@@ -379,6 +381,22 @@ const ObjectLayerService = {
     ]);
     return { data, total, page, totalPages: Math.ceil(total / limit) };
   },
+
+  /**
+   * Generates a WebP animation from PNG frame images for a specific direction of an object layer.
+   * Uses the `img2webp` CLI tool to assemble the animation.
+   *
+   * @async
+   * @function generateWebp
+   * @memberof CyberiaObjectLayerService.ObjectLayerService
+   * @param {Object} req - Express request object with params: itemType, itemId, directionCode.
+   * @param {Object} res - Express response object.
+   * @param {Object} options - Server options containing host and path.
+   * @param {string} options.host - The deployment host.
+   * @param {string} options.path - The deployment path.
+   * @returns {Promise<Buffer>} The generated WebP animation as a Buffer.
+   * @throws {Error} If required parameters are missing, frames directory is not found, or img2webp fails.
+   */
   generateWebp: async (req, res, options) => {
     /** @type {import('./object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
@@ -491,6 +509,29 @@ const ObjectLayerService = {
       throw error;
     }
   },
+
+  /**
+   * PUT handler for updating object layers, their frame images, and metadata.
+   *
+   * Supports three sub-routes:
+   * - `/:id/frame-image/:itemType/:itemId/:directionCode` — Replace frame images for a direction.
+   * - `/:id/metadata/:itemType/:itemId` — Update metadata and reprocess all frames.
+   * - `/:id` — Standard update from request body.
+   *
+   * The `/metadata` route delegates to {@link ObjectLayerEngine.updateObjectLayerDocuments}
+   * for centralized document update, atlas regeneration, SHA-256 computation, and IPFS pinning.
+   *
+   * @async
+   * @function put
+   * @memberof CyberiaObjectLayerService.ObjectLayerService
+   * @param {Object} req - Express request object.
+   * @param {Object} res - Express response object.
+   * @param {Object} options - Server options containing host and path.
+   * @param {string} options.host - The deployment host.
+   * @param {string} options.path - The deployment path.
+   * @returns {Promise<Object>} The updated object layer document or frame upload result.
+   * @throws {Error} If file validation fails, object layer is not found, or required parameters are missing.
+   */
   put: async (req, res, options) => {
     /** @type {import('./object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
@@ -595,144 +636,183 @@ const ObjectLayerService = {
       const ObjectLayerRenderFrames =
         DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
 
-      const objectLayerRenderFramesData = {
-        frame_duration: req.body.objectLayerRenderFramesData.frame_duration,
-        is_stateless: req.body.objectLayerRenderFramesData.is_stateless,
-        frames: {},
-        colors: [],
-      };
-
-      const objectLayerData = {
-        data: {
-          item: req.body.data.item,
-          stats: req.body.data.stats,
-          seed: req.body.data.seed || crypto.randomUUID(),
-        },
-      };
-
-      // Process all PNG files from direction folders (uploaded via /frame-image/)
-      const directionFolders = await fs.readdir(folder);
-      for (const directionCode of directionFolders) {
-        const directionPath = `${folder}/${directionCode}`;
-
-        // Skip non-directories (like metadata.json)
-        try {
-          const stat = await fs.stat(directionPath);
-          if (!stat.isDirectory()) continue;
-        } catch (error) {
-          logger.warn(`Skipping ${directionCode}: ${error.message}`);
-          continue;
-        }
-
-        const frameFiles = await fs.readdir(directionPath);
-        // Sort frame files numerically
-        frameFiles.sort((a, b) => {
-          const numA = parseInt(a.split('.')[0]);
-          const numB = parseInt(b.split('.')[0]);
-          return numA - numB;
+      // Build object layer data from the asset directory using centralized logic
+      const { objectLayerRenderFramesData, objectLayerData } =
+        await ObjectLayerEngine.buildObjectLayerDataFromDirectory({
+          folder,
+          objectLayerType: itemType,
+          objectLayerId: itemId,
+          metadataOverride: req.body,
         });
 
-        for (const frameFile of frameFiles) {
-          if (!frameFile.endsWith('.png')) continue;
-
-          const framePath = `${directionPath}/${frameFile}`;
-
-          // Process image and push frame to render data with color palette management
-          await ObjectLayerEngine.processAndPushFrame(objectLayerRenderFramesData, framePath, directionCode);
-        }
+      // Preserve the existing seed if provided in the request body
+      if (req.body.data && req.body.data.seed) {
+        objectLayerData.data.seed = req.body.data.seed;
       }
 
-      // Update or create ObjectLayerRenderFrames document
-      const existingObjectLayer = await ObjectLayer.findById(objectLayerId);
-      if (existingObjectLayer && existingObjectLayer.objectLayerRenderFramesId) {
-        // Update existing render frames
-        await ObjectLayerRenderFrames.findByIdAndUpdate(
-          existingObjectLayer.objectLayerRenderFramesId,
-          objectLayerRenderFramesData,
-        );
-        objectLayerData.objectLayerRenderFramesId = existingObjectLayer.objectLayerRenderFramesId;
-      } else {
-        // Create new render frames document
-        const objectLayerRenderFramesDoc = await ObjectLayerRenderFrames.create(objectLayerRenderFramesData);
-        objectLayerData.objectLayerRenderFramesId = objectLayerRenderFramesDoc._id;
-      }
-
-      // Add object layer data to IPFS and store the CID
-      try {
-        const itemId = objectLayerData.data.item.id;
-        const ipfsResult = await IpfsClient.addJsonToIpfs(
-          objectLayerData.data,
-          `${itemId}_data.json`,
-          `/object-layer/${itemId}/${itemId}_data.json`,
-        );
-        if (ipfsResult) {
-          objectLayerData.cid = ipfsResult.cid;
-          const userId = req.auth && req.auth.user ? req.auth.user._id : undefined;
-          if (userId) {
-            await createPinRecord({ cid: ipfsResult.cid, userId, pinType: 'recursive', options });
-          }
-        }
-      } catch (ipfsError) {
-        logger.warn('Failed to add object layer data to IPFS:', ipfsError.message);
-      }
-
-      // Generate SHA256 hash using fast-json-stable-stringify of objectLayer.data
-      objectLayerData.sha256 = crypto.createHash('sha256').update(stringify(objectLayerData.data)).digest('hex');
-
-      // Save to MongoDB
-      try {
-        const updatedObjectLayer = await ObjectLayer.findByIdAndUpdate(objectLayerId, objectLayerData, {
-          new: true,
-        }).populate('objectLayerRenderFramesId');
-        if (!updatedObjectLayer) {
-          throw new Error('ObjectLayer not found for update');
-        }
-        logger.info(`ObjectLayer updated successfully with id: ${objectLayerId}`);
-
-        // Update atlas sprite sheet
-        try {
-          await AtlasSpriteSheetService.generate(
-            { params: { id: objectLayerId }, objectLayer: updatedObjectLayer },
+      // Update documents using centralized engine method (with atlas generation)
+      const { objectLayer } = await ObjectLayerEngine.updateObjectLayerDocuments({
+        objectLayerId,
+        ObjectLayer,
+        ObjectLayerRenderFrames,
+        objectLayerRenderFramesData,
+        objectLayerData,
+        updateOptions: {
+          generateAtlas: true,
+          atlasServiceContext: {
+            req,
             res,
             options,
-          );
-        } catch (atlasError) {
-          logger.error('Failed to auto-update atlas for ObjectLayer:', atlasError);
-        }
+            AtlasSpriteSheetService,
+            IpfsClient,
+            createPinRecord,
+          },
+        },
+      });
 
-        return updatedObjectLayer;
-      } catch (error) {
-        logger.error('Error updating ObjectLayer:', error);
-        throw error;
-      }
+      return objectLayer;
     }
 
     // PUT /:id - Standard update
-    const updatedObjectLayer = await ObjectLayer.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    let updatedObjectLayer = await ObjectLayer.findByIdAndUpdate(req.params.id, req.body, { new: true });
 
     if (updatedObjectLayer) {
-      // Update atlas sprite sheet
+      // Generate atlas sprite sheet – this sets data.atlasSpriteSheetCid and saves
       try {
-        await AtlasSpriteSheetService.generate({ params: { id: req.params.id } }, res, options);
+        await AtlasSpriteSheetService.generate({ params: { id: req.params.id }, auth: req.auth }, res, options);
       } catch (atlasError) {
         logger.error('Failed to auto-update atlas for ObjectLayer:', atlasError);
+      }
+
+      // Re-read so data.atlasSpriteSheetCid is up-to-date, then recompute SHA-256 & IPFS CID
+      updatedObjectLayer = await ObjectLayer.findById(req.params.id).populate('objectLayerRenderFramesId');
+      if (updatedObjectLayer) {
+        updatedObjectLayer = await ObjectLayerEngine.computeAndSaveFinalSha256({
+          objectLayer: updatedObjectLayer,
+          ipfsClient: IpfsClient,
+          createPinRecord,
+          userId: req.auth && req.auth.user ? req.auth.user._id : undefined,
+          options,
+        });
       }
     }
 
     return updatedObjectLayer;
   },
+
+  /**
+   * DELETE handler for removing object layers and all associated resources.
+   *
+   * When a specific ID is provided, performs a cascading delete that removes:
+   * 1. The AtlasSpriteSheet and its File document.
+   * 2. The ObjectLayerRenderFrames document.
+   * 3. IPFS pin records and CIDs (both data JSON and atlas PNG).
+   * 4. The MFS directory for this object layer.
+   * 5. Static asset files from disk.
+   * 6. The ObjectLayer document itself.
+   *
+   * When no ID is provided, performs a bulk delete of all object layers.
+   *
+   * @async
+   * @function delete
+   * @memberof CyberiaObjectLayerService.ObjectLayerService
+   * @param {Object} req - Express request object.
+   * @param {Object} res - Express response object.
+   * @param {Object} options - Server options containing host and path.
+   * @param {string} options.host - The deployment host.
+   * @param {string} options.path - The deployment path.
+   * @returns {Promise<Object>} The deleted object layer document or bulk delete count.
+   * @throws {Error} If the object layer is not found.
+   */
   delete: async (req, res, options) => {
     /** @type {import('./object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
+    const ObjectLayerRenderFrames =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
+
     if (req.params.id) {
-      // Clean up atlas and associated files
+      // Load the full object layer so we can access all references
+      const objectLayer = await ObjectLayer.findById(req.params.id);
+      if (!objectLayer) {
+        throw new Error('ObjectLayer not found');
+      }
+
+      const itemType = objectLayer.data?.item?.type;
+      const itemId = objectLayer.data?.item?.id;
+
+      // ── 1. Clean up AtlasSpriteSheet, its File, and atlas IPFS CID ──
       try {
         await AtlasSpriteSheetService.deleteByObjectLayerId(req, res, options);
       } catch (atlasError) {
         logger.error('Failed to clean up atlas during ObjectLayer deletion:', atlasError);
       }
-      return await ObjectLayer.findByIdAndDelete(req.params.id);
-    } else return await ObjectLayer.deleteMany();
+
+      // ── 2. Clean up ObjectLayerRenderFrames document ──
+      if (objectLayer.objectLayerRenderFramesId) {
+        try {
+          await ObjectLayerRenderFrames.findByIdAndDelete(objectLayer.objectLayerRenderFramesId);
+          logger.info(
+            `Deleted ObjectLayerRenderFrames ${objectLayer.objectLayerRenderFramesId} for ObjectLayer ${req.params.id}`,
+          );
+        } catch (renderFramesError) {
+          logger.error('Failed to delete ObjectLayerRenderFrames:', renderFramesError);
+        }
+      }
+
+      // ── 3. Remove pin records and unpin object layer data JSON CID from IPFS ──
+      if (objectLayer.cid) {
+        try {
+          await removePinRecordsAndUnpin(objectLayer.cid, options);
+          logger.info(`Cleaned up IPFS data CID ${objectLayer.cid} for ObjectLayer ${req.params.id}`);
+        } catch (ipfsError) {
+          logger.warn(`Failed to clean up IPFS data CID ${objectLayer.cid}: ${ipfsError.message}`);
+        }
+      }
+
+      // ── 4. Remove MFS directory for this object layer (covers both data JSON and atlas PNG) ──
+      if (itemId) {
+        try {
+          await IpfsClient.removeMfsPath(`/object-layer/${itemId}`);
+          logger.info(`Removed MFS directory /object-layer/${itemId}`);
+        } catch (mfsError) {
+          logger.warn(`Failed to remove MFS path /object-layer/${itemId}: ${mfsError.message}`);
+        }
+      }
+
+      // ── 5. Remove static asset files from disk ──
+      if (itemType && itemId) {
+        const staticPaths = [
+          `./src/client/public/cyberia/assets/${itemType}/${itemId}`,
+          `./public/${options.host}${options.path}/assets/${itemType}/${itemId}`,
+        ];
+        for (const assetDir of staticPaths) {
+          try {
+            if (fs.existsSync(assetDir)) {
+              await fs.remove(assetDir);
+              logger.info(`Removed static asset directory: ${assetDir}`);
+            }
+          } catch (fsError) {
+            logger.warn(`Failed to remove static asset directory ${assetDir}: ${fsError.message}`);
+          }
+        }
+      }
+
+      // ── 6. Delete the ObjectLayer document itself ──
+      const deleted = await ObjectLayer.findByIdAndDelete(req.params.id);
+      logger.info(`ObjectLayer ${req.params.id} and all associated resources deleted successfully`);
+      return deleted;
+    } else {
+      // Bulk delete: clean up all object layers
+      const allObjectLayers = await ObjectLayer.find({});
+      for (const ol of allObjectLayers) {
+        try {
+          await ObjectLayerService.delete({ params: { id: ol._id.toString() }, auth: req.auth }, res, options);
+        } catch (err) {
+          logger.error(`Failed to delete ObjectLayer ${ol._id} during bulk delete: ${err.message}`);
+        }
+      }
+      return { deletedCount: allObjectLayers.length };
+    }
   },
 };
 

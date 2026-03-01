@@ -5,7 +5,7 @@ import { AtlasSpriteSheetGenerator } from '../../server/atlas-sprite-sheet-gener
 import { FileFactory } from '../file/file.service.js';
 import { AtlasSpriteSheetDto } from './atlas-sprite-sheet.model.js';
 import { IpfsClient } from '../../server/ipfs-client.js';
-import { createPinRecord } from '../ipfs/ipfs.service.js';
+import { createPinRecord, removePinRecordsAndUnpin } from '../ipfs/ipfs.service.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -54,7 +54,7 @@ const AtlasSpriteSheetService = {
         // Create pin record for the authenticated user (when available)
         const userId = req.auth && req.auth.user ? req.auth.user._id : undefined;
         if (userId) {
-          await createPinRecord({ cid: atlasCid, userId, pinType: 'recursive', options });
+          await createPinRecord({ cid: atlasCid, userId, options });
         }
         logger.info(`Atlas sprite sheet pinned to IPFS – CID: ${atlasCid}`);
       }
@@ -105,9 +105,25 @@ const AtlasSpriteSheetService = {
     if (objectLayer.atlasSpriteSheetId) {
       const atlasDoc = await AtlasSpriteSheet.findById(objectLayer.atlasSpriteSheetId);
       if (atlasDoc) {
+        // Remove pin records and unpin atlas CID from IPFS
+        const atlasCid = atlasDoc.cid || objectLayer.data.atlasSpriteSheetCid;
+        if (atlasCid) {
+          try {
+            await removePinRecordsAndUnpin(atlasCid, options);
+            // Remove the MFS entry for the atlas sprite sheet PNG
+            const itemId = objectLayer.data.item.id;
+            await IpfsClient.removeMfsPath(`/object-layer/${itemId}/${itemId}_atlas_sprite_sheet.png`);
+            logger.info(`Cleaned up IPFS atlas CID ${atlasCid} for ObjectLayer ${objectLayer._id}`);
+          } catch (ipfsErr) {
+            logger.warn(`Failed to clean up IPFS atlas CID ${atlasCid}: ${ipfsErr.message}`);
+          }
+        }
+
+        // Delete the atlas File document from MongoDB
         if (atlasDoc.fileId) {
           await File.findByIdAndDelete(atlasDoc.fileId);
         }
+        // Delete the AtlasSpriteSheet document itself
         await AtlasSpriteSheet.findByIdAndDelete(atlasDoc._id);
       }
       objectLayer.atlasSpriteSheetId = undefined;
@@ -159,8 +175,54 @@ const AtlasSpriteSheetService = {
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
     const AtlasSpriteSheet =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.AtlasSpriteSheet;
-    if (req.params.id) return await AtlasSpriteSheet.findByIdAndDelete(req.params.id);
-    else return await AtlasSpriteSheet.deleteMany();
+    /** @type {import('../file/file.model.js').FileModel} */
+    const File = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.File;
+
+    if (req.params.id) {
+      const atlasDoc = await AtlasSpriteSheet.findById(req.params.id);
+      if (!atlasDoc) return null;
+
+      // Remove pin records and unpin atlas CID from IPFS
+      if (atlasDoc.cid) {
+        try {
+          await removePinRecordsAndUnpin(atlasDoc.cid, options);
+          if (atlasDoc.metadata?.itemKey) {
+            const itemKey = atlasDoc.metadata.itemKey;
+            await IpfsClient.removeMfsPath(`/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`);
+          }
+          logger.info(`Cleaned up IPFS atlas CID ${atlasDoc.cid} for AtlasSpriteSheet ${atlasDoc._id}`);
+        } catch (ipfsErr) {
+          logger.warn(`Failed to clean up IPFS atlas CID ${atlasDoc.cid}: ${ipfsErr.message}`);
+        }
+      }
+
+      // Delete the referenced File document (the atlas PNG blob)
+      if (atlasDoc.fileId) {
+        await File.findByIdAndDelete(atlasDoc.fileId);
+      }
+
+      return await AtlasSpriteSheet.findByIdAndDelete(req.params.id);
+    } else {
+      // Bulk delete: iterate each atlas to clean up File, IPFS pins, and pin records
+      const allAtlases = await AtlasSpriteSheet.find({});
+      for (const atlasDoc of allAtlases) {
+        try {
+          if (atlasDoc.cid) {
+            await removePinRecordsAndUnpin(atlasDoc.cid, options);
+            if (atlasDoc.metadata?.itemKey) {
+              const itemKey = atlasDoc.metadata.itemKey;
+              await IpfsClient.removeMfsPath(`/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`);
+            }
+          }
+          if (atlasDoc.fileId) {
+            await File.findByIdAndDelete(atlasDoc.fileId);
+          }
+        } catch (err) {
+          logger.error(`Failed to clean up AtlasSpriteSheet ${atlasDoc._id} during bulk delete: ${err.message}`);
+        }
+      }
+      return await AtlasSpriteSheet.deleteMany();
+    }
   },
 };
 

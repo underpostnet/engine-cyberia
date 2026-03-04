@@ -47,13 +47,31 @@ const ItemSchema = new Schema(
 );
 
 /**
+ * @typedef {Object} Ledger
+ * Blockchain protocol metadata linking the visual object-layer prefab to its economic reality.
+ * @property {string} type - The token standard or off-chain designation (ERC20, ERC721, OFF_CHAIN).
+ * @property {string} address - The Solidity smart contract address.
+ * @memberof CyberiaObjectLayerModel
+ */
+const LedgerSchema = new Schema({
+  type: {
+    type: String,
+    enum: ['ERC20', 'ERC721', 'OFF_CHAIN'],
+    required: true,
+  },
+  address: { type: String }, // Solidity contract address
+});
+
+/**
  * @typedef {Object} ObjectLayer
  * @property {Object} data - Object layer data
- * @property {Data.Stats} data.stats - Statistical attributes of the object layer
- * @property {Data.Item} data.item - Item information this layer represents
+ * @property {Data.Stats} data.stats - Statistical or mechanical attributes for the object layer
+ * @property {Data.Item} data.item - Human-readable item information for the object layer
+ * @property {string} data.ledger - Blockchain protocol metadata linking the visual object-layer prefab to its economic reality
+ * @property {string} data.atlasSpriteSheetCid - IPFS Content Identifier for the consolidated atlas sprite sheet PNG
+ * @property {string} data.atlasSpriteSheetMetadataCid - IPFS Content Identifier for the atlas sprite sheet metadata JSON (fast-json-stable-stringify)
  * @property {string} data.seed - Random UUID for unique state generation
- * @property {string} [data.atlasSpriteSheetCid] - IPFS Content Identifier for the consolidated atlas sprite sheet PNG
- * @property {string} [cid] - IPFS Content Identifier for the object layer data JSON (fast-json-stable-stringify)
+ * @property {string} cid - IPFS Content Identifier for the object layer data JSON (fast-json-stable-stringify)
  * @property {Types.ObjectId} objectLayerRenderFramesId - Reference to ObjectLayerRenderFrames document
  * @property {Types.ObjectId} atlasSpriteSheetId - Reference to AtlasSpriteSheet document
  * @property {string} sha256 - SHA-256 hash of the object layer data
@@ -66,6 +84,9 @@ const ObjectLayerSchema = new Schema(
     data: {
       stats: { type: StatsSchema, required: true },
       item: { type: ItemSchema, required: true },
+      ledger: { type: LedgerSchema, required: true },
+      atlasSpriteSheetCid: { type: String, default: '', trim: true },
+      atlasSpriteSheetMetadataCid: { type: String, default: '', trim: true },
       seed: {
         type: String,
         required: true,
@@ -74,7 +95,6 @@ const ObjectLayerSchema = new Schema(
           'Please provide a valid UUID v4',
         ],
       },
-      atlasSpriteSheetCid: { type: String, default: '', trim: true },
     },
     cid: { type: String, default: '', trim: true },
     objectLayerRenderFramesId: { type: Schema.Types.ObjectId, ref: 'ObjectLayerRenderFrames' },

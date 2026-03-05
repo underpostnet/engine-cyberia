@@ -43,6 +43,8 @@ const AtlasSpriteSheetService = {
 
     // Add atlas PNG to IPFS and obtain its CID
     let atlasCid = '';
+    let atlasMetadataCid = '';
+    const userId = req.auth && req.auth.user ? req.auth.user._id : undefined;
     try {
       const ipfsResult = await IpfsClient.addBufferToIpfs(
         buffer,
@@ -51,8 +53,6 @@ const AtlasSpriteSheetService = {
       );
       if (ipfsResult) {
         atlasCid = ipfsResult.cid;
-        // Create pin record for the authenticated user (when available)
-        const userId = req.auth && req.auth.user ? req.auth.user._id : undefined;
         if (userId) {
           await createPinRecord({ cid: atlasCid, userId, options });
         }
@@ -60,6 +60,24 @@ const AtlasSpriteSheetService = {
       }
     } catch (ipfsError) {
       logger.warn('Failed to add atlas sprite sheet to IPFS:', ipfsError.message);
+    }
+
+    // Pin atlas metadata JSON to IPFS (fast-json-stable-stringify) and obtain its CID
+    try {
+      const metadataIpfsResult = await IpfsClient.addJsonToIpfs(
+        metadata,
+        `${itemKey}_atlas_sprite_sheet_metadata.json`,
+        `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+      );
+      if (metadataIpfsResult) {
+        atlasMetadataCid = metadataIpfsResult.cid;
+        if (userId) {
+          await createPinRecord({ cid: atlasMetadataCid, userId, options });
+        }
+        logger.info(`Atlas metadata pinned to IPFS – CID: ${atlasMetadataCid}`);
+      }
+    } catch (ipfsError) {
+      logger.warn('Failed to add atlas metadata to IPFS:', ipfsError.message);
     }
 
     let atlasDoc = await AtlasSpriteSheet.findOne({ 'metadata.itemKey': itemKey });
@@ -82,8 +100,10 @@ const AtlasSpriteSheetService = {
     }
 
     objectLayer.atlasSpriteSheetId = atlasDoc._id;
-    objectLayer.data.atlasSpriteSheetCid = atlasCid;
-    objectLayer.markModified('data.atlasSpriteSheetCid');
+    if (!objectLayer.data.render) objectLayer.data.render = {};
+    objectLayer.data.render.cid = atlasCid;
+    objectLayer.data.render.metadataCid = atlasMetadataCid;
+    objectLayer.markModified('data.render');
     await objectLayer.save();
 
     return atlasDoc;
@@ -106,7 +126,8 @@ const AtlasSpriteSheetService = {
       const atlasDoc = await AtlasSpriteSheet.findById(objectLayer.atlasSpriteSheetId);
       if (atlasDoc) {
         // Remove pin records and unpin atlas CID from IPFS
-        const atlasCid = atlasDoc.cid || objectLayer.data.atlasSpriteSheetCid;
+        const atlasCid = atlasDoc.cid || objectLayer.data.render?.cid;
+        const atlasMetadataCid = objectLayer.data.render?.metadataCid;
         if (atlasCid) {
           try {
             await removePinRecordsAndUnpin(atlasCid, options);
@@ -118,6 +139,16 @@ const AtlasSpriteSheetService = {
             logger.warn(`Failed to clean up IPFS atlas CID ${atlasCid}: ${ipfsErr.message}`);
           }
         }
+        if (atlasMetadataCid) {
+          try {
+            await removePinRecordsAndUnpin(atlasMetadataCid, options);
+            const itemId = objectLayer.data.item.id;
+            await IpfsClient.removeMfsPath(`/object-layer/${itemId}/${itemId}_atlas_sprite_sheet_metadata.json`);
+            logger.info(`Cleaned up IPFS atlas metadata CID ${atlasMetadataCid} for ObjectLayer ${objectLayer._id}`);
+          } catch (ipfsErr) {
+            logger.warn(`Failed to clean up IPFS atlas metadata CID ${atlasMetadataCid}: ${ipfsErr.message}`);
+          }
+        }
 
         // Delete the atlas File document from MongoDB
         if (atlasDoc.fileId) {
@@ -127,8 +158,10 @@ const AtlasSpriteSheetService = {
         await AtlasSpriteSheet.findByIdAndDelete(atlasDoc._id);
       }
       objectLayer.atlasSpriteSheetId = undefined;
-      objectLayer.data.atlasSpriteSheetCid = '';
-      objectLayer.markModified('data.atlasSpriteSheetCid');
+      if (!objectLayer.data.render) objectLayer.data.render = {};
+      objectLayer.data.render.cid = '';
+      objectLayer.data.render.metadataCid = '';
+      objectLayer.markModified('data.render');
       await objectLayer.save();
     }
 

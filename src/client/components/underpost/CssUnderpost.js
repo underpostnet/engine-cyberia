@@ -4,18 +4,18 @@ import { LoadingAnimation } from '../core/LoadingAnimation.js';
 import { Modal } from '../core/Modal.js';
 import { getProxyPath } from '../core/Router.js';
 
-const CssCommonCryptokoyn = async () => {
+const CssCommonUnderpost = async () => {
   LoadingAnimation.img.load({
     key: 'points',
     src: 'assets/util/points-loading.gif',
     classes: 'inl',
     style: 'width: 100px; height: 100px',
   });
-  subThemeManager.setDarkTheme('#ff0d0d');
-  subThemeManager.setLightTheme('#ffcc00');
+  subThemeManager.setDarkTheme('#f70808');
+  subThemeManager.setLightTheme('#aa0000');
   Modal.labelSelectorTopOffsetEndAnimation = '-15px';
   await AgGrid.RenderStyle({
-    eventThemeId: 'CssCommonCryptokoyn',
+    eventThemeId: 'CssCommonUnderpost',
     style: {
       'font-family': `retro-font`,
       'font-size': '24px',
@@ -27,10 +27,10 @@ const CssCommonCryptokoyn = async () => {
   return html`<style>
       /* Core variables: override in each theme */
       :root {
-        --cy-font-retro: 'retro-font';
-        --cy-font-retro-title: 'retro-font-title';
-        --cy-font-retro-sensitive: 'retro-font-sensitive';
-        --cy-font-retro-cta: 'retro-font-cta';
+        --up-font-retro: 'retro-font';
+        --up-font-retro-title: 'retro-font-title';
+        --up-font-retro-sensitive: 'retro-font-sensitive';
+        --up-font-retro-cta: 'retro-font-cta';
       }
 
       @font-face {
@@ -67,40 +67,40 @@ const CssCommonCryptokoyn = async () => {
       h1,
       h2,
       h3 {
-        font-family: var(--cy-font-retro-cta);
+        font-family: var(--up-font-retro-cta);
         font-size: 5rem;
-        color: #ff0d0d;
-        text-shadow: 2px 2px 0px #9e0808;
+        color: #f70808;
+        text-shadow: 2px 2px 0px #7a0404;
         margin-bottom: 2rem;
       }
 
       p {
-        font-family: var(--cy-font-retro);
+        font-family: var(--up-font-retro);
       }
 
       .object-layer-viewer-container {
         width: 100% !important;
-        font-family: var(--cy-font-retro);
+        font-family: var(--up-font-retro);
       }
 
       .cta-button {
-        font-family: var(--cy-font-retro-cta);
+        font-family: var(--up-font-retro-cta);
         font-size: 1.5rem;
         padding: 1rem 2rem;
-        border: 3px solid #ff0d0d;
+        border: 3px solid #f70808;
         background: transparent;
-        color: #ff0d0d;
+        color: #f70808;
         cursor: pointer;
         transition: all 0.3s ease-in-out;
-        text-shadow: 1px 1px 0px #9e0808;
+        text-shadow: 1px 1px 0px #7a0404;
       }
 
       .cta-button:hover {
-        background: #ff0d0d;
+        background: #f70808;
         color: #000;
         box-shadow:
-          0 0 20px #ff0d0d,
-          0 0 40px #ff0d0d;
+          0 0 20px #f70808,
+          0 0 40px #f70808;
         text-shadow: none;
       }
 
@@ -110,16 +110,21 @@ const CssCommonCryptokoyn = async () => {
       .title-main-modal,
       .section-mp,
       .default-slide-menu-top-bar-fix-title-container-text {
-        font-family: var(--cy-font-retro);
+        font-family: var(--up-font-retro);
       }
 
       .default-slide-menu-top-bar-fix-title-container-text {
         font-size: 40px !important;
       }
 
+      .modal,
+      .badge {
+        font-family: var(--up-font-retro);
+      }
+
       input,
       .chat-message-body {
-        font-family: var(--cy-font-retro-sensitive);
+        font-family: var(--up-font-retro-sensitive);
       }
 
       .btn-modal-default {
@@ -129,17 +134,17 @@ const CssCommonCryptokoyn = async () => {
       .handle-btn-container {
         text-shadow: none;
       }
-      .cryptokoyn-menu-icon {
+      .underpost-menu-icon {
         width: 30px;
         height: 30px;
         top: -5px;
       }
-      .cryptokoyn-menu-icon-modal {
+      .underpost-menu-icon-modal {
         top: -3px;
         width: 30px;
         height: 30px;
       }
-      .cryptokoyn-text-title-modal {
+      .underpost-text-title-modal {
         top: -10px;
       }
       .main-btn-menu {
@@ -148,18 +153,23 @@ const CssCommonCryptokoyn = async () => {
       .input-container {
         width: 278px;
       }
+      .public-profile-image-container,
+      .public-profile-image,
+      .creator-avatar {
+        border-radius: 0px !important;
+      }
     </style>
 
     <div class="ag-grid-style"></div>`;
 };
 
-const CssCryptokoynDark = {
-  theme: 'cryptokoyn-dark',
+const CssUnderpostDark = {
+  theme: 'underpost-dark',
   dark: true,
   barButtonsIconTheme: 'img',
   render: async () => {
     return (
-      (await CssCommonCryptokoyn()) +
+      (await CssCommonUnderpost()) +
       html`
         <style>
           button:hover,
@@ -174,19 +184,19 @@ const CssCryptokoynDark = {
             color: black !important;
           }
         </style>
-        ${borderChar(2, `#ff0d0d`, ['.default-slide-menu-top-bar-fix-title-container-text'])}
+        ${borderChar(2, `#f70808`, ['.default-slide-menu-top-bar-fix-title-container-text'])}
       `
     );
   },
 };
 
-const CssCryptokoynLight = {
-  theme: 'cryptokoyn-light',
+const CssUnderpostLight = {
+  theme: 'underpost-light',
   dark: false,
   barButtonsIconTheme: 'img',
   render: async () => {
     return (
-      (await CssCommonCryptokoyn()) +
+      (await CssCommonUnderpost()) +
       html`
         <style>
           button:hover,
@@ -199,7 +209,7 @@ const CssCryptokoynLight = {
           }
           .default-slide-menu-top-bar-fix-title-container-text {
             font-size: 40px !important;
-            color: #ffcc00 !important;
+            color: white !important;
           }
         </style>
         ${borderChar(1, `#010101`, ['.default-slide-menu-top-bar-fix-title-container-text'])}
@@ -209,4 +219,4 @@ const CssCryptokoynLight = {
   },
 };
 
-export { CssCryptokoynDark, CssCommonCryptokoyn, CssCryptokoynLight };
+export { CssUnderpostDark, CssCommonUnderpost, CssUnderpostLight };

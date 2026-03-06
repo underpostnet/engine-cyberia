@@ -34,6 +34,9 @@ spec:
             - name: vol-public-dd-cyberia-dd-cyberia-development-blue
               mountPath: /home/dd/engine/src/client/public/cyberia
     
+            - name: vol-public-dd-cyberia-underpost-dd-cyberia-development-blue
+              mountPath: /home/dd/engine/src/client/public/underpost
+    
       volumes:
         - name: config-volume-dd-cyberia-development-blue
           configMap:
@@ -43,6 +46,11 @@ spec:
         - name: vol-public-dd-cyberia-dd-cyberia-development-blue
           persistentVolumeClaim:
             claimName: pvc-public-dd-cyberia-dd-cyberia-development-blue
+    
+      
+        - name: vol-public-dd-cyberia-underpost-dd-cyberia-development-blue
+          persistentVolumeClaim:
+            claimName: pvc-public-dd-cyberia-underpost-dd-cyberia-development-blue
     
       
 ---
@@ -135,6 +143,33 @@ spec:
       protocol: UDP
       port: 4013
       targetPort: 4013
+
+    - name: 'tcp-4014'
+      protocol: TCP
+      port: 4014
+      targetPort: 4014
+    - name: 'udp-4014'
+      protocol: UDP
+      port: 4014
+      targetPort: 4014
+
+    - name: 'tcp-4015'
+      protocol: TCP
+      port: 4015
+      targetPort: 4015
+    - name: 'udp-4015'
+      protocol: UDP
+      port: 4015
+      targetPort: 4015
+
+    - name: 'tcp-4016'
+      protocol: TCP
+      port: 4016
+      targetPort: 4016
+    - name: 'udp-4016'
+      protocol: UDP
+      port: 4016
+      targetPort: 4016
   type: LoadBalancer
 ---
 apiVersion: apps/v1
@@ -172,6 +207,9 @@ spec:
             - name: vol-public-dd-cyberia-dd-cyberia-development-green
               mountPath: /home/dd/engine/src/client/public/cyberia
     
+            - name: vol-public-dd-cyberia-underpost-dd-cyberia-development-green
+              mountPath: /home/dd/engine/src/client/public/underpost
+    
       volumes:
         - name: config-volume-dd-cyberia-development-green
           configMap:
@@ -181,6 +219,11 @@ spec:
         - name: vol-public-dd-cyberia-dd-cyberia-development-green
           persistentVolumeClaim:
             claimName: pvc-public-dd-cyberia-dd-cyberia-development-green
+    
+      
+        - name: vol-public-dd-cyberia-underpost-dd-cyberia-development-green
+          persistentVolumeClaim:
+            claimName: pvc-public-dd-cyberia-underpost-dd-cyberia-development-green
     
       
 ---
@@ -273,4 +316,31 @@ spec:
       protocol: UDP
       port: 4013
       targetPort: 4013
+
+    - name: 'tcp-4014'
+      protocol: TCP
+      port: 4014
+      targetPort: 4014
+    - name: 'udp-4014'
+      protocol: UDP
+      port: 4014
+      targetPort: 4014
+
+    - name: 'tcp-4015'
+      protocol: TCP
+      port: 4015
+      targetPort: 4015
+    - name: 'udp-4015'
+      protocol: UDP
+      port: 4015
+      targetPort: 4015
+
+    - name: 'tcp-4016'
+      protocol: TCP
+      port: 4016
+      targetPort: 4016
+    - name: 'udp-4016'
+      protocol: UDP
+      port: 4016
+      targetPort: 4016
   type: LoadBalancer

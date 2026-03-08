@@ -195,6 +195,7 @@ const DefaultConf = /**/ {
           'RichText',
           'Panel',
           'Content',
+          'Docs',
           'WebComponent',
         ],
         'cyberia-portal': [
@@ -226,6 +227,7 @@ const DefaultConf = /**/ {
         { path: '/object-layer-engine-management', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/object-layer-engine-viewer', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-map-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
+        { path: '/docs', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [
         {
@@ -280,7 +282,15 @@ const DefaultConf = /**/ {
       ],
     },
     cryptokoyn: {
-      metadata: { title: 'Cryptokoyn' },
+      metadata: {
+        title: 'Cryptokoyn',
+        description:
+          'Financial portal and token hub for CryptoKoyn (CKY) — the fungible ERC-1155 currency of the Cyberia Online ecosystem. Staking, governance, analytics, and wallet management.',
+        keywords: ['cryptokoyn', 'CKY', 'token', 'staking', 'governance', 'ERC-1155', 'wallet', 'blockchain'],
+        author: 'https://github.com/underpostnet',
+        thumbnail: 'assets/banner/koyn-social.png',
+        themeColor: '#E1DB07',
+      },
       publicCopyNonExistingFiles: 'cyberia',
       components: {
         core: [
@@ -387,7 +397,15 @@ const DefaultConf = /**/ {
       services: ['core', 'user', 'file', 'crypto'],
     },
     itemledger: {
-      metadata: { title: 'Item Ledger' },
+      metadata: {
+        title: 'Item Ledger',
+        description:
+          'Canonical registry, metadata resolver, and IPFS indexer for Object Layer items — semi-fungible and non-fungible ERC-1155 tokens in the Cyberia Online ecosystem. Item search, provenance, and marketplace.',
+        keywords: ['itemledger', 'object layer', 'NFT', 'ERC-1155', 'metadata', 'IPFS', 'registry', 'marketplace'],
+        author: 'https://github.com/underpostnet',
+        thumbnail: 'apple-touch-startup-image-1136x640.png',
+        themeColor: '#0551C4',
+      },
       publicCopyNonExistingFiles: 'cyberia',
       components: {
         core: [
@@ -517,7 +535,7 @@ const DefaultConf = /**/ {
       pages: [{ path: '/test', title: 'Test', client: 'Test', head: [], body: [] }],
     },
     Cryptokoyn: {
-      head: ['CryptokoynScripts', 'Css'],
+      head: ['Seo', 'Pwa', 'Microdata', 'CryptokoynScripts', 'Css'],
       body: ['CacheControl', 'DefaultSplashScreen'],
       mailer: { userVerifyEmail: 'DefaultVerifyEmail', userRecoverEmail: 'DefaultRecoverEmail' },
       offline: [
@@ -527,7 +545,7 @@ const DefaultConf = /**/ {
       pages: [{ path: '/test', title: 'Test', client: 'Test', head: [], body: [] }],
     },
     Itemledger: {
-      head: ['ItemledgerScripts', 'Css'],
+      head: ['Seo', 'PwaItemledger', 'Microdata', 'ItemledgerScripts', 'Css'],
       body: ['CacheControl', 'DefaultSplashScreen'],
       mailer: { userVerifyEmail: 'DefaultVerifyEmail', userRecoverEmail: 'DefaultRecoverEmail' },
       offline: [
@@ -613,7 +631,7 @@ const DefaultConf = /**/ {
         ],
         minifyBuild: false,
         liteBuild: true,
-        docsBuild: false,
+        docsBuild: true,
         proxy: [80, 443],
         db: { provider: 'mongoose', host: 'mongodb://127.0.0.1:27017', name: 'default' },
         valkey: { port: 6379, host: '127.0.0.1' },

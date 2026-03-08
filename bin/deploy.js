@@ -1025,6 +1025,50 @@ nvidia/gpu-operator \
         const ver = CyberiaDependencies[dep];
         shellExec(`npm install ${dep}@${ver}`);
       }
+      const hardhatPackageJson = JSON.parse(fs.readFileSync(`./hardhat/package.json`, 'utf8'));
+      const hardhatDeps = {
+        ...(hardhatPackageJson.dependencies || {}),
+      };
+      if (hardhatPackageJson.devDependencies && hardhatPackageJson.devDependencies.ethers) {
+        hardhatDeps.ethers = hardhatPackageJson.devDependencies.ethers;
+      }
+      for (const dep of Object.keys(hardhatDeps)) {
+        const ver = hardhatDeps[dep];
+        shellExec(`npm install ${dep}@${ver}`);
+      }
+      shellExec(`cd ./hardhat && npm install --include=dev`);
+      break;
+    }
+
+    case 'cyberia-docs': {
+      // Copy custom cyberia jsdoc to project root for docs build
+      const cyberiaJsDocPath = `./jsdoc.dd-cyberia.json`;
+      if (fs.existsSync(cyberiaJsDocPath)) {
+        logger.info('copying custom cyberia jsdoc.json to project root');
+        fs.copySync(cyberiaJsDocPath, `./jsdoc.json`);
+      }
+
+      // Generate hardhat coverage report for docs inclusion
+      if (fs.existsSync(`./hardhat/package.json`)) {
+        logger.info('generating hardhat coverage report for cyberia docs');
+        try {
+          shellExec(`cd ./hardhat && NODE_ENV=development npx hardhat coverage`);
+        } catch (e) {
+          logger.warn('hardhat coverage generation failed, continuing', e.message);
+        }
+      }
+
+      // Prepare cyberia docs references directory with hardhat README and WHITE-PAPER
+      const cyberiaDocsRefsDir = `./src/client/public/cyberia/docs/references`;
+      fs.mkdirSync(cyberiaDocsRefsDir, { recursive: true });
+      if (fs.existsSync(`./hardhat/README.md`)) {
+        fs.copySync(`./hardhat/README.md`, `${cyberiaDocsRefsDir}/Hardhat Module.md`);
+        logger.info('copied hardhat README.md to cyberia docs references');
+      }
+      if (fs.existsSync(`./hardhat/WHITE-PAPER.md`)) {
+        fs.copySync(`./hardhat/WHITE-PAPER.md`, `${cyberiaDocsRefsDir}/White Paper.md`);
+        logger.info('copied hardhat WHITE-PAPER.md to cyberia docs references');
+      }
       break;
     }
 
@@ -1071,6 +1115,40 @@ nvidia/gpu-operator \
   --from-file=script.js=${scriptPath} \
   --dry-run=client -o yaml | kubectl apply -f -
 `);
+      break;
+    }
+
+    case 'dependabot': {
+      shellExec(`git fetch origin`);
+
+      const { stdout: branchOutput } = shellExec(`git branch -r`, { silent: true });
+      const dependabotBranches = branchOutput
+        .split('\n')
+        .map((b) => b.trim())
+        .filter((b) => b.startsWith('remotes/origin/dependabot/') || b.startsWith('origin/dependabot/'))
+        .map((b) => b.replace(/^remotes\//, '').replace(/^origin\//, ''));
+
+      if (dependabotBranches.length === 0) {
+        logger.info('No remote dependabot branches found');
+        break;
+      }
+
+      logger.info('Found dependabot branches:', dependabotBranches);
+
+      for (const branch of dependabotBranches) {
+        logger.info(`Checking out branch: ${branch}`);
+        shellExec(`git checkout -B ${branch} origin/${branch}`);
+      }
+
+      logger.info('Checking out master');
+      shellExec(`git checkout master`);
+
+      for (const branch of dependabotBranches) {
+        logger.info(`Merging branch: ${branch}`);
+        shellExec(`git merge ${branch}`);
+      }
+
+      logger.info('All dependabot branches merged into master');
       break;
     }
   }

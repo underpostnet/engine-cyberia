@@ -606,6 +606,11 @@ const DefaultConf = /**/ {
         ],
         ws: 'core',
         peer: true,
+        docs: {
+          coveragePath: './hardhat',
+          jsJsonPath: './jsdoc.dd-cyberia.json',
+          references: ['./hardhat/README.md', './hardhat/WHITE-PAPER.md'],
+        },
         origins: [
           'https://www.cyberiaonline.com',
           'https://server.cyberiaonline.com',
@@ -644,6 +649,11 @@ const DefaultConf = /**/ {
         ],
         ws: 'core',
         peer: true,
+        docs: {
+          coveragePath: './hardhat',
+          jsJsonPath: './jsdoc.dd-cyberia.json',
+          references: ['./hardhat/README.md', './hardhat/WHITE-PAPER.md'],
+        },
         origins: [
           'https://www.cyberiaonline.com',
           'https://server.cyberiaonline.com',

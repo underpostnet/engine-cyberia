@@ -277,6 +277,8 @@ const DefaultConf = /**/ {
         'object-layer-render-frames',
         'atlas-sprite-sheet',
         'default',
+        'cyberia-entity',
+        'cyberia-map',
       ],
     },
     cryptokoyn: {
@@ -603,12 +605,15 @@ const DefaultConf = /**/ {
           'object-layer-render-frames',
           'atlas-sprite-sheet',
           'ipfs',
+          'cyberia-entity',
+          'cyberia-map',
         ],
         ws: 'core',
         peer: true,
         docs: {
           coveragePath: './hardhat',
           jsJsonPath: './jsdoc.dd-cyberia.json',
+          coverageOutputDir: 'hardhat-coverage',
           references: ['./hardhat/README.md', './hardhat/WHITE-PAPER.md'],
         },
         origins: [
@@ -646,12 +651,15 @@ const DefaultConf = /**/ {
           'object-layer-render-frames',
           'atlas-sprite-sheet',
           'ipfs',
+          'cyberia-entity',
+          'cyberia-map',
         ],
         ws: 'core',
         peer: true,
         docs: {
           coveragePath: './hardhat',
           jsJsonPath: './jsdoc.dd-cyberia.json',
+          coverageOutputDir: 'hardhat-coverage',
           references: ['./hardhat/README.md', './hardhat/WHITE-PAPER.md'],
         },
         origins: [

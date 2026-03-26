@@ -17,7 +17,7 @@
         "docs": "jsdoc -c jsdoc.json",
         "install:global": "npm install -g jsdoc && npm install -g prettier",
         "install:test": "npm install -g mocha && npm install -g c8 && npm install -g coveralls",
-        "install": "npm run install:global && npm run install:test",
+        "install": "npm run install:global && npm run install:test && cd hardhat && npm install",
         "prettier": "prettier --write .",
         "fix": "npm audit fix --force && npm audit",
         "baremetal": "node bin baremetal --dev --commission --ls --create-machine",
@@ -84,11 +84,11 @@
         "json-colorizer": "^3.0.1",
         "jsonwebtoken": "^9.0.3",
         "mariadb": "^3.2.2",
-        "marked": "^17.0.4",
+        "marked": "^17.0.5",
         "mocha": "^11.3.0",
-        "mongoose": "^9.3.0",
+        "mongoose": "^9.3.1",
         "morgan": "^1.10.0",
-        "nodemailer": "^8.0.2",
+        "nodemailer": "^8.0.3",
         "nodemon": "^3.0.1",
         "peer": "^1.0.2",
         "peerjs": "^1.5.5",
@@ -109,7 +109,7 @@
         "maxrects-packer": "^2.7.3",
         "pngjs": "^7.0.0",
         "jimp": "^1.6.0",
-        "sharp": "^0.32.5",
+        "sharp": "^0.34.5",
         "ethers": "~6.16.0"
     },
     "publishConfig": {
@@ -123,6 +123,11 @@
         "diff": ">=8.0.3",
         "js-yaml": ">=3.14.2",
         "debug": ">=4.3.6",
-        "serialize-javascript": ">=7.0.3"
+        "serialize-javascript": ">=7.0.3",
+        "jimp": {
+            "@jimp/core": {
+                "file-type": "21.3.4"
+            }
+        }
     }
 }

@@ -146,7 +146,13 @@ const DefaultConf = /**/ {
       },
       publicRef: 'cyberia',
       components: {
-        cyberia: ['MapEngineCyberia', 'ObjectLayerEngine', 'ObjectLayerEngineModal', 'ObjectLayerEngineViewer'],
+        cyberia: [
+          'MapEngineCyberia',
+          'ObjectLayerEngine',
+          'ObjectLayerEngineModal',
+          'ObjectLayerEngineViewer',
+          'InstanceEngineCyberia',
+        ],
         core: [
           'CommonJs',
           'VanillaJs',
@@ -225,6 +231,7 @@ const DefaultConf = /**/ {
         { path: '/object-layer-engine-management', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/object-layer-engine-viewer', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-map-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
+        { path: '/cyberia-instance-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/docs', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [
@@ -279,6 +286,7 @@ const DefaultConf = /**/ {
         'default',
         'cyberia-entity',
         'cyberia-map',
+        'cyberia-instance',
       ],
     },
     cryptokoyn: {
@@ -558,6 +566,31 @@ const DefaultConf = /**/ {
   server: {
     'underpost.net': {
       '/': {
+        replicas: ['/r1'],
+        client: 'underpost',
+        runtime: 'nodejs',
+        apis: ['user', 'file', 'test', 'document'],
+        apiBaseProxyPath: null,
+        apiBaseHost: null,
+        origins: [],
+        ws: 'core',
+        peer: true,
+        proxy: [80, 443],
+        db: { provider: 'mongoose', host: 'env:DB_HOST', name: 'env:DB_NAME_NEXODEV' },
+        valkey: { port: 'env:VALKEY_PORT', host: 'env:VALKEY_HOST' },
+        mailer: {
+          sender: { email: 'env:MAILER_SENDER_EMAIL', name: 'env:MAILER_SENDER_NAME' },
+          transport: {
+            host: 'env:SMTP_HOST',
+            port: 'env:SMTP_PORT',
+            secure: true,
+            auth: { user: 'env:SMTP_AUTH_USER', pass: 'env:SMTP_AUTH_PASS' },
+          },
+        },
+      },
+      '/singlereplicas1': {
+        replicas: ['/r5'],
+        singleReplica: true,
         client: 'underpost',
         runtime: 'nodejs',
         apis: ['user', 'file', 'test', 'document'],
@@ -607,6 +640,7 @@ const DefaultConf = /**/ {
           'ipfs',
           'cyberia-entity',
           'cyberia-map',
+          'cyberia-instance',
         ],
         ws: 'core',
         peer: true,
@@ -653,6 +687,7 @@ const DefaultConf = /**/ {
           'ipfs',
           'cyberia-entity',
           'cyberia-map',
+          'cyberia-instance',
         ],
         ws: 'core',
         peer: true,

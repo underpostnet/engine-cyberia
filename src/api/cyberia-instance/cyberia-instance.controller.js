@@ -1,12 +1,12 @@
 import { loggerFactory } from '../../server/logger.js';
-import { CyberiaMapService } from './cyberia-map.service.js';
+import { CyberiaInstanceService } from './cyberia-instance.service.js';
 
 const logger = loggerFactory(import.meta);
 
-const CyberiaMapController = {
+const CyberiaInstanceController = {
   post: async (req, res, options) => {
     try {
-      const result = await CyberiaMapService.post(req, res, options);
+      const result = await CyberiaInstanceService.post(req, res, options);
       return res.status(200).json({
         status: 'success',
         data: result,
@@ -22,13 +22,8 @@ const CyberiaMapController = {
   get: async (req, res, options) => {
     try {
       const { page, limit } = req.query;
-      const result = await CyberiaMapService.get(
-        {
-          ...req,
-          path: req.path,
-          params: req.params,
-          query: { ...req.query, page: parseInt(page), limit: parseInt(limit) },
-        },
+      const result = await CyberiaInstanceService.get(
+        { ...req, query: { ...req.query, page: parseInt(page), limit: parseInt(limit) } },
         res,
         options,
       );
@@ -46,7 +41,7 @@ const CyberiaMapController = {
   },
   put: async (req, res, options) => {
     try {
-      const result = await CyberiaMapService.put(req, res, options);
+      const result = await CyberiaInstanceService.put(req, res, options);
       return res.status(200).json({
         status: 'success',
         data: result,
@@ -61,7 +56,7 @@ const CyberiaMapController = {
   },
   delete: async (req, res, options) => {
     try {
-      const result = await CyberiaMapService.delete(req, res, options);
+      const result = await CyberiaInstanceService.delete(req, res, options);
       return res.status(200).json({
         status: 'success',
         data: result,
@@ -76,4 +71,4 @@ const CyberiaMapController = {
   },
 };
 
-export { CyberiaMapController };
+export { CyberiaInstanceController };

@@ -1,31 +1,3 @@
-const ModelElement = {
-  user: () => {
-    return {
-      user: {
-        _id: '',
-      },
-    };
-  },
-};
-
-const BaseElement = () => {
-  return {
-    user: {
-      main: {
-        model: {
-          ...ModelElement.user(),
-        },
-      },
-    },
-    chat: {},
-    mailer: {},
-  };
-};
-
-const CyberiaPortalParams = {
-  EVENT_CALLBACK_TIME: 45,
-};
-
 const CyberiaDependencies = {
   'maxrects-packer': '^2.7.3',
   pngjs: '^7.0.0',
@@ -61,4 +33,4 @@ const DefaultCyberiaItems = [
   'grass',
 ];
 
-export { BaseElement, ModelElement, CyberiaPortalParams, CyberiaDependencies, DefaultCyberiaItems };
+export { CyberiaDependencies, DefaultCyberiaItems };

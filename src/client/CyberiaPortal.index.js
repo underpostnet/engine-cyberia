@@ -13,9 +13,8 @@ import { Worker } from './components/core/Worker.js';
 import { CssCyberiaDark, CssCyberiaLight } from './components/cyberia-portal/CssCyberiaPortal.js';
 import { SocketIoCyberiaPortal } from './components/cyberia-portal/SocketIoCyberiaPortal.js';
 import { SocketIo } from './components/core/SocketIo.js';
-import { ElementsCyberiaPortal } from './components/cyberia-portal/ElementsCyberiaPortal.js';
+import { AppStoreCyberiaPortal } from './components/cyberia-portal/AppStoreCyberiaPortal.js';
 import { Keyboard } from './components/core/Keyboard.js';
-import { CyberiaPortalParams } from './components/cyberia-portal/CommonCyberiaPortal.js';
 
 window.onload = () =>
   Worker.instance({
@@ -26,11 +25,11 @@ window.onload = () =>
       await TranslateCyberiaPortal.Init();
       await Responsive.Init();
       await MenuCyberiaPortal.Render();
-      await SocketIo.Init({ channels: ElementsCyberiaPortal.Data });
+      await SocketIo.Init({ channels: AppStoreCyberiaPortal.Data });
       await SocketIoCyberiaPortal.Init();
       await LogInCyberiaPortal();
       await LogOutCyberiaPortal();
       await SignUpCyberiaPortal();
-      await Keyboard.Init({ callBackTime: CyberiaPortalParams.EVENT_CALLBACK_TIME });
+      await Keyboard.Init();
     },
   });

@@ -11,10 +11,9 @@ import { RouterItemledger } from './components/itemledger/RoutesItemledger.js';
 import { TranslateItemledger } from './components/itemledger/TranslateItemledger.js';
 import { Worker } from './components/core/Worker.js';
 import { Keyboard } from './components/core/Keyboard.js';
-import { ItemledgerParams } from './components/itemledger/CommonItemledger.js';
 import { SocketIo } from './components/core/SocketIo.js';
 import { SocketIoItemledger } from './components/itemledger/SocketIoItemledger.js';
-import { ElementsItemledger } from './components/itemledger/ElementsItemledger.js';
+import { AppStoreItemledger } from './components/itemledger/AppStoreItemledger.js';
 import { CssItemledgerDark, CssItemledgerLight } from './components/itemledger/CssItemledger.js';
 import { s } from './components/core/VanillaJs.js';
 import { EventsUI } from './components/core/EventsUI.js';
@@ -32,11 +31,11 @@ window.onload = () =>
       await TranslateItemledger.Init();
       await Responsive.Init();
       await MenuItemledger.Render({ htmlMainBody });
-      await SocketIo.Init({ channels: ElementsItemledger.Data });
+      await SocketIo.Init({ channels: AppStoreItemledger.Data });
       await SocketIoItemledger.Init();
       await LogInItemledger();
       await LogOutItemledger();
       await SignUpItemledger();
-      await Keyboard.Init({ callBackTime: ItemledgerParams.EVENT_CALLBACK_TIME });
+      await Keyboard.Init();
     },
   });

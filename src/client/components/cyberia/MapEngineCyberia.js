@@ -23,6 +23,8 @@ class MapEngineCyberia {
   static showGridBorders = true;
   static addOnClick = true;
   static showObjectLayers = false;
+  static randomDim = false;
+  static captureObjLayerThumbnail = true;
   static imageCache = {};
 
   static loadObjectLayerImage(itemId, onLoad) {
@@ -95,19 +97,20 @@ class MapEngineCyberia {
     }
   }
 
-  static renderToOffscreenCanvas(cols, rows, cellW, cellH) {
+  static renderToOffscreenCanvas(cols, rows, cellW, cellH, { forceObjectLayers = false } = {}) {
     const offscreen = document.createElement('canvas');
     offscreen.width = cols * cellW;
     offscreen.height = rows * cellH;
     const ctx = offscreen.getContext('2d');
     ctx.clearRect(0, 0, offscreen.width, offscreen.height);
+    const useObjectLayers = forceObjectLayers || MapEngineCyberia.showObjectLayers;
     for (const entity of MapEngineCyberia.entities) {
       const x = entity.initCellX * cellW;
       const y = entity.initCellY * cellH;
       const w = entity.dimX * cellW;
       const h = entity.dimY * cellH;
 
-      if (MapEngineCyberia.showObjectLayers && entity.objectLayerItemIds?.length) {
+      if (useObjectLayers && entity.objectLayerItemIds?.length) {
         for (const itemId of entity.objectLayerItemIds) {
           const cached = MapEngineCyberia.imageCache[itemId];
           if (cached?.loaded && cached.img) {
@@ -270,6 +273,9 @@ class MapEngineCyberia {
     const idDimY = 'map-engine-dim-y';
     const idColor = 'map-engine-color';
     const idAlpha = 'map-engine-alpha';
+    const idFactorA = 'map-engine-factor-a';
+    const idFactorB = 'map-engine-factor-b';
+    const idVariationPreserve = 'map-engine-variation-preserve';
     const rgbaDisplayId = 'map-engine-rgba-display';
     const entityListId = 'map-engine-entity-list';
     const idObjLayerDropdown = 'map-engine-obj-layer-dropdown';
@@ -313,14 +319,97 @@ class MapEngineCyberia {
       };
     };
 
+    const applyRandomDim = (ep) => {
+      if (!MapEngineCyberia.randomDim) return;
+      const a = parseFloat(s(`.${idFactorA}`)?.value) || 0.5;
+      const b = parseFloat(s(`.${idFactorB}`)?.value) || 1.5;
+      const min = Math.min(a, b);
+      const max = Math.max(a, b);
+      const factor = min + Math.random() * (max - min);
+      ep.dimX = Math.max(1, Math.round(ep.dimX * factor));
+      ep.dimY = Math.max(1, Math.round(ep.dimY * factor));
+    };
+
     const addEntityLocally = () => {
       const ep = getEntityParams();
       ep.objectLayerItemIds = DropDown.Tokens[idObjLayerDropdown]?.value
         ? [...DropDown.Tokens[idObjLayerDropdown].value]
         : [];
+      applyRandomDim(ep);
       MapEngineCyberia.entities.push(ep);
       for (const itemId of ep.objectLayerItemIds) {
         MapEngineCyberia.loadObjectLayerImage(itemId, rerenderCanvas);
+      }
+      MapEngineCyberia.renderEntityList(entityListId);
+      rerenderCanvas();
+    };
+
+    const fillMapWithEntity = () => {
+      const ep = getEntityParams();
+      ep.objectLayerItemIds = DropDown.Tokens[idObjLayerDropdown]?.value
+        ? [...DropDown.Tokens[idObjLayerDropdown].value]
+        : [];
+      const { cols, rows } = getCanvasParams();
+      const dimX = ep.dimX || 1;
+      const dimY = ep.dimY || 1;
+      for (let r = 0; r < rows; r += dimY) {
+        for (let c = 0; c < cols; c += dimX) {
+          const tile = {
+            ...ep,
+            initCellX: c,
+            initCellY: r,
+            objectLayerItemIds: [...ep.objectLayerItemIds],
+          };
+          applyRandomDim(tile);
+          MapEngineCyberia.entities.push(tile);
+        }
+      }
+      for (const itemId of ep.objectLayerItemIds) {
+        MapEngineCyberia.loadObjectLayerImage(itemId, rerenderCanvas);
+      }
+      MapEngineCyberia.renderEntityList(entityListId);
+      rerenderCanvas();
+    };
+
+    const generateVariation = () => {
+      const a = parseFloat(s(`.${idFactorA}`)?.value) || 0.5;
+      const b = parseFloat(s(`.${idFactorB}`)?.value) || 1.5;
+      const min = Math.min(a, b);
+      const max = Math.max(a, b);
+      const preserveRaw = s(`.${idVariationPreserve}`)?.value || '';
+      const preserveSet = new Set(
+        preserveRaw
+          .split(',')
+          .map((t) => t.trim().toLowerCase())
+          .filter((t) => t),
+      );
+      const { cols, rows } = getCanvasParams();
+      for (const entity of MapEngineCyberia.entities) {
+        if (preserveSet.has((entity.entityType || '').toLowerCase())) continue;
+        const dimFactor = min + Math.random() * (max - min);
+        entity.dimX = Math.max(1, Math.round(entity.dimX * dimFactor));
+        entity.dimY = Math.max(1, Math.round(entity.dimY * dimFactor));
+        const posFactor = min + Math.random() * (max - min);
+        entity.initCellX = Math.max(0, Math.min(cols - 1, Math.round(entity.initCellX * posFactor)));
+        entity.initCellY = Math.max(0, Math.min(rows - 1, Math.round(entity.initCellY * posFactor)));
+      }
+      MapEngineCyberia.renderEntityList(entityListId);
+      rerenderCanvas();
+    };
+
+    const flipHorizontal = () => {
+      const { cols } = getCanvasParams();
+      for (const entity of MapEngineCyberia.entities) {
+        entity.initCellX = cols - entity.initCellX - entity.dimX;
+      }
+      MapEngineCyberia.renderEntityList(entityListId);
+      rerenderCanvas();
+    };
+
+    const flipVertical = () => {
+      const { rows } = getCanvasParams();
+      for (const entity of MapEngineCyberia.entities) {
+        entity.initCellY = rows - entity.initCellY - entity.dimY;
       }
       MapEngineCyberia.renderEntityList(entityListId);
       rerenderCanvas();
@@ -332,6 +421,7 @@ class MapEngineCyberia {
         .split(',')
         .map((t) => t.trim())
         .filter((t) => t);
+      const { cols, rows, cellW, cellH } = getCanvasParams();
       const payload = {
         code: s(`.${idCode}`)?.value || '',
         name: s(`.${idName}`)?.value || '',
@@ -339,6 +429,10 @@ class MapEngineCyberia {
         tags,
         status: DropDown.Tokens[idStatus]?.value || 'unlisted',
         entities: MapEngineCyberia.entities,
+        gridX: cols,
+        gridY: rows,
+        cellWidth: cellW,
+        cellHeight: cellH,
       };
       if (MapEngineCyberia.currentThumbnailId) payload.thumbnail = MapEngineCyberia.currentThumbnailId;
       return payload;
@@ -367,10 +461,12 @@ class MapEngineCyberia {
         }
       }
 
-      // Auto-capture canvas as thumbnail if none set
-      if (!MapEngineCyberia.currentThumbnailId) {
+      // Capture object layer thumbnail on save/update if checkbox is checked
+      if (MapEngineCyberia.captureObjLayerThumbnail) {
         const { cols, rows, cellW, cellH } = getCanvasParams();
-        const offscreen = MapEngineCyberia.renderToOffscreenCanvas(cols, rows, cellW, cellH);
+        const offscreen = MapEngineCyberia.renderToOffscreenCanvas(cols, rows, cellW, cellH, {
+          forceObjectLayers: true,
+        });
         const blob = await new Promise((resolve) => offscreen.toBlob(resolve, 'image/png'));
         if (blob) {
           const file = new File([blob], 'map-thumbnail.png', { type: 'image/png' });
@@ -405,12 +501,71 @@ class MapEngineCyberia {
       }
     };
 
+    const cloneMap = async () => {
+      if (!MapEngineCyberia.currentMapId) return;
+
+      // Always upload a new thumbnail file for the clone so it doesn't share the original's file
+      const thumbnailInput = s(`.${idThumbnail}`);
+      let cloneThumbnailId = null;
+      if (thumbnailInput && thumbnailInput.files && thumbnailInput.files.length > 0) {
+        const formData = new FormData();
+        formData.append('file', thumbnailInput.files[0]);
+        const uploadResult = await FileService.post({ body: formData });
+        if (uploadResult.status === 'success' && uploadResult.data && uploadResult.data.length > 0) {
+          cloneThumbnailId = uploadResult.data[0]._id;
+        } else {
+          NotificationManager.Push({
+            html: uploadResult.message || 'Failed to upload thumbnail',
+            status: 'error',
+          });
+          return;
+        }
+      }
+
+      // Capture object layer thumbnail for clone if checkbox is checked
+      if (!cloneThumbnailId && MapEngineCyberia.captureObjLayerThumbnail) {
+        const { cols, rows, cellW, cellH } = getCanvasParams();
+        const offscreen = MapEngineCyberia.renderToOffscreenCanvas(cols, rows, cellW, cellH, {
+          forceObjectLayers: true,
+        });
+        const blob = await new Promise((resolve) => offscreen.toBlob(resolve, 'image/png'));
+        if (blob) {
+          const file = new File([blob], 'map-thumbnail.png', { type: 'image/png' });
+          const formData = new FormData();
+          formData.append('file', file);
+          const uploadResult = await FileService.post({ body: formData });
+          if (uploadResult.status === 'success' && uploadResult.data?.length > 0) {
+            cloneThumbnailId = uploadResult.data[0]._id;
+          }
+        }
+      }
+
+      const body = getMapPayload();
+      if (cloneThumbnailId) body.thumbnail = cloneThumbnailId;
+      const result = await CyberiaMapService.post({ body });
+      NotificationManager.Push({
+        html: result.status === 'error' ? result.message : Translate.Render('success-create-item'),
+        status: result.status,
+      });
+      if (result.status === 'success') {
+        if (result.data?._id) MapEngineCyberia.currentMapId = result.data._id;
+        if (cloneThumbnailId) MapEngineCyberia.currentThumbnailId = cloneThumbnailId;
+        await DefaultManagement.loadTable(managementId, { force: true, reload: true });
+      }
+    };
+
     const loadMap = async (mapData) => {
       MapEngineCyberia.currentMapId = mapData._id || null;
       if (s(`.${idCode}`)) s(`.${idCode}`).value = mapData.code || '';
       if (s(`.${idName}`)) s(`.${idName}`).value = mapData.name || '';
       if (s(`.${idDescription}`)) s(`.${idDescription}`).value = mapData.description || '';
       if (s(`.${idTags}`)) s(`.${idTags}`).value = (mapData.tags || []).join(', ');
+
+      // Restore grid dimensions
+      if (s(`.${idX}`)) s(`.${idX}`).value = mapData.gridX || 16;
+      if (s(`.${idY}`)) s(`.${idY}`).value = mapData.gridY || 16;
+      if (s(`.${idCellW}`)) s(`.${idCellW}`).value = mapData.cellWidth || 32;
+      if (s(`.${idCellH}`)) s(`.${idCellH}`).value = mapData.cellHeight || 32;
       const statusValue = mapData.status || 'unlisted';
       if (DropDown.Tokens[idStatus]) {
         const statusIndex = statusOptions.findIndex((opt) => opt.value === statusValue);
@@ -509,6 +664,11 @@ class MapEngineCyberia {
       }
       const creatorDisplay = s(`.map-engine-creator-display`);
       if (creatorDisplay) creatorDisplay.innerHTML = '<span style="color:#888;font-size:12px;">—</span>';
+      if (s(`.${idX}`)) s(`.${idX}`).value = 16;
+      if (s(`.${idY}`)) s(`.${idY}`).value = 16;
+      if (s(`.${idCellW}`)) s(`.${idCellW}`).value = 32;
+      if (s(`.${idCellH}`)) s(`.${idCellH}`).value = 32;
+      if (s(`.${idVariationPreserve}`)) s(`.${idVariationPreserve}`).value = '';
       MapEngineCyberia.entities = [];
       MapEngineCyberia.renderEntityList(entityListId);
       rerenderCanvas();
@@ -566,12 +726,27 @@ class MapEngineCyberia {
 
       if (s(`.btn-map-engine-add-entity`)) s(`.btn-map-engine-add-entity`).onclick = () => addEntityLocally();
 
+      if (s(`.btn-map-engine-fill-map`)) s(`.btn-map-engine-fill-map`).onclick = () => fillMapWithEntity();
+
+      if (s(`.btn-map-engine-generate-variation`))
+        s(`.btn-map-engine-generate-variation`).onclick = () => generateVariation();
+
+      if (s(`.btn-map-engine-flip-horizontal`)) s(`.btn-map-engine-flip-horizontal`).onclick = () => flipHorizontal();
+
+      if (s(`.btn-map-engine-flip-vertical`)) s(`.btn-map-engine-flip-vertical`).onclick = () => flipVertical();
+
       if (s(`.btn-map-engine-generate`))
         s(`.btn-map-engine-generate`).onclick = () => {
           rerenderCanvas();
         };
 
       if (s(`.btn-map-engine-save-map`)) s(`.btn-map-engine-save-map`).onclick = () => saveMap();
+
+      if (s(`.btn-map-engine-clone-map`))
+        s(`.btn-map-engine-clone-map`).onclick = () => {
+          if (!MapEngineCyberia.currentMapId) return;
+          cloneMap();
+        };
 
       if (s(`.btn-map-engine-new-map`)) s(`.btn-map-engine-new-map`).onclick = () => resetForm();
 
@@ -668,6 +843,7 @@ class MapEngineCyberia {
     const dcAlpha = 'map-engine-dc-alpha';
     const dcCellPos = 'map-engine-dc-cell-pos';
     const dcDim = 'map-engine-dc-dim';
+    const dcFactors = 'map-engine-dc-factors';
     const dcSaveNew = 'map-engine-dc-save-new';
     const dcEntityFilter = 'map-engine-dc-entity-filter';
     const dcCanvasOpts = 'map-engine-dc-canvas-opts';
@@ -737,6 +913,24 @@ class MapEngineCyberia {
           class: 'wfa btn-map-engine-capture-thumbnail',
           label: html`<i class="fa-solid fa-camera"></i> Capture Thumbnail`,
         })}
+        <div class="fl" style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin: 5px 0;">
+          ${await ToggleSwitch.Render({
+            id: 'map-engine-capture-obj-layer-thumb',
+            type: 'checkbox',
+            displayMode: 'checkbox',
+            containerClass: 'in fll',
+            checked: true,
+            on: {
+              checked: () => {
+                MapEngineCyberia.captureObjLayerThumbnail = true;
+              },
+              unchecked: () => {
+                MapEngineCyberia.captureObjLayerThumbnail = false;
+              },
+            },
+          })}
+          <div class="section-mp">&nbsp &nbsp Capture Object Layer Map Thumbnail on Save/Update</div>
+        </div>
         ${await BtnIcon.Render({
           class: 'wfa btn-map-engine-toggle-thumbnail',
           label: html`<i class="fa-solid fa-caret-right map-engine-thumbnail-caret"></i> Thumbnail`,
@@ -995,6 +1189,54 @@ class MapEngineCyberia {
             })}
           </div>
         </div>
+        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcFactors, type: 'a-50-b-50' })}
+        <div class="fl">
+          <div class="in fll ${dcFactors}-col-a">
+            ${await Input.Render({
+              id: idFactorA,
+              label: html`factorA`,
+              containerClass: 'inl',
+              type: 'number',
+              step: 0.01,
+              value: 0.5,
+            })}
+          </div>
+          <div class="in fll ${dcFactors}-col-b">
+            ${await Input.Render({
+              id: idFactorB,
+              label: html`factorB`,
+              containerClass: 'inl',
+              type: 'number',
+              step: 0.01,
+              value: 1.5,
+            })}
+          </div>
+        </div>
+        ${await Input.Render({
+          id: idVariationPreserve,
+          label: html`Variation Preserve List`,
+          containerClass: 'inl',
+          type: 'text',
+          placeholder: true,
+        })}
+        <div class="fl" style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin: 5px 0;">
+          ${await ToggleSwitch.Render({
+            id: 'map-engine-random-dim',
+            type: 'checkbox',
+            displayMode: 'checkbox',
+            containerClass: 'in fll',
+            checked: false,
+            on: {
+              checked: () => {
+                MapEngineCyberia.randomDim = true;
+              },
+              unchecked: () => {
+                MapEngineCyberia.randomDim = false;
+              },
+            },
+          })}
+          <div class="section-mp">&nbsp &nbsp Random Dim</div>
+        </div>
         <div class="in" style="margin: 10px;">
           ${await DropDown.Render({
             id: idObjLayerDropdown,
@@ -1021,6 +1263,30 @@ class MapEngineCyberia {
           ${await BtnIcon.Render({
             class: 'wfa btn-map-engine-add-entity',
             label: html`<i class="fa-solid fa-plus"></i> Add Entity`,
+          })}
+        </div>
+        <div class="in" style="margin-top: 5px;">
+          ${await BtnIcon.Render({
+            class: 'wfa btn-map-engine-fill-map',
+            label: html`<i class="fa-solid fa-fill-drip"></i> Map Fill`,
+          })}
+        </div>
+        <div class="in" style="margin-top: 5px;">
+          ${await BtnIcon.Render({
+            class: 'wfa btn-map-engine-generate-variation',
+            label: html`<i class="fa-solid fa-shuffle"></i> Generate Variation`,
+          })}
+        </div>
+        <div class="in" style="margin-top: 5px;">
+          ${await BtnIcon.Render({
+            class: 'wfa btn-map-engine-flip-horizontal',
+            label: html`<i class="fa-solid fa-arrows-left-right"></i> Flip Horizontal`,
+          })}
+        </div>
+        <div class="in" style="margin-top: 5px;">
+          ${await BtnIcon.Render({
+            class: 'wfa btn-map-engine-flip-vertical',
+            label: html`<i class="fa-solid fa-arrows-up-down"></i> Flip Vertical`,
           })}
         </div>
         <div class="in" style="margin-top: 10px;">
@@ -1068,7 +1334,7 @@ class MapEngineCyberia {
           </div>
         </div>
         <div class="in ${entityListId}" style="margin-top: 10px; max-height: 200px; overflow-y: auto;"></div>
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcSaveNew, type: 'a-50-b-50' })}
+        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcSaveNew, type: 'search-inputs' })}
         <div class="fl" style="margin-top: 10px;">
           <div class="in fll ${dcSaveNew}-col-a" style="padding: 5px;">
             ${await BtnIcon.Render({
@@ -1077,6 +1343,12 @@ class MapEngineCyberia {
             })}
           </div>
           <div class="in fll ${dcSaveNew}-col-b" style="padding: 5px;">
+            ${await BtnIcon.Render({
+              class: 'wfa btn-map-engine-clone-map',
+              label: html`<i class="fa-solid fa-clone"></i> Clone Map`,
+            })}
+          </div>
+          <div class="in fll ${dcSaveNew}-col-c" style="padding: 5px;">
             ${await BtnIcon.Render({
               class: 'wfa btn-map-engine-new-map',
               label: html`<i class="fa-solid fa-file"></i> New Map`,

@@ -5,7 +5,7 @@ import { CyberiaEntitySchema } from '../cyberia-entity/cyberia-entity.model.js';
 
 const CyberiaMapSchema = new Schema(
   {
-    code: { type: String, default: '' },
+    code: { type: String, default: '', unique: true },
     name: { type: String, default: '' },
     description: { type: String, default: '' },
     entities: { type: [CyberiaEntitySchema], default: [] },
@@ -13,6 +13,10 @@ const CyberiaMapSchema = new Schema(
     creator: { type: Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, default: 'unlisted' },
     thumbnail: { type: Schema.Types.ObjectId, ref: 'File' },
+    gridX: { type: Number, default: 16 },
+    gridY: { type: Number, default: 16 },
+    cellWidth: { type: Number, default: 32 },
+    cellHeight: { type: Number, default: 32 },
   },
   {
     timestamps: true,

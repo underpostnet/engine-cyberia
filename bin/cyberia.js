@@ -27,8 +27,8 @@ import {
   pngDirectoryIteratorByObjectLayerType,
   getKeyFramesDirectionsFromNumberFolderDirection,
   buildImgFromTile,
-  itemTypes,
 } from '../src/server/object-layer.js';
+import { ITEM_TYPES as itemTypes } from '../src/api/cyberia-instance-conf/cyberia-instance-conf.defaults.js';
 import { AtlasSpriteSheetGenerator } from '../src/server/atlas-sprite-sheet-generator.js';
 import {
   generateFrame,
@@ -42,7 +42,10 @@ import { program as underpostProgram } from '../src/cli/index.js';
 import crypto from 'crypto';
 import nodePath from 'path';
 import Underpost from '../src/index.js';
-import { DefaultCyberiaItems } from '../src/client/components/cyberia-portal/CommonCyberiaPortal.js';
+import {
+  DefaultCyberiaItems,
+  DefaultSkillConfig,
+} from '../src/client/components/cyberia-portal/CommonCyberiaPortal.js';
 
 /**
  * Connect to the project MongoDB instance using the standard env / conf layout.
@@ -226,6 +229,8 @@ try {
         const AtlasSpriteSheet = DataBaseProvider.instance[`${host}${path}`].mongoose.models.AtlasSpriteSheet;
         /** @type {import('mongoose').Model} */
         const File = DataBaseProvider.instance[`${host}${path}`].mongoose.models.File;
+        /** @type {import('mongoose').Model} */
+        const Ipfs = DataBaseProvider.instance[`${host}${path}`].mongoose.models.Ipfs;
 
         if (options.drop) {
           // Parse comma-separated item IDs for targeted drop; if none provided, drop everything
@@ -299,6 +304,12 @@ try {
           if (atlasFileIds.length > 0) {
             const result = await File.deleteMany({ _id: { $in: atlasFileIds } });
             fileCount = result.deletedCount || 0;
+          }
+
+          // Delete IPFS pin registry records for all collected CIDs
+          if (cidsToUnpin.size > 0) {
+            const ipfsResult = await Ipfs.deleteMany({ cid: { $in: [...cidsToUnpin] } });
+            logger.info(`Dropped ${ipfsResult.deletedCount} Ipfs pin record(s)`);
           }
 
           // Unpin CIDs from IPFS Cluster + Kubo and remove MFS directories
@@ -452,6 +463,16 @@ try {
                   if (ipfsResult) {
                     importItemCid = ipfsResult.cid;
                     logger.info(`[staging] Atlas pinned to IPFS – CID: ${importItemCid}`);
+                    try {
+                      await createPinRecord({
+                        cid: importItemCid,
+                        resourceType: 'atlas-sprite-sheet',
+                        mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`,
+                        options: { host, path },
+                      });
+                    } catch (prErr) {
+                      logger.warn('[staging] Failed to create atlas pin record:', prErr.message);
+                    }
                   }
                 } catch (ipfsError) {
                   logger.warn('[staging] Failed to add atlas to IPFS:', ipfsError.message);
@@ -466,6 +487,16 @@ try {
                   if (metadataIpfsResult) {
                     importItemMetadataCid = metadataIpfsResult.cid;
                     logger.info(`[staging] Atlas metadata pinned to IPFS – CID: ${importItemMetadataCid}`);
+                    try {
+                      await createPinRecord({
+                        cid: importItemMetadataCid,
+                        resourceType: 'atlas-metadata',
+                        mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+                        options: { host, path },
+                      });
+                    } catch (prErr) {
+                      logger.warn('[staging] Failed to create atlas-metadata pin record:', prErr.message);
+                    }
                   }
                 } catch (ipfsError) {
                   logger.warn('[staging] Failed to add atlas metadata to IPFS:', ipfsError.message);
@@ -502,6 +533,16 @@ try {
                   if (ipfsDataResult) {
                     stagingCid = ipfsDataResult.cid;
                     logger.info(`[staging] Data JSON pinned to IPFS – CID: ${stagingCid}`);
+                    try {
+                      await createPinRecord({
+                        cid: stagingCid,
+                        resourceType: 'object-layer-data',
+                        mfsPath: `/object-layer/${itemKey}/${itemKey}_data.json`,
+                        options: { host, path },
+                      });
+                    } catch (prErr) {
+                      logger.warn('[staging] Failed to create data pin record:', prErr.message);
+                    }
                   }
                 } catch (ipfsError) {
                   logger.warn('[staging] Failed to pin data JSON to IPFS:', ipfsError.message);
@@ -583,6 +624,16 @@ try {
                   if (ipfsResult) {
                     importItemCid = ipfsResult.cid;
                     logger.info(`[staging] Atlas pinned to IPFS – CID: ${importItemCid}`);
+                    try {
+                      await createPinRecord({
+                        cid: importItemCid,
+                        resourceType: 'atlas-sprite-sheet',
+                        mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`,
+                        options: { host, path },
+                      });
+                    } catch (prErr) {
+                      logger.warn('[staging] Failed to create atlas pin record:', prErr.message);
+                    }
                   }
                 } catch (ipfsError) {
                   logger.warn('[staging] Failed to add atlas to IPFS:', ipfsError.message);
@@ -597,6 +648,16 @@ try {
                   if (metadataIpfsResult) {
                     importItemMetadataCid = metadataIpfsResult.cid;
                     logger.info(`[staging] Atlas metadata pinned to IPFS – CID: ${importItemMetadataCid}`);
+                    try {
+                      await createPinRecord({
+                        cid: importItemMetadataCid,
+                        resourceType: 'atlas-metadata',
+                        mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+                        options: { host, path },
+                      });
+                    } catch (prErr) {
+                      logger.warn('[staging] Failed to create atlas-metadata pin record:', prErr.message);
+                    }
                   }
                 } catch (ipfsError) {
                   logger.warn('[staging] Failed to add atlas metadata to IPFS:', ipfsError.message);
@@ -630,6 +691,16 @@ try {
                   if (ipfsDataResult) {
                     stagingCid = ipfsDataResult.cid;
                     logger.info(`[staging] Data JSON pinned to IPFS – CID: ${stagingCid}`);
+                    try {
+                      await createPinRecord({
+                        cid: stagingCid,
+                        resourceType: 'object-layer-data',
+                        mfsPath: `/object-layer/${itemKey}/${itemKey}_data.json`,
+                        options: { host, path },
+                      });
+                    } catch (prErr) {
+                      logger.warn('[staging] Failed to create data pin record:', prErr.message);
+                    }
                   }
                 } catch (ipfsError) {
                   logger.warn('[staging] Failed to pin data JSON to IPFS:', ipfsError.message);
@@ -795,6 +866,16 @@ try {
                     if (ipfsResult) {
                       importAtlasCid = ipfsResult.cid;
                       logger.info(`[staging] Atlas pinned to IPFS – CID: ${importAtlasCid}`);
+                      try {
+                        await createPinRecord({
+                          cid: importAtlasCid,
+                          resourceType: 'atlas-sprite-sheet',
+                          mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`,
+                          options: { host, path },
+                        });
+                      } catch (prErr) {
+                        logger.warn('[staging] Failed to create atlas pin record:', prErr.message);
+                      }
                     }
                   } catch (ipfsError) {
                     logger.warn('[staging] Failed to add atlas to IPFS:', ipfsError.message);
@@ -809,6 +890,16 @@ try {
                     if (metadataIpfsResult) {
                       importAtlasMetadataCid = metadataIpfsResult.cid;
                       logger.info(`[staging] Atlas metadata pinned to IPFS – CID: ${importAtlasMetadataCid}`);
+                      try {
+                        await createPinRecord({
+                          cid: importAtlasMetadataCid,
+                          resourceType: 'atlas-metadata',
+                          mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+                          options: { host, path },
+                        });
+                      } catch (prErr) {
+                        logger.warn('[staging] Failed to create atlas-metadata pin record:', prErr.message);
+                      }
                     }
                   } catch (ipfsError) {
                     logger.warn('[staging] Failed to add atlas metadata to IPFS:', ipfsError.message);
@@ -844,6 +935,16 @@ try {
                     if (ipfsDataResult) {
                       stagingCid = ipfsDataResult.cid;
                       logger.info(`[staging] Data JSON pinned to IPFS – CID: ${stagingCid}`);
+                      try {
+                        await createPinRecord({
+                          cid: stagingCid,
+                          resourceType: 'object-layer-data',
+                          mfsPath: `/object-layer/${itemKey}/${itemKey}_data.json`,
+                          options: { host, path },
+                        });
+                      } catch (prErr) {
+                        logger.warn('[staging] Failed to create data pin record:', prErr.message);
+                      }
                     }
                   } catch (ipfsError) {
                     logger.warn('[staging] Failed to pin data JSON to IPFS:', ipfsError.message);
@@ -919,6 +1020,16 @@ try {
                     if (ipfsResult) {
                       importAtlasCid = ipfsResult.cid;
                       logger.info(`[staging] Atlas pinned to IPFS – CID: ${importAtlasCid}`);
+                      try {
+                        await createPinRecord({
+                          cid: importAtlasCid,
+                          resourceType: 'atlas-sprite-sheet',
+                          mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`,
+                          options: { host, path },
+                        });
+                      } catch (prErr) {
+                        logger.warn('[staging] Failed to create atlas pin record:', prErr.message);
+                      }
                     }
                   } catch (ipfsError) {
                     logger.warn('[staging] Failed to add atlas to IPFS:', ipfsError.message);
@@ -933,6 +1044,16 @@ try {
                     if (metadataIpfsResult) {
                       importAtlasMetadataCid = metadataIpfsResult.cid;
                       logger.info(`[staging] Atlas metadata pinned to IPFS – CID: ${importAtlasMetadataCid}`);
+                      try {
+                        await createPinRecord({
+                          cid: importAtlasMetadataCid,
+                          resourceType: 'atlas-metadata',
+                          mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+                          options: { host, path },
+                        });
+                      } catch (prErr) {
+                        logger.warn('[staging] Failed to create atlas-metadata pin record:', prErr.message);
+                      }
                     }
                   } catch (ipfsError) {
                     logger.warn('[staging] Failed to add atlas metadata to IPFS:', ipfsError.message);
@@ -966,6 +1087,16 @@ try {
                     if (ipfsDataResult) {
                       stagingCid = ipfsDataResult.cid;
                       logger.info(`[staging] Data JSON pinned to IPFS – CID: ${stagingCid}`);
+                      try {
+                        await createPinRecord({
+                          cid: stagingCid,
+                          resourceType: 'object-layer-data',
+                          mfsPath: `/object-layer/${itemKey}/${itemKey}_data.json`,
+                          options: { host, path },
+                        });
+                      } catch (prErr) {
+                        logger.warn('[staging] Failed to create data pin record:', prErr.message);
+                      }
                     }
                   } catch (ipfsError) {
                     logger.warn('[staging] Failed to pin data JSON to IPFS:', ipfsError.message);
@@ -1211,6 +1342,15 @@ try {
             if (ipfsResult) {
               toAtlasCid = ipfsResult.cid;
               logger.info(`Atlas sprite sheet pinned to IPFS – CID: ${toAtlasCid}`);
+              try {
+                await createPinRecord({
+                  cid: toAtlasCid,
+                  resourceType: 'atlas-sprite-sheet',
+                  mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`,
+                });
+              } catch (e) {
+                logger.warn('Failed to create pin record for atlas sprite sheet:', e.message);
+              }
             }
           } catch (ipfsError) {
             logger.warn('Failed to add atlas sprite sheet to IPFS:', ipfsError.message);
@@ -1226,6 +1366,15 @@ try {
             if (metadataIpfsResult) {
               toAtlasMetadataCid = metadataIpfsResult.cid;
               logger.info(`Atlas metadata pinned to IPFS – CID: ${toAtlasMetadataCid}`);
+              try {
+                await createPinRecord({
+                  cid: toAtlasMetadataCid,
+                  resourceType: 'atlas-metadata',
+                  mfsPath: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+                });
+              } catch (e) {
+                logger.warn('Failed to create pin record for atlas metadata:', e.message);
+              }
             }
           } catch (ipfsError) {
             logger.warn('Failed to add atlas metadata to IPFS:', ipfsError.message);
@@ -1264,6 +1413,7 @@ try {
           await ObjectLayerEngine.computeAndSaveFinalSha256({
             objectLayer,
             ipfsClient: IpfsClient,
+            createPinRecord,
           });
 
           logger.info(`Atlas sprite sheet completed for item: ${itemKey}`);
@@ -1436,6 +1586,16 @@ try {
               if (ipfsResult) {
                 atlasCid = ipfsResult.cid;
                 logger.info(`Atlas sprite sheet pinned to IPFS – CID: ${atlasCid}`);
+                try {
+                  await createPinRecord({
+                    cid: atlasCid,
+                    resourceType: 'atlas-sprite-sheet',
+                    mfsPath: `/object-layer/${atlasItemKey}/${atlasItemKey}_atlas_sprite_sheet.png`,
+                    options: { host, path },
+                  });
+                } catch (e) {
+                  logger.warn('Failed to create pin record for atlas sprite sheet:', e.message);
+                }
               }
             } catch (ipfsError) {
               logger.warn('Failed to add atlas sprite sheet to IPFS:', ipfsError.message);
@@ -1451,6 +1611,16 @@ try {
               if (metadataIpfsResult) {
                 atlasMetadataCid = metadataIpfsResult.cid;
                 logger.info(`Atlas metadata pinned to IPFS – CID: ${atlasMetadataCid}`);
+                try {
+                  await createPinRecord({
+                    cid: atlasMetadataCid,
+                    resourceType: 'atlas-metadata',
+                    mfsPath: `/object-layer/${atlasItemKey}/${atlasItemKey}_atlas_sprite_sheet_metadata.json`,
+                    options: { host, path },
+                  });
+                } catch (e) {
+                  logger.warn('Failed to create pin record for atlas metadata:', e.message);
+                }
               }
             } catch (ipfsError) {
               logger.warn('Failed to add atlas metadata to IPFS:', ipfsError.message);
@@ -1503,7 +1673,6 @@ try {
               objectLayer: finalObjectLayer,
               ipfsClient: IpfsClient,
               createPinRecord,
-              userId: undefined, // CLI context has no authenticated user
               options: { host, path },
             });
             logger.info(`Final SHA-256: ${finalized.sha256}`);
@@ -2988,6 +3157,119 @@ try {
     .description('Import default Object Layer items from a JSON file into MongoDB')
     .action(async (options) => {
       shellExec(`node bin/cyberia ol ${DefaultCyberiaItems} --import${options.dev ? ' --dev' : ''}`);
+      shellExec(`node bin/cyberia run-workflow seed-skill-config${options.dev ? ' --dev' : ''}`);
+    });
+
+  runner
+    .command('seed-skill-config')
+    .option('--instance-code <code>', 'CyberiaInstance code to update (default: $INSTANCE_CODE env or "default")')
+    .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
+    .option('--mongo-host <mongo-host>', 'Mongo host override')
+    .option('--dev', 'Force development environment')
+    .description('Upsert default skillConfig entries into a CyberiaInstance document')
+    .action(async (options) => {
+      if (!options.envPath) options.envPath = `./.env`;
+      if (fs.existsSync(options.envPath)) dotenv.config({ path: options.envPath, override: true });
+
+      if (options.dev && process.env.DEFAULT_DEPLOY_ID) {
+        const devEnvPath = `./engine-private/conf/${process.env.DEFAULT_DEPLOY_ID}/.env.development`;
+        if (fs.existsSync(devEnvPath)) dotenv.config({ path: devEnvPath, override: true });
+      }
+
+      const deployId = process.env.DEFAULT_DEPLOY_ID;
+      const host = process.env.DEFAULT_DEPLOY_HOST;
+      const path = process.env.DEFAULT_DEPLOY_PATH;
+      const instanceCode = options.instanceCode || process.env.INSTANCE_CODE || 'default';
+
+      const confServerPath = `./engine-private/conf/${deployId}/conf.server.json`;
+      if (!fs.existsSync(confServerPath)) {
+        logger.error(`Server config not found: ${confServerPath}`);
+        process.exit(1);
+      }
+      const confServer = loadConfServerJson(confServerPath, { resolve: true });
+      const { db } = confServer[host][path];
+
+      db.host = options.mongoHost
+        ? options.mongoHost
+        : options.dev
+          ? db.host
+          : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
+
+      logger.info('seed-skill-config', { instanceCode, deployId, host, path, db });
+
+      await DataBaseProvider.load({ apis: ['cyberia-instance', 'cyberia-instance-conf'], host, path, db });
+
+      const CyberiaInstance = DataBaseProvider.instance[`${host}${path}`].mongoose.models.CyberiaInstance;
+      const CyberiaInstanceConf = DataBaseProvider.instance[`${host}${path}`].mongoose.models.CyberiaInstanceConf;
+
+      const instance = await CyberiaInstance.findOne({ code: instanceCode }).lean();
+
+      if (!instance) {
+        logger.info(
+          `CyberiaInstance "${instanceCode}" not found — seeding skillConfig into conf using fallback defaults. ` +
+            `To link to a live instance, create or import it with: node bin/cyberia instance ${instanceCode} --import`,
+        );
+      }
+
+      // Always upsert the conf with DefaultSkillConfig — idempotent regardless of instance existence.
+      const conf = await CyberiaInstanceConf.findOneAndUpdate(
+        { instanceCode },
+        { $set: { skillConfig: DefaultSkillConfig } },
+        { upsert: true, returnDocument: 'after' },
+      );
+
+      // If a live instance exists, ensure its conf ref is linked.
+      if (instance && (!instance.conf || String(instance.conf) !== String(conf._id))) {
+        await CyberiaInstance.findByIdAndUpdate(instance._id, { conf: conf._id });
+      }
+
+      logger.info(
+        `skillConfig seeded for instance "${instanceCode}" (${DefaultSkillConfig.length} entries)`,
+        DefaultSkillConfig.map((e) => `${e.triggerItemId} → [${e.logicEventIds.join(', ')}]`),
+      );
+
+      await DataBaseProvider.instance[`${host}${path}`].mongoose.close();
+    });
+
+  runner
+    .command('generate-semantic-examples')
+    .option('--seed <seed>', 'Base seed string (each type gets a unique suffix appended)', 'example')
+    .option('--frame-count <frameCount>', 'Number of frames to generate per item (default: 4)', parseInt)
+    .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
+    .option('--dev', 'Force development environment')
+    .description('Generate one procedural example of every registered semantic prefix')
+    .action(async (options) => {
+      const SEMANTIC_TYPES = [
+        'floor-desert',
+        'floor-grass',
+        'floor-water',
+        'floor-stone',
+        'floor-lava',
+        'skin-random',
+        'skin-dark',
+        'skin-light',
+        'skin-vivid',
+        'skin-natural',
+        'skin-shaved',
+      ];
+
+      const baseSeed = options.seed || 'example';
+      const frameCount = options.frameCount || 4;
+      const envFlag = options.envPath ? ` --env-path ${options.envPath}` : '';
+      const devFlag = options.dev ? ' --dev' : '';
+
+      logger.info(
+        `Generating ${SEMANTIC_TYPES.length} semantic examples (seed base: "${baseSeed}", frames: ${frameCount})`,
+      );
+
+      for (const prefix of SEMANTIC_TYPES) {
+        const seed = `${baseSeed}-${prefix}`;
+        const cmd = `node bin/cyberia ol ${prefix} --generate --seed ${seed} --frame-count ${frameCount}${envFlag}${devFlag}`;
+        logger.info(`  → ${cmd}`);
+        shellExec(cmd);
+      }
+
+      logger.info('All semantic examples generated.');
     });
 
   if (underpostProgram.commands.find((c) => c._name == process.argv[2]))

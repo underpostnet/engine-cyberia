@@ -6,9 +6,9 @@ const logger = loggerFactory(import.meta);
 
 logger.info('Load service');
 
-const endpoint = 'cyberia-instance';
+const endpoint = 'cyberia-instance-conf';
 
-const CyberiaInstanceService = {
+const CyberiaInstanceConfService = {
   post: (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
@@ -80,23 +80,6 @@ const CyberiaInstanceService = {
         }),
     );
   },
-  portalConnect: (options = { id: '' }) =>
-    new Promise((resolve, reject) =>
-      fetch(getApiBaseUrl({ id: `${options.id}/portal-connect`, endpoint }), {
-        method: 'GET',
-        headers: headersFactory(),
-        credentials: 'include',
-      })
-        .then(async (res) => res.json())
-        .then((res) => {
-          logger.info(res);
-          return resolve(res);
-        })
-        .catch((error) => {
-          logger.error(error);
-          return reject(error);
-        }),
-    ),
   delete: (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
@@ -119,4 +102,4 @@ const CyberiaInstanceService = {
     ),
 };
 
-export { CyberiaInstanceService };
+export { CyberiaInstanceConfService };

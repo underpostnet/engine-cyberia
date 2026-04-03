@@ -1,6 +1,9 @@
 import { DataBaseProvider } from '../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../server/logger.js';
 import { DataQuery } from '../../server/data-query.js';
+import { connectPortals, generateProceduralEntities } from './cyberia-portal-connector.js';
+import { generateFallbackWorld } from './cyberia-fallback-world.js';
+import { CYBERIA_INSTANCE_CONF_DEFAULTS } from '../cyberia-instance-conf/cyberia-instance-conf.defaults.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -8,8 +11,30 @@ const CyberiaInstanceService = {
   post: async (req, res, options) => {
     /** @type {import('./cyberia-instance.model.js').CyberiaInstanceModel} */
     const CyberiaInstance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstance;
+    const CyberiaInstanceConf =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
     if (req.auth && req.auth.user) req.body.creator = req.auth.user._id;
-    return await new CyberiaInstance(req.body).save();
+    const instance = await new CyberiaInstance(req.body).save();
+
+    // Auto-upsert a CyberiaInstanceConf for this instance using schema defaults.
+    // $setOnInsert ensures existing conf documents are never overwritten.
+    if (instance.code && CyberiaInstanceConf) {
+      try {
+        const conf = await CyberiaInstanceConf.findOneAndUpdate(
+          { instanceCode: instance.code },
+          { $setOnInsert: { instanceCode: instance.code } },
+          { upsert: true, new: true },
+        );
+        if (conf && !instance.conf) {
+          await CyberiaInstance.findByIdAndUpdate(instance._id, { conf: conf._id });
+          instance.conf = conf._id;
+        }
+      } catch (e) {
+        logger.error('auto-upsert CyberiaInstanceConf failed:', e);
+      }
+    }
+
+    return instance;
   },
   get: async (req, res, options) => {
     /** @type {import('./cyberia-instance.model.js').CyberiaInstanceModel} */
@@ -41,6 +66,89 @@ const CyberiaInstanceService = {
     }
     return await CyberiaInstance.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
   },
+  /**
+   * Central portal connector endpoint.
+   *
+   * Delegates topology computation to the pure-function `connectPortals()`
+   * from cyberia-portal-connector.js so the same logic can be used by the
+   * GUI without a DB dependency.
+   *
+   * Optionally generates procedural fallback obstacle/foreground entities
+   * for maps that have none, controlled by query flags:
+   *   ?generateEntities=true   — append procedural obstacles & foreground
+   *   ?obstacleCount=N         — obstacles per map   (default 5)
+   *   ?foregroundCount=N       — foreground per map   (default 3)
+   *   ?persist=true            — save generated portals & entities to DB
+   */
+  portalConnect: async (req, res, options) => {
+    const CyberiaInstance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstance;
+    const CyberiaMap = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaMap;
+
+    const instance = await CyberiaInstance.findById(req.params.id).lean();
+    if (!instance) throw new Error('instance not found');
+
+    const mapCodes = instance.cyberiaMapCodes || [];
+
+    // Load maps with the fields needed by the connector.
+    const mapDocs = await CyberiaMap.find(
+      { code: { $in: mapCodes } },
+      {
+        code: 1,
+        gridX: 1,
+        gridY: 1,
+        entities: 1,
+      },
+    ).lean();
+
+    // ── Portal topology (pure function) ──────────────────────────────────
+    const result = connectPortals(mapCodes, mapDocs);
+
+    // ── Procedural entity generation (optional) ──────────────────────────
+    const colors = CYBERIA_INSTANCE_CONF_DEFAULTS.colors;
+    const wantEntities = req.query?.generateEntities === 'true';
+    const obstacleCount = req.query?.obstacleCount ? parseInt(req.query.obstacleCount, 10) : undefined;
+    const foregroundCount = req.query?.foregroundCount ? parseInt(req.query.foregroundCount, 10) : undefined;
+    const seed = instance.seed || '';
+
+    const generatedEntities = {};
+    if (wantEntities) {
+      for (const doc of mapDocs) {
+        const hasObstacles = (doc.entities || []).some((e) => e.entityType === 'obstacle');
+        const hasForeground = (doc.entities || []).some((e) => e.entityType === 'foreground');
+        if (!hasObstacles || !hasForeground) {
+          const mapSeed = seed ? `${seed}:${doc.code}` : doc.code;
+          const generated = generateProceduralEntities({ gridX: doc.gridX || 16, gridY: doc.gridY || 16 }, colors, {
+            obstacleCount,
+            foregroundCount,
+            seed: mapSeed,
+          });
+          generatedEntities[doc.code] = {
+            obstacles: hasObstacles ? [] : generated.obstacles,
+            foreground: hasForeground ? [] : generated.foreground,
+          };
+        }
+      }
+    }
+
+    // ── Persist to DB when requested ─────────────────────────────────────
+    const persist = req.query?.persist === 'true';
+    if (persist) {
+      await CyberiaInstance.findByIdAndUpdate(req.params.id, { portals: result.portals });
+      for (const [mapCode, ents] of Object.entries(generatedEntities)) {
+        const toAdd = [...ents.obstacles, ...ents.foreground];
+        if (toAdd.length > 0) {
+          await CyberiaMap.findOneAndUpdate({ code: mapCode }, { $push: { entities: { $each: toAdd } } });
+        }
+      }
+    }
+
+    return {
+      ...result,
+      ...(wantEntities ? { generatedEntities } : {}),
+      persisted: persist,
+    };
+  },
+
   delete: async (req, res, options) => {
     /** @type {import('./cyberia-instance.model.js').CyberiaInstanceModel} */
     const CyberiaInstance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstance;
@@ -55,6 +163,28 @@ const CyberiaInstanceService = {
       }
       return await CyberiaInstance.findByIdAndDelete(req.params.id);
     } else return await CyberiaInstance.deleteMany();
+  },
+
+  /**
+   * Return an in-memory procedural fallback world.
+   *
+   * Nothing is persisted to MongoDB.  The world is regenerated on every
+   * call but stays deterministic for a given seed.
+   *
+   * Query params:
+   *   ?mapCount=<number>       — maps to generate  (default: 4)
+   *   ?botCount=<number>       — bots per map      (random 8–16 if omitted)
+   *   ?obstacleCount=<number>  — obstacles per map  (random 12–20 if omitted)
+   *   ?foregroundCount=<number>— foreground per map (random 6–12 if omitted)
+   */
+  fallbackWorld: async (req) => {
+    const q = req.query || {};
+    return generateFallbackWorld({
+      mapCount: q.mapCount ? parseInt(q.mapCount, 10) : undefined,
+      botCount: q.botCount ? parseInt(q.botCount, 10) : undefined,
+      obstacleCount: q.obstacleCount ? parseInt(q.obstacleCount, 10) : undefined,
+      foregroundCount: q.foregroundCount ? parseInt(q.foregroundCount, 10) : undefined,
+    });
   },
 };
 

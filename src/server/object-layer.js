@@ -707,19 +707,15 @@ export class ObjectLayerEngine {
       objectLayerData.sha256 = ObjectLayerEngine.computeSha256(objectLayerData.data);
 
       // Pin data JSON to IPFS
-      const userId = req && req.auth && req.auth.user ? req.auth.user._id : undefined;
       if (ipfsClient) {
         try {
           const itemId = objectLayerData.data.item.id;
-          const ipfsResult = await ipfsClient.addJsonToIpfs(
-            objectLayerData.data,
-            `${itemId}_data.json`,
-            `/object-layer/${itemId}/${itemId}_data.json`,
-          );
+          const mfsPath = `/object-layer/${itemId}/${itemId}_data.json`;
+          const ipfsResult = await ipfsClient.addJsonToIpfs(objectLayerData.data, `${itemId}_data.json`, mfsPath);
           if (ipfsResult) {
             objectLayerData.cid = ipfsResult.cid;
-            if (userId && createPinRecord) {
-              await createPinRecord({ cid: ipfsResult.cid, userId, options });
+            if (createPinRecord) {
+              await createPinRecord({ cid: ipfsResult.cid, resourceType: 'object-layer-data', mfsPath, options });
             }
           }
         } catch (ipfsError) {
@@ -829,19 +825,15 @@ export class ObjectLayerEngine {
       objectLayerData.sha256 = ObjectLayerEngine.computeSha256(objectLayerData.data);
 
       // Pin data JSON to IPFS
-      const userId = req && req.auth && req.auth.user ? req.auth.user._id : undefined;
       if (ipfsClient) {
         try {
           const itemId = objectLayerData.data.item.id;
-          const ipfsResult = await ipfsClient.addJsonToIpfs(
-            objectLayerData.data,
-            `${itemId}_data.json`,
-            `/object-layer/${itemId}/${itemId}_data.json`,
-          );
+          const mfsPath = `/object-layer/${itemId}/${itemId}_data.json`;
+          const ipfsResult = await ipfsClient.addJsonToIpfs(objectLayerData.data, `${itemId}_data.json`, mfsPath);
           if (ipfsResult) {
             objectLayerData.cid = ipfsResult.cid;
-            if (userId && createPinRecord) {
-              await createPinRecord({ cid: ipfsResult.cid, userId, options });
+            if (createPinRecord) {
+              await createPinRecord({ cid: ipfsResult.cid, resourceType: 'object-layer-data', mfsPath, options });
             }
           }
         } catch (ipfsError) {
@@ -886,26 +878,22 @@ export class ObjectLayerEngine {
    * @param {Object} params.objectLayer - The mongoose ObjectLayer document (must be populated).
    * @param {Object} [params.ipfsClient=null] - The IpfsClient module; when `null`, IPFS pinning is skipped.
    * @param {function} [params.createPinRecord=null] - The `createPinRecord` helper; when `null`, pin records are skipped.
-   * @param {string} [params.userId] - Authenticated user ID for IPFS pin record creation.
    * @param {Object} [params.options] - Server options (host, path) forwarded to `createPinRecord`.
    * @returns {Promise<Object>} The saved ObjectLayer document.
    * @memberof CyberiaObjectLayer
    */
-  static async computeAndSaveFinalSha256({ objectLayer, ipfsClient = null, createPinRecord = null, userId, options }) {
+  static async computeAndSaveFinalSha256({ objectLayer, ipfsClient = null, createPinRecord = null, options }) {
     const finalSha256 = ObjectLayerEngine.computeSha256(objectLayer.data);
 
     if (ipfsClient) {
       try {
         const itemId = objectLayer.data.item.id;
-        const ipfsResult = await ipfsClient.addJsonToIpfs(
-          objectLayer.data,
-          `${itemId}_data.json`,
-          `/object-layer/${itemId}/${itemId}_data.json`,
-        );
+        const mfsPath = `/object-layer/${itemId}/${itemId}_data.json`;
+        const ipfsResult = await ipfsClient.addJsonToIpfs(objectLayer.data, `${itemId}_data.json`, mfsPath);
         if (ipfsResult) {
           objectLayer.cid = ipfsResult.cid;
-          if (userId && createPinRecord) {
-            await createPinRecord({ cid: ipfsResult.cid, userId, options });
+          if (createPinRecord) {
+            await createPinRecord({ cid: ipfsResult.cid, resourceType: 'object-layer-data', mfsPath, options });
           }
         }
       } catch (ipfsError) {
@@ -986,14 +974,6 @@ export class ObjectLayerEngine {
     return { cid: `sha256:${sha256}`, sha256, source: 'sha256-fallback' };
   }
 }
-
-/**
- * Mapping of item type names to numerical IDs.
- * @constant
- * @type {{floor: number, skin: number, breastplate: number, weapon: number, skill: number, coin: number}}
- * @memberof CyberiaObjectLayer
- */
-export const itemTypes = { floor: 0, skin: 1, breastplate: 2, weapon: 3, skill: 4, coin: 5 };
 
 // ──────────────────────────────────────────────────────────────────────────
 // Backward-compatible named exports matching the original destructured imports.

@@ -163,19 +163,19 @@ class UnderpostRelease {
       const buildTarget = `dd-${suffix}`;
       const githubOrg = process.env.GITHUB_USERNAME || 'underpostnet';
       shellCd('/home/dd');
-      if (!fs.existsSync(`/home/dd/pwa-microservices-template`))
-        shellExec(`node engine/bin clone ${githubOrg}/pwa-microservices-template`);
-      else {
-        shellExec(`node engine/bin run clean /home/dd/pwa-microservices-template --dev`);
-        shellExec(`node engine/bin pull /home/dd/pwa-microservices-template ${githubOrg}/pwa-microservices-template`);
-      }
+      shellExec(`sudo rm -rf /home/dd/pwa-microservices-template`);
+      shellExec(`node engine/bin clone ${githubOrg}/pwa-microservices-template`);
+      // Use the message passed from the caller (engine repo changelog);
+      // fall back to the engine repo's last commit if not provided.
       let commitMsg = message;
       if (!commitMsg) {
-        const fullMsg = shellExec(`cd pwa-microservices-template && git log -1 --pretty=%B`, {
+        shellCd('/home/dd/engine');
+        const rawMsg = shellExec(`node bin cmt --changelog 1 --changelog-no-hash`, {
           stdout: true,
           silent: true,
-        });
-        commitMsg = (fullMsg || '').trim().replace(/^[^:]*:\s+\S+\s+/, '');
+        }).trim();
+        commitMsg = Underpost.repo.sanitizeChangelogMessage(rawMsg);
+        shellCd('/home/dd');
       }
       commitMsg = (commitMsg || '').trim() || `Update ${repoName} repository`;
       logger.info(`CI push commit message: ${commitMsg}`);
@@ -185,12 +185,54 @@ class UnderpostRelease {
       shellCd('/home/dd/pwa-microservices-template');
       shellExec(`rm -rf ./.git`);
       shellExec(`mv ../${repoName}.git ./.git`);
-      shellExec(`git init`);
-      shellExec(`git config user.name 'underpostnet'`);
-      shellExec(`git config user.email 'development@underpost.net'`);
+      shellExec(`git config --local core.bare false`);
+      shellExec(`git reset`);
+      Underpost.repo.initLocalRepo({ path: '/home/dd/pwa-microservices-template' });
+      return {
+        triggerCmd: `cd /home/dd/pwa-microservices-template && git add . && git commit -m "${commitMsg}" && node ../engine/bin push . ${githubOrg}/${repoName}`,
+      };
+    },
+
+    /**
+     * Runs the pwa-microservices-template update and push flow locally.
+     *
+     * Always removes and re-clones pwa-microservices-template, then:
+     * 1. Runs update:template (node bin/file update-template) to sync engine sources.
+     * 2. Installs dependencies and builds the template.
+     * 3. Commits and pushes to the pwa-microservices-template remote repository.
+     *
+     * @method pwa
+     * @param {string} [message] - Optional commit message. Defaults to last commit message of pwa-microservices-template.
+     * @param {object} [options] - Commander options object (unused, reserved for future flags).
+     * @memberof UnderpostRelease
+     */
+    async pwa(message, options) {
+      dotenv.config({ path: `./engine-private/conf/dd-cron/.env.production`, override: true });
+      const githubOrg = process.env.GITHUB_USERNAME || 'underpostnet';
+      // Use the message passed from the caller (engine repo changelog);
+      // fall back to the engine repo's last commit if not provided.
+      let commitMsg = message;
+      if (!commitMsg) {
+        shellCd('/home/dd/engine');
+        const rawMsg = shellExec(`node bin cmt --changelog 1 --changelog-no-hash`, {
+          stdout: true,
+          silent: true,
+        }).trim();
+        commitMsg = Underpost.repo.sanitizeChangelogMessage(rawMsg);
+      }
+      commitMsg = (commitMsg || '').trim() || `Update pwa-microservices-template repository`;
+      shellCd('/home/dd');
+      shellExec(`sudo rm -rf /home/dd/pwa-microservices-template`);
+      shellExec(`node engine/bin clone ${githubOrg}/pwa-microservices-template`);
+      shellCd('/home/dd/engine');
+      shellExec(`npm run update:template`);
+      shellExec(`cd ../pwa-microservices-template && npm install && npm run build`);
+      shellCd('/home/dd/pwa-microservices-template');
       shellExec(`git add .`);
       // shellExec(`git commit -m "${commitMsg}"`);
-      pbcopy(`git commit -m "${commitMsg}" && node ../engine/bin push . ${githubOrg}/${repoName}`);
+      return {
+        triggerCmd: `node bin push . ${githubOrg}/engine && cd /home/dd/pwa-microservices-template && git commit -m "${commitMsg}" && node ../engine/bin push . ${githubOrg}/pwa-microservices-template`,
+      };
     },
 
     /**

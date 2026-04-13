@@ -30,6 +30,77 @@ export const ITEM_TYPES = Object.freeze({
   coin: 'coin',
 });
 
+// ── Entity Status Indicator (ESI) registry ───────────────────────────────────
+/**
+ * Canonical mapping of server-computed entity status icon IDs to the ui-icon
+ * filename stem served from /assets/ui-icons/{iconId}.png.
+ *
+ * The Go server assigns a status u8 per entity each AOI tick.  The C client
+ * receives this mapping dynamically via init_data.statusIcons and uses it to
+ * resolve the u8 to an icon filename at runtime.  This JS-side copy is the
+ * configuration source of truth; it supports instance-specific icon overrides.
+ *
+ * Industry standard name: "Overhead Status Indicator" (OSI).
+ *   WoW: nameplate colour + debuff icons
+ *   FFXIV: enmity/claim icons (red ◆, yellow ●)
+ *   UO: skull for murderers, shield for invulnerables
+ *
+ * IMPORTANT: The numeric IDs MUST stay in sync with:
+ *   - Go:  cyberia-server/src/entity_status.go   (StatusNone … StatusDead)
+ *
+ * @constant
+ */
+export const STATUS_ICONS = Object.freeze([
+  {
+    id: 0,
+    name: 'none',
+    iconId: null,
+    bounce: false,
+    borderColor: { r: 70, g: 70, b: 120, a: 200 },
+    description: 'No icon (skill/coin bots, world objects)',
+  },
+  {
+    id: 1,
+    name: 'passive',
+    iconId: 'arrow-down-gray',
+    bounce: false,
+    borderColor: { r: 130, g: 140, b: 160, a: 200 },
+    description: 'Passive bot — no weapon, non-aggressive',
+  },
+  {
+    id: 2,
+    name: 'hostile',
+    iconId: 'arrow-down-red',
+    bounce: true,
+    borderColor: { r: 210, g: 50, b: 50, a: 240 },
+    description: 'Hostile bot — has weapon, will aggro',
+  },
+  {
+    id: 3,
+    name: 'frozen',
+    iconId: 'chat',
+    bounce: true,
+    borderColor: { r: 80, g: 160, b: 220, a: 240 },
+    description: 'Player in FrozenInteractionState (modal open)',
+  },
+  {
+    id: 4,
+    name: 'player',
+    iconId: 'arrow-down',
+    bounce: false,
+    borderColor: { r: 60, g: 190, b: 90, a: 240 },
+    description: 'Normal player — alive, not frozen',
+  },
+  {
+    id: 5,
+    name: 'dead',
+    iconId: 'skull',
+    bounce: false,
+    borderColor: { r: 160, g: 130, b: 200, a: 200 },
+    description: 'Entity is dead / respawning',
+  },
+]);
+
 // ── Equipment rules ──────────────────────────────────────────────────────────
 /**
  * Equipment rules govern which ObjectLayer item types can be simultaneously
@@ -226,6 +297,8 @@ export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
     { key: 'SKILL', r: 255, g: 255, b: 50, a: 255 }, // rgba(255, 255, 50, 1)
     // ── UI-only ────────────────────────────────────────────────────
     { key: 'WEAPON', r: 180, g: 50, b: 50, a: 255 }, // rgba(180, 50, 50, 1)
+    // ── Interaction overlay — self-player bubble/panel border ──────
+    { key: 'SELF_BORDER', r: 220, g: 190, b: 60, a: 240 }, // rgba(220, 190, 60, 0.94) — gold
   ],
 
   // ── World / AOI ────────────────────────────────────────────────────
@@ -307,6 +380,12 @@ export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
   // See ENTITY_TYPE_DEFAULTS for documentation of each field.
   // liveItemIds / deadItemIds are arrays of ObjectLayer item IDs.
   entityDefaults: ENTITY_TYPE_DEFAULTS.map((e) => ({ ...e })),
+
+  // ── Entity Status Indicators (ESI) ─────────────────────────────────
+  // Overhead icon mapping — documents the u8→icon relationship.
+  // Stored in config for future instance-specific overrides.
+  // See STATUS_ICONS constant for documentation.
+  statusIcons: STATUS_ICONS.map((s) => ({ ...s })),
 
   // ── Skill system ───────────────────────────────────────────────────
   skillConfig: [

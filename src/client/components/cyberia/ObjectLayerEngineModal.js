@@ -1,6 +1,6 @@
 import { CoreService } from '../../services/core/core.service.js';
 import { BtnIcon } from '../core/BtnIcon.js';
-import { borderChar, dynamicCol } from '../core/Css.js';
+import { borderChar, Css, dynamicCol, Themes } from '../core/Css.js';
 import { DropDown } from '../core/DropDown.js';
 import { EventsUI } from '../core/EventsUI.js';
 import { Translate } from '../core/Translate.js';
@@ -16,14 +16,517 @@ import { Modal } from '../core/Modal.js';
 import { LoadingAnimation } from '../core/LoadingAnimation.js';
 import { DefaultManagement } from '../../services/default/default.management.js';
 import * as _ from '../cyberia/ObjectLayerEngine.js';
+import '../core/ColorPaletteElement.js';
+
+const CANVAS_BEHAVIOR_ICON = 'fa-solid fa-shapes';
+
+const DISTORTION_TYPES = Object.freeze([
+  {
+    value: 'position-jitter',
+    label: 'Position Jitter',
+    group: 'distortion',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'rotation-drift',
+    label: 'Rotation Drift',
+    group: 'distortion',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'scale-wobble',
+    label: 'Scale Wobble',
+    group: 'distortion',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'particle-drift',
+    label: 'Particle Drift',
+    group: 'distortion',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+]);
+
+const MOSAIC_TYPES = Object.freeze([
+  {
+    value: 'mosaic-diamond-checker',
+    label: 'Diamond Checker',
+    group: 'mosaic',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'mosaic-rhombus-lattice',
+    label: 'Rhombus Lattice',
+    group: 'mosaic',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'mosaic-zigzag-rows',
+    label: 'Zigzag Rows',
+    group: 'mosaic',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'mosaic-staggered-tiles',
+    label: 'Staggered Tiles',
+    group: 'mosaic',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+  {
+    value: 'mosaic-brick-offset',
+    label: 'Brick Offset',
+    group: 'mosaic',
+    icon: CANVAS_BEHAVIOR_ICON,
+  },
+]);
+
+const CANVAS_BEHAVIORS = Object.freeze([...DISTORTION_TYPES, ...MOSAIC_TYPES]);
+
+const DEFAULT_DISTORTION_TYPE = DISTORTION_TYPES[0].value;
+const DEFAULT_DISTORTION_STATUS =
+  'Applies the selected canvas behavior directly to the current editor frame. factorA controls distortion density or mosaic tile scale.';
+const DEFAULT_DISTORTION_FACTOR_A = 0.12;
+const DEFAULT_STAT_RANDOM_MIN = 0;
+const DEFAULT_STAT_RANDOM_MAX = 10;
+const UNIFORM_OPACITY_TOGGLE_ID = 'ol-uniform-opacity-lock';
+const DIRECTION_PREVIEW_MODAL_ID = 'modal-object-layer-direction-preview';
+const CANVAS_BEHAVIOR_BY_VALUE = Object.freeze(
+  Object.fromEntries(CANVAS_BEHAVIORS.map((entry) => [entry.value, entry])),
+);
+const isMosaicBehavior = (value = '') => CANVAS_BEHAVIOR_BY_VALUE[value]?.group === 'mosaic';
+const getCanvasBehaviorDisplay = (value = DEFAULT_DISTORTION_TYPE) => {
+  const behavior = CANVAS_BEHAVIOR_BY_VALUE[value] || CANVAS_BEHAVIOR_BY_VALUE[DEFAULT_DISTORTION_TYPE];
+  return `<i class="${CANVAS_BEHAVIOR_ICON}"></i> ${behavior.label}`;
+};
+
+const hashString = (str = '') => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (Math.imul(31, hash) + str.charCodeAt(i)) | 0;
+  }
+  return hash;
+};
+
+const clampNumber = (value, min, max) => (value < min ? min : value > max ? max : value);
+const lerp = (start, end, factor) => start + (end - start) * factor;
+const smoothstep = (value) => value * value * (3 - 2 * value);
+const normalizedHash = (seed, x, y) => ((hashString(`${seed}:${x}:${y}`) >>> 0) / 4294967295) * 2 - 1;
+
+const sampleSmoothNoise = (seed, x, y) => {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = x0 + 1;
+  const y1 = y0 + 1;
+
+  const sx = smoothstep(x - x0);
+  const sy = smoothstep(y - y0);
+  const n00 = normalizedHash(seed, x0, y0);
+  const n10 = normalizedHash(seed, x1, y0);
+  const n01 = normalizedHash(seed, x0, y1);
+  const n11 = normalizedHash(seed, x1, y1);
+
+  return lerp(lerp(n00, n10, sx), lerp(n01, n11, sx), sy);
+};
+
+const isVisibleCell = (cell) => Array.isArray(cell) && (cell[3] || 0) > 0;
+const cloneMatrix = (matrix = []) => matrix.map((row) => row.map((cell) => cell.slice()));
+const modulo = (value, divisor) => {
+  if (!divisor) return 0;
+  return ((value % divisor) + divisor) % divisor;
+};
+const normalizeColorCell = (cell = [255, 0, 0, 255]) => [
+  clampNumber(Math.round(cell[0] || 0), 0, 255),
+  clampNumber(Math.round(cell[1] || 0), 0, 255),
+  clampNumber(Math.round(cell[2] || 0), 0, 255),
+  clampNumber(Math.round(cell[3] ?? 255), 0, 255),
+];
+const getRenderedInputNode = (id = '') => s(`.${id}`) || s(`#${id}-name`) || s(`#${id}`);
+
+const countChangedCells = (baseMatrix = [], nextMatrix = []) => {
+  const height = Math.max(baseMatrix.length, nextMatrix.length);
+  const width = Math.max(baseMatrix[0]?.length || 0, nextMatrix[0]?.length || 0);
+  let changedCells = 0;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const baseCell = baseMatrix[y]?.[x] || [0, 0, 0, 0];
+      const nextCell = nextMatrix[y]?.[x] || [0, 0, 0, 0];
+      if (
+        baseCell[0] !== nextCell[0] ||
+        baseCell[1] !== nextCell[1] ||
+        baseCell[2] !== nextCell[2] ||
+        baseCell[3] !== nextCell[3]
+      ) {
+        changedCells++;
+      }
+    }
+  }
+
+  return changedCells;
+};
+
+const deriveMatrixLayerSeed = (matrix = []) => {
+  const signature = [];
+  for (let y = 0; y < matrix.length; y++) {
+    for (let x = 0; x < (matrix[y]?.length || 0); x++) {
+      const cell = matrix[y][x];
+      if (!isVisibleCell(cell)) continue;
+      signature.push(`${x}:${y}:${cell.join(',')}`);
+    }
+  }
+  return hashString(`${matrix[0]?.length || 0}x${matrix.length}:${signature.join('|')}`);
+};
+
+const colorDistance = (left = [0, 0, 0, 0], right = [0, 0, 0, 0]) => {
+  const deltaRed = (left[0] - right[0]) / 255;
+  const deltaGreen = (left[1] - right[1]) / 255;
+  const deltaBlue = (left[2] - right[2]) / 255;
+  const deltaAlpha = ((left[3] || 0) - (right[3] || 0)) / 255;
+  return (
+    Math.sqrt(deltaRed * deltaRed + deltaGreen * deltaGreen + deltaBlue * deltaBlue + deltaAlpha * deltaAlpha * 0.35) /
+    1.83
+  );
+};
+
+const getNeighborEntries = (matrix, x, y) => {
+  const neighbors = [];
+  const sourceCell = matrix[y]?.[x] || [0, 0, 0, 0];
+
+  for (let offsetY = -1; offsetY <= 1; offsetY++) {
+    for (let offsetX = -1; offsetX <= 1; offsetX++) {
+      if (offsetX === 0 && offsetY === 0) continue;
+
+      const neighborX = x + offsetX;
+      const neighborY = y + offsetY;
+      if (
+        neighborY < 0 ||
+        neighborX < 0 ||
+        neighborY >= matrix.length ||
+        neighborX >= (matrix[neighborY]?.length || 0)
+      ) {
+        continue;
+      }
+
+      const neighborCell = matrix[neighborY][neighborX];
+      const visible = isVisibleCell(neighborCell);
+      neighbors.push({
+        x: neighborX,
+        y: neighborY,
+        dx: offsetX,
+        dy: offsetY,
+        cell: neighborCell.slice(),
+        visible,
+        distance: visible ? colorDistance(sourceCell, neighborCell) : 1,
+      });
+    }
+  }
+
+  return neighbors;
+};
+
+const getDistortionTime = (distortionSeed = 0) => (Math.abs(Number(distortionSeed) || 0) % 4096) / 128 + 1;
+
+const getDirectionalVector = ({ x, y, width, height, distortionType, frameSeed, distortionSeed }) => {
+  const distortionTime = getDistortionTime(distortionSeed);
+  const noiseX = sampleSmoothNoise(frameSeed + 211, x * 0.26 + distortionTime * 0.14, y * 0.26 + 1.9);
+  const noiseY = sampleSmoothNoise(frameSeed + 263, x * 0.26 + 7.1, y * 0.26 + distortionTime * 0.14);
+  const centerX = (width - 1) / 2;
+  const centerY = (height - 1) / 2;
+  const deltaX = x - centerX;
+  const deltaY = y - centerY;
+  const radialX = deltaX === 0 ? 0 : deltaX / Math.max(1, Math.abs(deltaX) + Math.abs(deltaY));
+  const radialY = deltaY === 0 ? 0 : deltaY / Math.max(1, Math.abs(deltaX) + Math.abs(deltaY));
+
+  if (distortionType === 'position-jitter') {
+    return { dx: noiseX, dy: noiseY };
+  }
+
+  if (distortionType === 'rotation-drift') {
+    const tangentDirection = sampleSmoothNoise(frameSeed + 307, distortionTime * 0.24, 3.7) >= 0 ? 1 : -1;
+    return {
+      dx: tangentDirection * -radialY + noiseX * 0.3,
+      dy: tangentDirection * radialX + noiseY * 0.3,
+    };
+  }
+
+  if (distortionType === 'scale-wobble') {
+    const radialDirection = sampleSmoothNoise(frameSeed + 359, distortionTime * 0.18, 4.6) >= 0 ? 1 : -1;
+    return {
+      dx: radialX * radialDirection + noiseX * 0.2,
+      dy: radialY * radialDirection + noiseY * 0.2,
+    };
+  }
+
+  return {
+    dx: (noiseX >= 0 ? 0.6 : -0.6) + noiseX * 0.6,
+    dy: (noiseY >= 0 ? 0.6 : -0.6) + noiseY * 0.6,
+  };
+};
+
+const collectVisibleCells = (matrix = [], layerSeed, frameSeed, distortionType, distortionSeed) => {
+  const distortionTime = getDistortionTime(distortionSeed);
+  const visibleCells = [];
+
+  for (let y = 0; y < matrix.length; y++) {
+    for (let x = 0; x < (matrix[y]?.length || 0); x++) {
+      const cell = matrix[y][x];
+      if (!isVisibleCell(cell)) continue;
+
+      const neighbors = getNeighborEntries(matrix, x, y);
+      const visibleNeighbors = neighbors.filter((neighbor) => neighbor.visible);
+      const edgeScore = neighbors.some((neighbor) => !neighbor.visible) ? 1 : 0;
+      const variationScore = visibleNeighbors.length
+        ? visibleNeighbors.reduce((sum, neighbor) => {
+            if (neighbor.distance < 0.01) return sum + 0.04;
+            if (neighbor.distance <= 0.35) return sum + (1 - Math.abs(neighbor.distance - 0.14) / 0.21);
+            if (neighbor.distance <= 0.55) return sum + 0.18;
+            return sum + 0.04;
+          }, 0) / visibleNeighbors.length
+        : 0;
+
+      const activity = (sampleSmoothNoise(frameSeed + 401, x * 0.24 + distortionTime * 0.1, y * 0.24 + 2.7) + 1) / 2;
+      const stabilityBias = 1 - (hashString(`${layerSeed}:${distortionType}:${x}:${y}`) >>> 0) / 4294967295;
+
+      visibleCells.push({
+        x,
+        y,
+        cell: cell.slice(),
+        neighbors,
+        edgeScore,
+        variationScore,
+        score: variationScore * 0.58 + edgeScore * 0.2 + activity * 0.18 + stabilityBias * 0.04,
+      });
+    }
+  }
+
+  return visibleCells.sort((left, right) => right.score - left.score);
+};
+
+const chooseDistortionTarget = ({ entry, matrix, distortionType, frameSeed, distortionSeed, reservedCells }) => {
+  const width = matrix[0]?.length || 0;
+  const height = matrix.length;
+  const vector = getDirectionalVector({
+    x: entry.x,
+    y: entry.y,
+    width,
+    height,
+    distortionType,
+    frameSeed,
+    distortionSeed,
+  });
+  const vectorLength = Math.hypot(vector.dx, vector.dy) || 1;
+
+  return [...entry.neighbors]
+    .map((neighbor) => {
+      const alignment =
+        (neighbor.dx * vector.dx + neighbor.dy * vector.dy) /
+        ((Math.hypot(neighbor.dx, neighbor.dy) || 1) * vectorLength);
+      let score = alignment * 0.55;
+
+      if (!neighbor.visible) {
+        score += 0.22 + entry.edgeScore * 0.16;
+      } else if (neighbor.distance >= 0.01 && neighbor.distance <= 0.38) {
+        score += 0.34 + (0.38 - neighbor.distance) * 0.45;
+      } else {
+        score -= 0.2;
+      }
+
+      if (distortionType === 'particle-drift' && Math.abs(neighbor.dx) === 1 && Math.abs(neighbor.dy) === 1) {
+        score += 0.16;
+      }
+      if (distortionType === 'rotation-drift' && Math.abs(neighbor.dx) + Math.abs(neighbor.dy) === 1) {
+        score += 0.06;
+      }
+      if (distortionType === 'scale-wobble' && !neighbor.visible) {
+        score += 0.08;
+      }
+      if (reservedCells.has(`${neighbor.x}:${neighbor.y}`)) {
+        score = -Infinity;
+      }
+
+      return { ...neighbor, score };
+    })
+    .sort((left, right) => right.score - left.score)
+    .find((candidate) => candidate.score > 0.02);
+};
+
+const buildDistortedMatrix = (
+  baseMatrix,
+  distortionType,
+  factorA = DEFAULT_DISTORTION_FACTOR_A,
+  distortionSeed = Date.now(),
+) => {
+  const layerSeed = deriveMatrixLayerSeed(baseMatrix);
+  const normalizedSeed = Number.isFinite(distortionSeed) ? distortionSeed : hashString(String(distortionSeed));
+  const frameSeed = hashString(`${layerSeed}:${distortionType}:${normalizedSeed}`);
+  const visibleCells = collectVisibleCells(baseMatrix, layerSeed, frameSeed, distortionType, normalizedSeed);
+  const result = cloneMatrix(baseMatrix);
+
+  if (!visibleCells.length) {
+    return { matrix: result, changedCells: 0, appliedDistortions: 0, layerSeed, frameSeed };
+  }
+
+  const densityFactor = clampNumber(Number.isFinite(factorA) ? factorA : DEFAULT_DISTORTION_FACTOR_A, 0.01, 1);
+  const maxBudget = Math.max(1, Math.round(visibleCells.length * 0.35));
+  const distortionBudget = clampNumber(Math.round(visibleCells.length * densityFactor), 1, maxBudget);
+  const reservedCells = new Set();
+  let appliedDistortions = 0;
+
+  for (const entry of visibleCells) {
+    if (appliedDistortions >= distortionBudget) break;
+
+    const sourceKey = `${entry.x}:${entry.y}`;
+    if (reservedCells.has(sourceKey)) continue;
+
+    const target = chooseDistortionTarget({
+      entry,
+      matrix: baseMatrix,
+      distortionType,
+      frameSeed,
+      distortionSeed: normalizedSeed,
+      reservedCells,
+    });
+
+    if (!target) continue;
+
+    if (target.visible) {
+      const nextCell = result[target.y][target.x].slice();
+      result[target.y][target.x] = entry.cell.slice();
+      result[entry.y][entry.x] = nextCell;
+    } else {
+      result[target.y][target.x] = entry.cell.slice();
+      result[entry.y][entry.x] = [0, 0, 0, 0];
+    }
+
+    reservedCells.add(sourceKey);
+    reservedCells.add(`${target.x}:${target.y}`);
+    appliedDistortions++;
+  }
+
+  let changedCells = countChangedCells(baseMatrix, result);
+
+  if (changedCells === 0) {
+    for (const entry of visibleCells) {
+      const transparentTarget = entry.neighbors.find((neighbor) => !neighbor.visible);
+      if (!transparentTarget) continue;
+      result[transparentTarget.y][transparentTarget.x] = entry.cell.slice();
+      result[entry.y][entry.x] = [0, 0, 0, 0];
+      appliedDistortions = 1;
+      changedCells = countChangedCells(baseMatrix, result);
+      break;
+    }
+  }
+
+  return {
+    matrix: result,
+    changedCells,
+    appliedDistortions,
+    densityFactor,
+    layerSeed,
+    frameSeed,
+  };
+};
+
+const getMosaicTileSize = (width, height, factorA = DEFAULT_DISTORTION_FACTOR_A) => {
+  const minDimension = Math.max(1, Math.min(width, height));
+  const normalizedFactor = clampNumber(Number.isFinite(factorA) ? factorA : DEFAULT_DISTORTION_FACTOR_A, 0.01, 1);
+  return clampNumber(
+    Math.round(1 + normalizedFactor * Math.max(2, Math.min(10, Math.floor(minDimension / 2)))),
+    1,
+    minDimension,
+  );
+};
+
+const buildMosaicMatrix = (
+  baseMatrix,
+  mosaicType,
+  factorA = DEFAULT_DISTORTION_FACTOR_A,
+  brushCell = [255, 0, 0, 255],
+) => {
+  const height = baseMatrix.length;
+  const width = baseMatrix[0]?.length || 0;
+  const result = cloneMatrix(baseMatrix);
+
+  if (!height || !width) {
+    return { matrix: result, changedCells: 0, paintedCells: 0, tileSize: 1 };
+  }
+
+  const tileSize = getMosaicTileSize(width, height, factorA);
+  const gap = Math.max(1, Math.floor(tileSize / 2));
+  const thickness = Math.max(1, Math.ceil(tileSize / 3));
+  const paintCell = normalizeColorCell(brushCell);
+  let paintedCells = 0;
+
+  const shouldPaint = (x, y) => {
+    switch (mosaicType) {
+      case 'mosaic-diamond-checker': {
+        const span = tileSize * 2 + gap;
+        const tileX = Math.floor(x / span);
+        const tileY = Math.floor(y / span);
+        if ((tileX + tileY) % 2 !== 0) return false;
+        const localX = modulo(x, span) - tileSize;
+        const localY = modulo(y, span) - tileSize;
+        return Math.abs(localX) + Math.abs(localY) <= tileSize - 1;
+      }
+      case 'mosaic-rhombus-lattice': {
+        const period = tileSize * 2 + gap;
+        const diagonalA = modulo(x + y, period);
+        const diagonalB = modulo(x - y, period);
+        return diagonalA < thickness || diagonalB < thickness;
+      }
+      case 'mosaic-zigzag-rows': {
+        const zigzagWidth = Math.max(2, tileSize * 2 + gap);
+        const bandHeight = Math.max(1, tileSize);
+        const rowIndex = Math.floor(y / bandHeight);
+        const localX = modulo(x + (rowIndex % 2) * tileSize, zigzagWidth);
+        const ridge = modulo(y, bandHeight);
+        return Math.abs(localX - ridge) < thickness || Math.abs(localX - (zigzagWidth - ridge - 1)) < thickness;
+      }
+      case 'mosaic-staggered-tiles': {
+        const step = tileSize + gap;
+        const rowIndex = Math.floor(y / step);
+        const localX = modulo(x + (rowIndex % 2) * Math.floor(step / 2), step);
+        const localY = modulo(y, step);
+        return localX < tileSize && localY < tileSize;
+      }
+      case 'mosaic-brick-offset': {
+        const brickWidth = tileSize * 2 + gap;
+        const brickHeight = tileSize + gap;
+        const rowIndex = Math.floor(y / brickHeight);
+        const localX = modulo(x + (rowIndex % 2) * Math.floor(brickWidth / 2), brickWidth);
+        const localY = modulo(y, brickHeight);
+        return localX < brickWidth - gap && localY < tileSize;
+      }
+      default:
+        return false;
+    }
+  };
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!shouldPaint(x, y)) continue;
+      paintedCells++;
+      result[y][x] = paintCell.slice();
+    }
+  }
+
+  return {
+    matrix: result,
+    changedCells: countChangedCells(baseMatrix, result),
+    paintedCells,
+    tileSize,
+  };
+};
 
 const ObjectLayerEngineModal = {
   selectItemType: 'skin',
   itemActivable: false,
-  renderIsStateless: false,
   renderFrameDuration: 100,
   existingObjectLayerId: null,
   originalDirectionCodes: [],
+  selectedDistortionType: DEFAULT_DISTORTION_TYPE,
+  distortionFactorA: DEFAULT_DISTORTION_FACTOR_A,
+  uniformOpacityEnabled: false,
   templates: [
     {
       label: 'empty',
@@ -87,14 +590,15 @@ const ObjectLayerEngineModal = {
   },
   ObjectLayerData: {},
   clearData: function () {
-    // Clear all cached object layer data to prevent contamination between sessions
     this.ObjectLayerData = {};
     this.selectItemType = 'skin';
     this.itemActivable = false;
-    this.renderIsStateless = false;
     this.renderFrameDuration = 100;
     this.existingObjectLayerId = null;
     this.originalDirectionCodes = [];
+    this.selectedDistortionType = DEFAULT_DISTORTION_TYPE;
+    this.distortionFactorA = DEFAULT_DISTORTION_FACTOR_A;
+    this.uniformOpacityEnabled = false;
     this.templates = [
       {
         label: 'empty',
@@ -103,13 +607,11 @@ const ObjectLayerEngineModal = {
       },
     ];
 
-    // Clear the canvas if it exists
     const ole = s('object-layer-engine');
     if (ole && typeof ole.clear === 'function') {
       ole.clear();
     }
 
-    // Clear all frame previews from DOM for all direction codes
     const directionCodes = ['08', '18', '02', '12', '04', '14', '06', '16'];
     for (const directionCode of directionCodes) {
       const framesContainer = s(`.frames-${directionCode}`);
@@ -132,15 +634,18 @@ const ObjectLayerEngineModal = {
     const activableCheckbox = s('#ol-toggle-item-activable');
     if (activableCheckbox) activableCheckbox.checked = false;
 
-    const statelessCheckbox = s('#ol-toggle-render-is-stateless');
-    if (statelessCheckbox) statelessCheckbox.checked = false;
-
     // Clear stat inputs with correct IDs
     const statTypes = Object.keys(ObjectLayerEngineModal.statDescriptions);
     for (const stat of statTypes) {
-      const statInput = s(`#ol-input-item-stats-${stat}`);
+      const statInput = getRenderedInputNode(`ol-input-item-stats-${stat}`);
       if (statInput) statInput.value = '0';
     }
+
+    const statRandomMinInput = getRenderedInputNode('ol-input-stats-random-min');
+    if (statRandomMinInput) statRandomMinInput.value = String(DEFAULT_STAT_RANDOM_MIN);
+
+    const statRandomMaxInput = getRenderedInputNode('ol-input-stats-random-max');
+    if (statRandomMaxInput) statRandomMaxInput.value = String(DEFAULT_STAT_RANDOM_MAX);
 
     // Clear DropDown displays
     const templateDropdownCurrent = s(`.dropdown-current-ol-dropdown-template`);
@@ -148,6 +653,20 @@ const ObjectLayerEngineModal = {
 
     const itemTypeDropdownCurrent = s(`.dropdown-current-ol-dropdown-item-type`);
     if (itemTypeDropdownCurrent) itemTypeDropdownCurrent.innerHTML = 'skin';
+
+    const distortionDropdownCurrent = s(`.dropdown-current-ol-dropdown-distortion-type`);
+    if (distortionDropdownCurrent) {
+      distortionDropdownCurrent.innerHTML = getCanvasBehaviorDisplay(DEFAULT_DISTORTION_TYPE);
+    }
+
+    const distortionFactorInput = s('#ol-input-distortion-factor-a') || s('.ol-input-distortion-factor-a');
+    if (distortionFactorInput) distortionFactorInput.value = String(DEFAULT_DISTORTION_FACTOR_A);
+
+    const distortionStatusNode = s(`.ol-distortion-status`);
+    if (distortionStatusNode) {
+      distortionStatusNode.style.color = '#888';
+      distortionStatusNode.innerHTML = DEFAULT_DISTORTION_STATUS;
+    }
   },
   loadFromDatabase: async (objectLayerId) => {
     try {
@@ -202,8 +721,14 @@ const ObjectLayerEngineModal = {
       '06': 'Right Idle',
       16: 'Right Walk',
     };
-    const itemTypes = ['skin', 'weapon', 'armor', 'artifact', 'floor'];
+    const itemTypes = ['skin', 'weapon', 'armor', 'artifact', 'floor', 'resource', 'obstacle', 'foreground', 'portal'];
     const statTypes = ['effect', 'resistance', 'agility', 'range', 'intelligence', 'utility'];
+    const distortionDropdownId = 'ol-dropdown-distortion-type';
+    const distortionApplyBtnClass = 'ol-btn-apply-distortion';
+    const distortionStatusClass = 'ol-distortion-status';
+    const statsRandomizeBtnClass = 'ol-btn-randomize-stats';
+    const statsRandomMinInputId = 'ol-input-stats-random-min';
+    const statsRandomMaxInputId = 'ol-input-stats-random-max';
 
     // Check if we have an 'id' query parameter to load existing object layer
     const queryParams = getQueryParams();
@@ -212,6 +737,130 @@ const ObjectLayerEngineModal = {
     // Track frame editing state
     let editingFrameId = null;
     let editingDirectionCode = null;
+
+    const readDistortionFactorA = () => {
+      const factorInput = s('.ol-input-distortion-factor-a') || s('#ol-input-distortion-factor-a');
+      const parsedFactor = Number.parseFloat(factorInput?.value);
+      const normalizedFactor = clampNumber(
+        Number.isFinite(parsedFactor)
+          ? parsedFactor
+          : ObjectLayerEngineModal.distortionFactorA || DEFAULT_DISTORTION_FACTOR_A,
+        0.01,
+        1,
+      );
+
+      ObjectLayerEngineModal.distortionFactorA = normalizedFactor;
+      if (factorInput) {
+        factorInput.value = String(Math.round(normalizedFactor * 100) / 100);
+      }
+
+      return normalizedFactor;
+    };
+
+    const readRandomStatBounds = () => {
+      const minInput = getRenderedInputNode(statsRandomMinInputId);
+      const maxInput = getRenderedInputNode(statsRandomMaxInputId);
+      let minValue = Number.parseInt(minInput?.value, 10);
+      let maxValue = Number.parseInt(maxInput?.value, 10);
+
+      minValue = clampNumber(Number.isFinite(minValue) ? minValue : DEFAULT_STAT_RANDOM_MIN, 0, 10);
+      maxValue = clampNumber(Number.isFinite(maxValue) ? maxValue : DEFAULT_STAT_RANDOM_MAX, 0, 10);
+
+      if (minValue > maxValue) {
+        const nextMin = maxValue;
+        maxValue = minValue;
+        minValue = nextMin;
+      }
+
+      if (minInput) minInput.value = String(minValue);
+      if (maxInput) maxInput.value = String(maxValue);
+
+      return { minValue, maxValue };
+    };
+
+    const randomizeStatInputs = () => {
+      const { minValue, maxValue } = readRandomStatBounds();
+
+      for (const statType of statTypes) {
+        const statInput = getRenderedInputNode(`ol-input-item-stats-${statType}`);
+        if (!statInput) continue;
+
+        const randomValue = Math.floor(Math.random() * (maxValue - minValue + 1)) + minValue;
+        statInput.value = String(randomValue);
+      }
+
+      NotificationManager.Push({
+        html: `Stats randomized between ${minValue} and ${maxValue}.`,
+        status: 'success',
+      });
+    };
+
+    let uniformOpacitySyncInProgress = false;
+
+    const buildUniformOpacityMatrix = (matrix = [], targetAlpha = 255) => {
+      const clampedAlpha = clampNumber(Number(targetAlpha) || 0, 0, 255);
+      let changedCells = 0;
+      const nextMatrix = matrix.map((row) =>
+        row.map((cell) => {
+          const nextCell = cell.slice();
+          if (isVisibleCell(nextCell) && nextCell[3] !== clampedAlpha) {
+            nextCell[3] = clampedAlpha;
+            changedCells++;
+          }
+          return nextCell;
+        }),
+      );
+
+      return { matrix: nextMatrix, changedCells, alpha: clampedAlpha };
+    };
+
+    const applyUniformOpacityToEditor = ({ captureUndo = false } = {}) => {
+      const ole = s('object-layer-engine');
+      if (!ole || !ObjectLayerEngineModal.uniformOpacityEnabled || uniformOpacitySyncInProgress) return false;
+
+      let currentFrame = null;
+      try {
+        const exportedMatrix = ole.exportMatrixJSON();
+        currentFrame = typeof exportedMatrix === 'string' ? JSON.parse(exportedMatrix) : exportedMatrix;
+      } catch (error) {
+        return false;
+      }
+
+      const currentMatrix = currentFrame?.matrix;
+      if (!Array.isArray(currentMatrix) || !currentMatrix.length || !currentMatrix[0]?.length) {
+        return false;
+      }
+
+      const targetAlpha = clampNumber(ole.getBrushAlpha?.() ?? ole.getBrushColor?.()?.[3] ?? 255, 0, 255);
+      const nextFrame = buildUniformOpacityMatrix(currentMatrix, targetAlpha);
+      if (!nextFrame.changedCells) return false;
+
+      const nextSnapshot = {
+        width: currentFrame.width || currentMatrix[0].length,
+        height: currentFrame.height || currentMatrix.length,
+        matrix: nextFrame.matrix,
+      };
+      const beforeSnapshot = captureUndo && typeof ole._snapshot === 'function' ? ole._snapshot() : null;
+
+      if (
+        captureUndo &&
+        beforeSnapshot &&
+        typeof ole._pushUndo === 'function' &&
+        typeof ole._matricesEqual === 'function' &&
+        !ole._matricesEqual(beforeSnapshot, nextSnapshot)
+      ) {
+        ole._pushUndo(beforeSnapshot);
+      }
+
+      uniformOpacitySyncInProgress = true;
+      try {
+        ole.loadMatrix(nextFrame.matrix);
+      } finally {
+        uniformOpacitySyncInProgress = false;
+      }
+
+      return true;
+    };
 
     // Helper function to update UI when entering edit mode
     const enterEditMode = (frameId, directionCode) => {
@@ -331,7 +980,6 @@ const ObjectLayerEngineModal = {
             }
           }
           if (objectLayerRenderFramesId) {
-            ObjectLayerEngineModal.renderIsStateless = objectLayerRenderFramesId.is_stateless || false;
             ObjectLayerEngineModal.renderFrameDuration = objectLayerRenderFramesId.frame_duration || 100;
           }
         }
@@ -367,6 +1015,154 @@ const ObjectLayerEngineModal = {
     const pixelSize = parseInt(320 / Math.max(cellsW, cellsH));
     const idSectionA = 'template-section-a';
     const idSectionB = 'template-section-b';
+    const colorPaletteClass = 'ol-color-palette';
+    let directionPreviewRuntime = null;
+
+    const cleanupDirectionPreviewRuntime = () => {
+      if (!directionPreviewRuntime) return;
+      if (directionPreviewRuntime.intervalId) {
+        clearInterval(directionPreviewRuntime.intervalId);
+      }
+      for (const frameUrl of directionPreviewRuntime.frameUrls || []) {
+        URL.revokeObjectURL(frameUrl);
+      }
+      directionPreviewRuntime = null;
+    };
+
+    const cleanupDirectionPreviewModal = () => {
+      cleanupDirectionPreviewRuntime();
+      if (s(`.${DIRECTION_PREVIEW_MODAL_ID}`)) {
+        Modal.removeModal(DIRECTION_PREVIEW_MODAL_ID);
+      }
+    };
+
+    if (Modal.Data[options.idModal]) {
+      Modal.Data[options.idModal].onCloseListener[`${options.idModal}-direction-preview-cleanup`] = () => {
+        cleanupDirectionPreviewModal();
+        delete Modal.Data[options.idModal]?.onCloseListener?.[`${options.idModal}-direction-preview-cleanup`];
+      };
+    }
+
+    const getCurrentFrameDuration = () => {
+      const durationInput = s('.ol-input-render-frame-duration') || s('#ol-input-render-frame-duration');
+      const parsedDuration = Number.parseInt(durationInput?.value, 10);
+      return Math.max(
+        100,
+        Number.isFinite(parsedDuration) ? parsedDuration : ObjectLayerEngineModal.renderFrameDuration || 100,
+      );
+    };
+
+    const openDirectionPreviewModal = async (directionCode) => {
+      const frames = ObjectLayerEngineModal.ObjectLayerData[directionCode] || [];
+      if (!frames.length) {
+        NotificationManager.Push({
+          html: `No frames available yet for ${directionCodeLabels[directionCode] || directionCode}.`,
+          status: 'warning',
+        });
+        return;
+      }
+
+      const frameUrls = frames
+        .map((frame) => {
+          if (!frame?.image) return null;
+          return URL.createObjectURL(frame.image);
+        })
+        .filter(Boolean);
+
+      if (!frameUrls.length) {
+        NotificationManager.Push({
+          html: `Could not build a local preview for ${directionCodeLabels[directionCode] || directionCode}.`,
+          status: 'error',
+        });
+        return;
+      }
+
+      cleanupDirectionPreviewModal();
+
+      const { barConfig } = await Themes[Css.currentTheme]();
+      const frameDuration = getCurrentFrameDuration();
+      const previewWidth = Math.max(180, cellsW * pixelSize);
+      const previewHeight = Math.max(180, cellsH * pixelSize);
+
+      await Modal.Render({
+        id: DIRECTION_PREVIEW_MODAL_ID,
+        barConfig,
+        title: `${directionCodeLabels[directionCode] || directionCode} Preview`,
+        html: () => html`
+          <div class="in section-mp" style="text-align: center; min-width: ${previewWidth}px;">
+            <div class="in" style="font-size: 12px; color: #999; margin-bottom: 8px;">
+              ${frames.length} frame${frames.length === 1 ? '' : 's'} at ${frameDuration}ms
+            </div>
+            <div
+              class="in direction-preview-stage"
+              style="display: inline-flex; align-items: center; justify-content: center; min-height: ${previewHeight}px; min-width: ${previewWidth}px; background-image: linear-gradient(45deg, rgba(255,255,255,0.08) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.08) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.08) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.08) 75%); background-size: 24px 24px; background-position: 0 0, 0 12px, 12px -12px, -12px 0; border: 1px solid rgba(255,255,255,0.15);"
+            >
+              <img
+                class="direction-preview-image"
+                src="${frameUrls[0]}"
+                style="image-rendering: pixelated; width: ${previewWidth}px; height: ${previewHeight}px; object-fit: contain;"
+              />
+            </div>
+            <div class="fl" style="justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 10px;">
+              ${frameUrls.map(
+                (frameUrl, frameIndex) => html`
+                  <img
+                    src="${frameUrl}"
+                    style="width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.25);"
+                    title="Frame ${frameIndex + 1}"
+                  />
+                `,
+              )}
+            </div>
+          </div>
+        `,
+        style: {
+          width: `${Math.max(300, previewWidth + 40)}px`,
+          height: `${Math.max(260, previewHeight + 150)}px`,
+          border: '1px solid rgba(255,255,255,0.15)',
+          'z-index': 10,
+        },
+        slideMenu: 'modal-menu',
+      });
+
+      const previewImage = s(`.${DIRECTION_PREVIEW_MODAL_ID} .direction-preview-image`);
+      if (!previewImage) {
+        cleanupDirectionPreviewRuntime();
+        return;
+      }
+
+      let currentFrameIndex = 0;
+      const advancePreviewFrame = () => {
+        if (!previewImage) return;
+        currentFrameIndex = (currentFrameIndex + 1) % frameUrls.length;
+        previewImage.src = frameUrls[currentFrameIndex];
+      };
+
+      directionPreviewRuntime = {
+        frameUrls,
+        intervalId: frameUrls.length > 1 ? setInterval(advancePreviewFrame, frameDuration) : null,
+      };
+
+      if (Modal.Data[DIRECTION_PREVIEW_MODAL_ID]) {
+        Modal.Data[DIRECTION_PREVIEW_MODAL_ID].onCloseListener[DIRECTION_PREVIEW_MODAL_ID] = () => {
+          cleanupDirectionPreviewRuntime();
+          delete Modal.Data[DIRECTION_PREVIEW_MODAL_ID]?.onCloseListener?.[DIRECTION_PREVIEW_MODAL_ID];
+        };
+      }
+    };
+
+    const rgbaToHex = (rgba = [0, 0, 0]) => {
+      const red = Math.max(0, Math.min(255, rgba[0] || 0))
+        .toString(16)
+        .padStart(2, '0');
+      const green = Math.max(0, Math.min(255, rgba[1] || 0))
+        .toString(16)
+        .padStart(2, '0');
+      const blue = Math.max(0, Math.min(255, rgba[2] || 0))
+        .toString(16)
+        .padStart(2, '0');
+      return `#${red}${green}${blue}`.toUpperCase();
+    };
 
     let directionsCodeBarRender = '';
 
@@ -538,13 +1334,17 @@ const ObjectLayerEngineModal = {
           <div class="fl">
             <div class="in fll">
               <div class="in direction-code-bar-frames-title">${directionCodeLabels[directionCode]}</div>
-              <div class="in direction-code-bar-frames-btn">
+              <div class="fl direction-code-bar-btn-row" style="gap: 6px;">
                 ${await BtnIcon.Render({
                   label: html`
                     <i class="fa-solid fa-plus direction-code-bar-frames-btn-icon-add-${directionCode}"></i>
                     <i class="fa-solid fa-edit direction-code-bar-frames-btn-icon-edit-${directionCode} hide"></i>
                   `,
                   class: `direction-code-bar-frames-btn-add direction-code-bar-frames-btn-${directionCode}`,
+                })}
+                ${await BtnIcon.Render({
+                  label: html`<i class="fa-solid fa-play"></i>`,
+                  class: `direction-code-bar-preview-btn direction-code-bar-preview-btn-${directionCode}`,
                 })}
               </div>
             </div>
@@ -651,7 +1451,12 @@ const ObjectLayerEngineModal = {
               }
 
               const buttonSelector = `.direction-code-bar-frames-btn-${currentDirectionCode}`;
+              const previewButtonSelector = `.direction-code-bar-preview-btn-${currentDirectionCode}`;
               console.log(`Registering click handler for: ${buttonSelector}`);
+
+              EventsUI.onClick(previewButtonSelector, async () => {
+                await openDirectionPreviewModal(currentDirectionCode);
+              });
 
               EventsUI.onClick(buttonSelector, async () => {
                 console.log(`Add frame button clicked for direction: ${currentDirectionCode}`);
@@ -738,7 +1543,165 @@ const ObjectLayerEngineModal = {
       await loadFrames();
       s('object-layer-engine').clear();
 
-      EventsUI.onClick(`.ol-btn-save`, async () => {
+      const editor = s('object-layer-engine');
+      const colorPalette = s(`.${colorPaletteClass}`);
+
+      const syncPaletteFromEditor = (event = null) => {
+        if (!colorPalette || !editor) {
+          return;
+        }
+        const nextHex = event?.detail?.hex || rgbaToHex(editor.getBrushColor?.());
+        if (nextHex && colorPalette.value !== nextHex) {
+          colorPalette.value = nextHex;
+        }
+      };
+
+      const syncEditorFromPalette = (event) => {
+        if (!editor) {
+          return;
+        }
+        const nextHex = event.detail?.value || event.detail?.hex;
+        if (!nextHex) {
+          return;
+        }
+        const [red, green, blue] = hexToRgbA(nextHex);
+        const alpha = editor.getBrushAlpha?.() ?? editor.getBrushColor?.()?.[3] ?? 255;
+        editor.setBrushColor([red, green, blue, alpha]);
+      };
+
+      if (colorPalette) {
+        colorPalette.addEventListener('colorchange', syncEditorFromPalette);
+      }
+      if (editor) {
+        editor.addEventListener('brushcolorchange', syncPaletteFromEditor);
+      }
+
+      const syncUniformOpacityFromEditor = () => {
+        applyUniformOpacityToEditor();
+      };
+
+      if (editor) {
+        editor.addEventListener('brushcolorchange', syncUniformOpacityFromEditor);
+        editor.addEventListener('matrixload', syncUniformOpacityFromEditor);
+      }
+      syncPaletteFromEditor();
+
+      const setDistortionStatus = (message, tone = 'muted') => {
+        const statusNode = s(`.${distortionStatusClass}`);
+        if (!statusNode) return;
+        statusNode.style.color = tone === 'success' ? '#8fd18c' : tone === 'error' ? '#ff8a8a' : '#888';
+        statusNode.innerHTML = message;
+      };
+
+      const applyDistortionToCurrentFrame = async () => {
+        const ole = s('object-layer-engine');
+        if (!ole || typeof ole.exportMatrixJSON !== 'function' || typeof ole.loadMatrix !== 'function') return;
+
+        let currentJson = null;
+        let currentFrame = null;
+
+        try {
+          currentJson = ole.exportMatrixJSON();
+          currentFrame = typeof currentJson === 'string' ? JSON.parse(currentJson) : currentJson;
+        } catch (error) {
+          setDistortionStatus('Could not read the current frame from the editor.', 'error');
+          return;
+        }
+
+        const currentMatrix = currentFrame?.matrix;
+        if (!Array.isArray(currentMatrix) || !currentMatrix.length || !currentMatrix[0]?.length) {
+          setDistortionStatus('The current frame has no editable matrix data.', 'error');
+          return;
+        }
+        const selectedDistortionType = ObjectLayerEngineModal.selectedDistortionType || DEFAULT_DISTORTION_TYPE;
+        const selectedBehavior =
+          CANVAS_BEHAVIOR_BY_VALUE[selectedDistortionType] || CANVAS_BEHAVIOR_BY_VALUE[DEFAULT_DISTORTION_TYPE];
+        const distortionFactorA = readDistortionFactorA();
+        const isMosaicMode = isMosaicBehavior(selectedDistortionType);
+
+        if (!isMosaicMode && !currentMatrix.some((row) => row.some((cell) => isVisibleCell(cell)))) {
+          setDistortionStatus('Paint something on the current frame before applying a distortion.', 'error');
+          return;
+        }
+
+        const baseFrame = currentFrame;
+        let transformationResult = null;
+
+        if (isMosaicMode) {
+          const activeBrushColor = normalizeColorCell(ole.getBrushColor?.() || [255, 0, 0, 255]);
+          transformationResult = buildMosaicMatrix(
+            baseFrame.matrix,
+            selectedDistortionType,
+            distortionFactorA,
+            activeBrushColor,
+          );
+        } else {
+          const seedBase = Date.now() + hashString(currentJson);
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const distortionSeed = seedBase + attempt * 977;
+            transformationResult = buildDistortedMatrix(
+              baseFrame.matrix,
+              selectedDistortionType,
+              distortionFactorA,
+              distortionSeed,
+            );
+            if (transformationResult.changedCells > 0) break;
+          }
+        }
+
+        if (!transformationResult || transformationResult.changedCells === 0) {
+          setDistortionStatus(
+            isMosaicMode
+              ? 'No visible mosaic was painted on the current frame. Try another factorA value or a different active color.'
+              : 'No visible distortion was produced for the current frame. Try applying again or edit the frame shape first.',
+            'error',
+          );
+          return;
+        }
+
+        const nextSnapshot = {
+          width: baseFrame.width,
+          height: baseFrame.height,
+          matrix: transformationResult.matrix,
+        };
+        const beforeSnapshot = typeof ole._snapshot === 'function' ? ole._snapshot() : null;
+
+        if (
+          beforeSnapshot &&
+          typeof ole._pushUndo === 'function' &&
+          typeof ole._matricesEqual === 'function' &&
+          !ole._matricesEqual(beforeSnapshot, nextSnapshot)
+        ) {
+          ole._pushUndo(beforeSnapshot);
+        }
+
+        ole.loadMatrix(transformationResult.matrix);
+
+        if (isMosaicMode) {
+          setDistortionStatus(
+            `${selectedBehavior.label} painted on the current frame with the active color. tileSize ${transformationResult.tileSize}, ${transformationResult.paintedCells || 0} pattern cells, ${transformationResult.changedCells} cells changed, factorA=${distortionFactorA.toFixed(2)}.`,
+            'success',
+          );
+        } else {
+          setDistortionStatus(
+            `${selectedBehavior.label} applied to the current frame. ${transformationResult.appliedDistortions || 0} local shifts, ${transformationResult.changedCells} cells changed, factorA=${distortionFactorA.toFixed(2)}.`,
+            'success',
+          );
+        }
+      };
+
+      EventsUI.onClick(`.${distortionApplyBtnClass}`, async () => {
+        await applyDistortionToCurrentFrame();
+      });
+      setDistortionStatus(DEFAULT_DISTORTION_STATUS);
+
+      EventsUI.onClick(`.${statsRandomizeBtnClass}`, async () => {
+        randomizeStatInputs();
+      });
+
+      const persistObjectLayer = async ({ clone = false } = {}) => {
+        const isUpdateMode = Boolean(ObjectLayerEngineModal.existingObjectLayerId) && !clone;
+
         // Validate minimum frame_duration 100ms
         const frameDuration = parseInt(s(`.ol-input-render-frame-duration`).value);
         if (!frameDuration || frameDuration < 100) {
@@ -776,7 +1739,6 @@ const ObjectLayerEngineModal = {
           frames: {},
           colors: [],
           frame_duration: ObjectLayerEngineModal.renderFrameDuration,
-          is_stateless: ObjectLayerEngineModal.renderIsStateless,
         };
 
         const objectLayer = {
@@ -822,7 +1784,6 @@ const ObjectLayerEngineModal = {
           }
         }
         objectLayerRenderFramesData.frame_duration = parseInt(s(`.ol-input-render-frame-duration`).value);
-        objectLayerRenderFramesData.is_stateless = ObjectLayerEngineModal.renderIsStateless;
         objectLayer.data.stats = {
           effect: parseInt(s(`.ol-input-item-stats-effect`).value),
           resistance: parseInt(s(`.ol-input-item-stats-resistance`).value),
@@ -838,15 +1799,15 @@ const ObjectLayerEngineModal = {
           description: s(`.ol-input-item-description`).value,
         };
 
-        // Add _id if we're updating an existing object layer
-        if (ObjectLayerEngineModal.existingObjectLayerId) {
+        // Add _id only when updating the existing object layer.
+        if (isUpdateMode) {
           objectLayer._id = ObjectLayerEngineModal.existingObjectLayerId;
         }
 
         console.warn(
           'objectLayer',
           objectLayer,
-          ObjectLayerEngineModal.existingObjectLayerId ? '(UPDATE MODE)' : '(CREATE MODE)',
+          clone ? '(CLONE MODE)' : isUpdateMode ? '(UPDATE MODE)' : '(CREATE MODE)',
         );
 
         if (appStore.Data.user.main.model.user.role === 'guest') {
@@ -863,14 +1824,14 @@ const ObjectLayerEngineModal = {
           const directionCodesToUpload = Object.keys(ObjectLayerEngineModal.ObjectLayerData);
 
           // In UPDATE mode, also include original direction codes that may have been cleared
-          const allDirectionCodes = ObjectLayerEngineModal.existingObjectLayerId
+          const allDirectionCodes = isUpdateMode
             ? [...new Set([...directionCodesToUpload, ...ObjectLayerEngineModal.originalDirectionCodes])]
             : directionCodesToUpload;
 
           console.warn(
             `Uploading frames for ${allDirectionCodes.length} directions:`,
             allDirectionCodes,
-            ObjectLayerEngineModal.existingObjectLayerId ? '(UPDATE MODE)' : '(CREATE MODE)',
+            clone ? '(CLONE MODE)' : isUpdateMode ? '(UPDATE MODE)' : '(CREATE MODE)',
           );
 
           for (const directionCode of allDirectionCodes) {
@@ -895,7 +1856,7 @@ const ObjectLayerEngineModal = {
 
             // Send all frames for this direction in one request (even if empty, to remove frames)
             try {
-              if (ObjectLayerEngineModal.existingObjectLayerId) {
+              if (isUpdateMode) {
                 // UPDATE: use PUT endpoint with object layer ID
                 const { status, data } = await ObjectLayerService.put({
                   id: `${ObjectLayerEngineModal.existingObjectLayerId}/frame-image/${objectLayer.data.item.type}/${objectLayer.data.item.id}/${directionCode}`,
@@ -936,7 +1897,7 @@ const ObjectLayerEngineModal = {
           };
 
           let response;
-          if (ObjectLayerEngineModal.existingObjectLayerId) {
+          if (isUpdateMode) {
             // UPDATE existing object layer
             console.warn(
               'PUT path:',
@@ -957,22 +1918,28 @@ const ObjectLayerEngineModal = {
           const { status, data, message } = response;
 
           if (status === 'success') {
+            const successAction = clone ? 'cloned' : isUpdateMode ? 'updated' : 'created';
             NotificationManager.Push({
-              html: `Object layer "${objectLayer.data.item.id}" ${
-                ObjectLayerEngineModal.existingObjectLayerId ? 'updated' : 'created'
-              } successfully!`,
+              html: `Object layer "${objectLayer.data.item.id}" ${successAction} successfully!`,
               status: 'success',
             });
             ObjectLayerEngineModal.toManagement(data?._id || ObjectLayerEngineModal.existingObjectLayerId);
           } else {
+            const errorAction = clone ? 'cloning' : isUpdateMode ? 'updating' : 'creating';
             NotificationManager.Push({
-              html: `Error ${
-                ObjectLayerEngineModal.existingObjectLayerId ? 'updating' : 'creating'
-              } object layer: ${message}`,
+              html: `Error ${errorAction} object layer: ${message}`,
               status: 'error',
             });
           }
         }
+      };
+
+      EventsUI.onClick(`.ol-btn-save`, async () => {
+        await persistObjectLayer();
+      });
+
+      EventsUI.onClick(`.ol-btn-clone`, async () => {
+        await persistObjectLayer({ clone: true });
       });
 
       // Add reset button event listener
@@ -1040,6 +2007,10 @@ const ObjectLayerEngineModal = {
           color: white;
           border: none !important;
         }
+        .direction-code-bar-preview-btn {
+          color: white;
+          border: none !important;
+        }
         .direction-code-bar-trash-btn:hover {
           background: none !important;
           color: red;
@@ -1052,6 +2023,10 @@ const ObjectLayerEngineModal = {
           background: none !important;
           color: #c7ff58;
         }
+        .direction-code-bar-preview-btn:hover {
+          background: none !important;
+          color: #5ee6ff;
+        }
         .ol-btn-save {
           width: 120px;
           padding: 0.5rem;
@@ -1063,6 +2038,16 @@ const ObjectLayerEngineModal = {
           padding: 0.5rem;
           font-size: 20px;
           min-height: 50px;
+        }
+        .ol-btn-clone {
+          width: 120px;
+          padding: 0.5rem;
+          font-size: 20px;
+          min-height: 50px;
+        }
+        .ol-btn-randomize-stats {
+          min-height: 50px;
+          padding: 0.5rem 0.75rem;
         }
         .ol-number-label {
           width: 120px;
@@ -1102,6 +2087,7 @@ const ObjectLayerEngineModal = {
         '.direction-code-bar-edit-btn',
         '.direction-code-bar-trash-btn',
         '.direction-code-bar-frames-btn-add',
+        '.direction-code-bar-preview-btn',
       ])}
       <div class="in frame-editor-container-loading">
         <div class="abs center frame-editor-container-loading-center"></div>
@@ -1111,6 +2097,103 @@ const ObjectLayerEngineModal = {
 
         <object-layer-engine id="ole" width="${cellsW}" height="${cellsH}" pixel-size="${pixelSize}">
         </object-layer-engine>
+        <div class="in section-mp-border" style="margin-top: 10px;">
+          <div class="in sub-title-modal"><i class="fa-solid fa-palette"></i> Brush palette</div>
+          <color-palette class="${colorPaletteClass}" value="#FF0000"></color-palette>
+          <div class="fl" style="align-items: center; gap: 8px; margin-top: 8px;">
+            ${await ToggleSwitch.Render({
+              id: UNIFORM_OPACITY_TOGGLE_ID,
+              type: 'checkbox',
+              displayMode: 'checkbox',
+              containerClass: 'in fll',
+              checked: ObjectLayerEngineModal.uniformOpacityEnabled,
+              on: {
+                checked: () => {
+                  ObjectLayerEngineModal.uniformOpacityEnabled = true;
+                  applyUniformOpacityToEditor({ captureUndo: true });
+                },
+                unchecked: () => {
+                  ObjectLayerEngineModal.uniformOpacityEnabled = false;
+                },
+              },
+            })}
+            <div class="section-mp" style="font-size: 14px;">
+              Keep all visible cells at the current opacity bar value
+            </div>
+          </div>
+        </div>
+        <div class="in section-mp-border" style="margin-top: 10px;">
+          <div class="in sub-title-modal"><i class="fa-solid fa-wand-magic-sparkles"></i> Canvas macro</div>
+          <div class="fl" style="align-items: flex-start; gap: 8px; flex-wrap: wrap;">
+            <div class="in fll" style="min-width: 240px;">
+              ${await DropDown.Render({
+                id: distortionDropdownId,
+                value: ObjectLayerEngineModal.selectedDistortionType,
+                label: html`Select behavior`,
+                disableSearchBox: true,
+                data: [
+                  {
+                    kind: 'group',
+                    value: 'group-distortion-behaviors',
+                    display: html`<div style="padding: 0 6px; color: #9d9d9d;">Distortion behaviors</div>`,
+                  },
+                  ...DISTORTION_TYPES.map((distortion) => ({
+                    value: distortion.value,
+                    display: html`<i class="${CANVAS_BEHAVIOR_ICON}"></i> ${distortion.label}`,
+                    onClick: async () => {
+                      ObjectLayerEngineModal.selectedDistortionType = distortion.value;
+                      readDistortionFactorA();
+                      const statusNode = s(`.${distortionStatusClass}`);
+                      if (statusNode) {
+                        statusNode.style.color = '#888';
+                        statusNode.innerHTML = `${distortion.label} ready for direct canvas apply. factorA controls local distortion density.`;
+                      }
+                    },
+                  })),
+                  {
+                    kind: 'group',
+                    value: 'group-mosaic-behaviors',
+                    display: html`<div style="padding: 0 6px; color: #9d9d9d;">Mosaic drawing behaviors</div>`,
+                  },
+                  ...MOSAIC_TYPES.map((mosaic) => ({
+                    value: mosaic.value,
+                    display: html`<i class="${CANVAS_BEHAVIOR_ICON}"></i> ${mosaic.label}`,
+                    onClick: async () => {
+                      ObjectLayerEngineModal.selectedDistortionType = mosaic.value;
+                      readDistortionFactorA();
+                      const statusNode = s(`.${distortionStatusClass}`);
+                      if (statusNode) {
+                        statusNode.style.color = '#888';
+                        statusNode.innerHTML = `${mosaic.label} ready for direct canvas apply. factorA controls tile size and density.`;
+                      }
+                    },
+                  })),
+                ],
+              })}
+            </div>
+            <div class="in fll" style="width: 120px;">
+              ${await Input.Render({
+                id: `ol-input-distortion-factor-a`,
+                label: html`factorA`,
+                containerClass: 'inl',
+                type: 'number',
+                min: 0.01,
+                max: 1,
+                step: 0.01,
+                value: ObjectLayerEngineModal.distortionFactorA,
+              })}
+            </div>
+            <div class="in fll">
+              ${await BtnIcon.Render({
+                class: distortionApplyBtnClass,
+                label: html`<i class="fa-solid fa-bolt"></i> Apply To Frame`,
+              })}
+            </div>
+          </div>
+          <div class="in ${distortionStatusClass}" style="margin-top: 6px; font-size: 12px; color: #888;">
+            ${DEFAULT_DISTORTION_STATUS}
+          </div>
+        </div>
         <object-layer-png-loader id="loader" editor-selector="#ole"></object-layer-png-loader>
       </div>
 
@@ -1150,25 +2233,6 @@ const ObjectLayerEngineModal = {
                 max: 1000,
                 placeholder: true,
                 value: ObjectLayerEngineModal.renderFrameDuration,
-              })}
-            </div>
-            <div class="in section-mp">
-              ${await ToggleSwitch.Render({
-                id: 'ol-toggle-render-is-stateless',
-                wrapper: true,
-                wrapperLabel: html`${Translate.Render('is-stateless')}`,
-                disabledOnClick: true,
-                checked: ObjectLayerEngineModal.renderIsStateless,
-                on: {
-                  unchecked: () => {
-                    ObjectLayerEngineModal.renderIsStateless = false;
-                    console.warn('renderIsStateless', ObjectLayerEngineModal.renderIsStateless);
-                  },
-                  checked: () => {
-                    ObjectLayerEngineModal.renderIsStateless = true;
-                    console.warn('renderIsStateless', ObjectLayerEngineModal.renderIsStateless);
-                  },
-                },
               })}
             </div>
           </div>
@@ -1236,6 +2300,38 @@ const ObjectLayerEngineModal = {
         <div class="in fll ${idSectionB}-col-b">
           <div class="in section-mp section-mp-border">
             <div class="in sub-title-modal"><i class="fa-solid fa-database"></i> Stats data</div>
+            <div class="fl" style="align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;">
+              <div class="in fll" style="width: 110px;">
+                ${await Input.Render({
+                  id: statsRandomMinInputId,
+                  label: html`Random min`,
+                  containerClass: 'inl',
+                  type: 'number',
+                  min: 0,
+                  max: 10,
+                  placeholder: true,
+                  value: DEFAULT_STAT_RANDOM_MIN,
+                })}
+              </div>
+              <div class="in fll" style="width: 110px;">
+                ${await Input.Render({
+                  id: statsRandomMaxInputId,
+                  label: html`Random max`,
+                  containerClass: 'inl',
+                  type: 'number',
+                  min: 0,
+                  max: 10,
+                  placeholder: true,
+                  value: DEFAULT_STAT_RANDOM_MAX,
+                })}
+              </div>
+              <div class="in fll">
+                ${await BtnIcon.Render({
+                  label: html`<i class="fa-solid fa-dice"></i> Randomize`,
+                  class: statsRandomizeBtnClass,
+                })}
+              </div>
+            </div>
             ${statsInputsRender}
           </div>
         </div>
@@ -1243,9 +2339,16 @@ const ObjectLayerEngineModal = {
 
       <div class="fl section-mp">
         ${await BtnIcon.Render({
-          label: html`<i class="submit-btn-icon fa-solid fa-folder-open"></i> ${Translate.Render('save')}`,
+          label: html`<i class="submit-btn-icon fa-solid fa-folder-open"></i>
+            ${ObjectLayerEngineModal.existingObjectLayerId ? 'Update' : Translate.Render('save')}`,
           class: `in flr ol-btn-save`,
         })}
+        ${ObjectLayerEngineModal.existingObjectLayerId
+          ? await BtnIcon.Render({
+              label: html`<i class="submit-btn-icon fa-solid fa-clone"></i> Clone`,
+              class: `in flr ol-btn-clone`,
+            })
+          : ''}
         ${await BtnIcon.Render({
           label: html`<i class="submit-btn-icon fa-solid fa-broom"></i> ${Translate.Render('reset')}`,
           class: `in flr ol-btn-reset`,

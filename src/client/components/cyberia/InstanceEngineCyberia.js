@@ -11,12 +11,63 @@ import { CyberiaMapService } from '../../services/cyberia-map/cyberia-map.servic
 import { FileService } from '../../services/file/file.service.js';
 import { DefaultManagement } from '../../services/default/default.management.js';
 import { getApiBaseUrl } from '../../services/core/core.service.js';
+import { ObjectLayerService } from '../../services/object-layer/object-layer.service.js';
+
+const dropdownValueKey = (value = '') => String(value).trim().replaceAll(' ', '-');
+const createDropdownOption = (value, onClick = () => {}, display = value, data = value) => ({
+  value,
+  display,
+  data,
+  onClick,
+});
 
 class InstanceEngineCyberia {
   static currentInstanceId = null;
   static currentThumbnailId = null;
   static thumbnailDirty = false;
   static portals = [];
+  static itemIdsDropdownId = 'instance-engine-item-ids-dropdown';
+
+  static syncItemIdsDropdownSelection(itemIds = []) {
+    const dropdownId = InstanceEngineCyberia.itemIdsDropdownId;
+    if (!DropDown.Tokens[dropdownId]) return;
+
+    DropDown.Tokens[dropdownId].value = [];
+    if (s(`.${dropdownId}`)) s(`.${dropdownId}`).value = [];
+    DropDown.Tokens[dropdownId].oncheckvalues = {};
+    htmls(`.dropdown-current-${dropdownId}`, '');
+    htmls(`.${dropdownId}-render-container`, '');
+
+    for (const itemId of itemIds) {
+      const key = dropdownValueKey(itemId);
+      DropDown.Tokens[dropdownId].oncheckvalues[key] = {
+        data: itemId,
+        display: itemId,
+        value: itemId,
+      };
+    }
+    DropDown.Tokens[dropdownId].value = [...itemIds];
+    if (s(`.${dropdownId}`)) s(`.${dropdownId}`).value = [...itemIds];
+    DropDown.Tokens[dropdownId]._renderSelectedBadges?.();
+  }
+
+  static async buildItemIdsDropdown() {
+    return await DropDown.Render({
+      id: InstanceEngineCyberia.itemIdsDropdownId,
+      label: html`Object Layer Item IDs`,
+      data: [],
+      type: 'checkbox',
+      containerClass: 'inl',
+      excludeSelected: true,
+      serviceProvider: async (q) => {
+        const result = await ObjectLayerService.searchItemIds({ q });
+        if (result.status === 'success' && result.data?.itemIds) {
+          return result.data.itemIds.map((itemId) => createDropdownOption(itemId));
+        }
+        return [];
+      },
+    });
+  }
 
   static renderPortalList(containerId) {
     const container = s(`.${containerId}`);
@@ -40,7 +91,12 @@ class InstanceEngineCyberia {
           (${portal.sourceCellX}, ${portal.sourceCellY})
           <span style="margin:0 4px;">&rarr;</span>
           <span style="color:${darkTheme ? '#fc8' : '#842'};">${portal.targetMapCode}</span>
-          (${portal.targetCellX}, ${portal.targetCellY})
+          ${portal.targetCellX < 0 || portal.targetCellY < 0
+            ? '<span style="color:#aaa;">(random)</span>'
+            : `(${portal.targetCellX}, ${portal.targetCellY})`}
+          <span style="color:${darkTheme ? '#9e9' : '#383'};margin-left:4px;font-size:11px;"
+            >[${portal.portalMode || 'inter-portal'}]</span
+          >
         </div>
         <div class="in fll" style="display:flex;gap:3px;">
           <button
@@ -102,6 +158,7 @@ class InstanceEngineCyberia {
     const idStatus = 'instance-engine-input-status';
     const idThumbnail = 'instance-engine-input-thumbnail';
     const idMapCodesDropdown = 'instance-engine-map-codes-dropdown';
+    const idItemIdsDropdown = InstanceEngineCyberia.itemIdsDropdownId;
     const managementId = 'modal-cyberia-instance-engine';
     const portalListId = 'instance-engine-portal-list';
     const idSourceMapCode = 'instance-engine-source-map-code';
@@ -127,6 +184,7 @@ class InstanceEngineCyberia {
       const cyberiaMapCodes = DropDown.Tokens[idMapCodesDropdown]?.value
         ? [...DropDown.Tokens[idMapCodesDropdown].value]
         : [];
+      const itemIds = DropDown.Tokens[idItemIdsDropdown]?.value ? [...DropDown.Tokens[idItemIdsDropdown].value] : [];
       const payload = {
         code: s(`.${idCode}`)?.value || '',
         name: s(`.${idName}`)?.value || '',
@@ -134,13 +192,14 @@ class InstanceEngineCyberia {
         tags,
         status: DropDown.Tokens[idStatus]?.value || 'unlisted',
         cyberiaMapCodes,
+        itemIds,
         portals: InstanceEngineCyberia.portals,
       };
       if (InstanceEngineCyberia.currentThumbnailId) payload.thumbnail = InstanceEngineCyberia.currentThumbnailId;
       return payload;
     };
 
-    const saveInstance = async () => {
+    const persistInstance = async ({ notify = true } = {}) => {
       // Upload thumbnail file only if user selected a new one
       const thumbnailInput = s(`.${idThumbnail}`);
       if (
@@ -155,34 +214,44 @@ class InstanceEngineCyberia {
         if (uploadResult.status === 'success' && uploadResult.data && uploadResult.data.length > 0) {
           InstanceEngineCyberia.currentThumbnailId = uploadResult.data[0]._id;
         } else {
-          NotificationManager.Push({
-            html: uploadResult.message || 'Failed to upload thumbnail',
-            status: 'error',
-          });
-          return;
+          if (notify) {
+            NotificationManager.Push({
+              html: uploadResult.message || 'Failed to upload thumbnail',
+              status: 'error',
+            });
+          }
+          return uploadResult;
         }
       }
 
       const body = getInstancePayload();
+      const isUpdate = !!InstanceEngineCyberia.currentInstanceId;
       let result;
-      if (InstanceEngineCyberia.currentInstanceId) {
+      if (isUpdate) {
         result = await CyberiaInstanceService.put({ id: InstanceEngineCyberia.currentInstanceId, body });
       } else {
         result = await CyberiaInstanceService.post({ body });
       }
-      NotificationManager.Push({
-        html:
-          result.status === 'error'
-            ? result.message
-            : InstanceEngineCyberia.currentInstanceId
-              ? Translate.Render('success-update-item')
-              : Translate.Render('success-create-item'),
-        status: result.status,
-      });
+      if (notify) {
+        NotificationManager.Push({
+          html:
+            result.status === 'error'
+              ? result.message
+              : isUpdate
+                ? Translate.Render('success-update-item')
+                : Translate.Render('success-create-item'),
+          status: result.status,
+        });
+      }
       if (result.status === 'success') {
         if (result.data?._id) InstanceEngineCyberia.currentInstanceId = result.data._id;
         await DefaultManagement.loadTable(managementId, { force: true, reload: true });
       }
+      return result;
+    };
+
+    const saveInstance = async () => {
+      await persistInstance({ notify: true });
     };
 
     const loadInstance = async (instanceData) => {
@@ -265,6 +334,8 @@ class InstanceEngineCyberia {
         }
       }
 
+      InstanceEngineCyberia.syncItemIdsDropdownSelection(instanceData.itemIds || instanceData.itemsId || []);
+
       // Load portals
       InstanceEngineCyberia.portals = (instanceData.portals || []).map((p) => ({
         sourceMapCode: p.sourceMapCode || '',
@@ -273,6 +344,7 @@ class InstanceEngineCyberia {
         targetMapCode: p.targetMapCode || '',
         targetCellX: p.targetCellX || 0,
         targetCellY: p.targetCellY || 0,
+        portalMode: p.portalMode || 'inter-portal',
       }));
       InstanceEngineCyberia.renderPortalList(portalListId);
     };
@@ -303,6 +375,12 @@ class InstanceEngineCyberia {
         htmls(`.dropdown-current-${idMapCodesDropdown}`, '');
         htmls(`.${idMapCodesDropdown}-render-container`, '');
       }
+      if (DropDown.Tokens[idItemIdsDropdown]) {
+        DropDown.Tokens[idItemIdsDropdown].oncheckvalues = {};
+        DropDown.Tokens[idItemIdsDropdown].value = [];
+        htmls(`.dropdown-current-${idItemIdsDropdown}`, '');
+        htmls(`.${idItemIdsDropdown}-render-container`, '');
+      }
       InstanceEngineCyberia.portals = [];
       InstanceEngineCyberia.renderPortalList(portalListId);
     };
@@ -325,16 +403,17 @@ class InstanceEngineCyberia {
       // Portal management
       if (s(`.btn-instance-engine-portal-connect`))
         s(`.btn-instance-engine-portal-connect`).onclick = async () => {
-          if (!InstanceEngineCyberia.currentInstanceId) {
-            NotificationManager.Push({
-              html: Translate.Render('save-instance-first') || 'Save the instance first.',
-              status: 'warning',
-            });
-            return;
-          }
           const btn = s(`.btn-instance-engine-portal-connect`);
           if (btn) btn.disabled = true;
           try {
+            const persistResult = await persistInstance({ notify: false });
+            if (!persistResult || persistResult.status !== 'success' || !InstanceEngineCyberia.currentInstanceId) {
+              NotificationManager.Push({
+                html: persistResult?.message || Translate.Render('save-instance-first') || 'Save the instance first.',
+                status: persistResult?.status === 'error' ? 'error' : 'warning',
+              });
+              return;
+            }
             const result = await CyberiaInstanceService.portalConnect({ id: InstanceEngineCyberia.currentInstanceId });
             if (result.status === 'error') {
               NotificationManager.Push({ html: result.message, status: 'error' });
@@ -348,21 +427,21 @@ class InstanceEngineCyberia {
               });
               return;
             }
-            // Append generated portals (skip duplicates by source+target pair)
-            const existing = new Set(InstanceEngineCyberia.portals.map((p) => `${p.sourceMapCode}>${p.targetMapCode}`));
-            let added = 0;
-            for (const p of generated) {
-              const key = `${p.sourceMapCode}>${p.targetMapCode}`;
-              if (!existing.has(key)) {
-                InstanceEngineCyberia.portals.push(p);
-                existing.add(key);
-                added++;
-              }
-            }
+            // Replace all portals with the centralized topology output
+            // (ring + random behavior for remaining unassigned portals)
+            InstanceEngineCyberia.portals = generated.map((p) => ({
+              sourceMapCode: p.sourceMapCode || '',
+              sourceCellX: p.sourceCellX || 0,
+              sourceCellY: p.sourceCellY || 0,
+              targetMapCode: p.targetMapCode || '',
+              targetCellX: p.targetCellX || 0,
+              targetCellY: p.targetCellY || 0,
+              portalMode: p.portalMode || 'inter-portal',
+            }));
             InstanceEngineCyberia.renderPortalList(portalListId);
             NotificationManager.Push({
-              html: `${topology} ring — ${added} portal(s) added.`,
-              status: added > 0 ? 'success' : 'warning',
+              html: `${topology} — ${generated.length} portal(s) generated.`,
+              status: 'success',
             });
           } catch (e) {
             NotificationManager.Push({ html: e.message, status: 'error' });
@@ -380,6 +459,7 @@ class InstanceEngineCyberia {
             targetMapCode: s(`.${idTargetMapCode}`)?.value || '',
             targetCellX: parseInt(s(`.${idTargetCellX}`)?.value) || 0,
             targetCellY: parseInt(s(`.${idTargetCellY}`)?.value) || 0,
+            portalMode: 'inter-portal',
           };
           InstanceEngineCyberia.portals.push(portal);
           InstanceEngineCyberia.renderPortalList(portalListId);
@@ -564,6 +644,7 @@ class InstanceEngineCyberia {
           },
         })}
       </div>
+      <div class="in section-mp" style="margin-top: 10px;">${await InstanceEngineCyberia.buildItemIdsDropdown()}</div>
       <div class="in section-mp" style="margin-top: 10px;">
         <div class="in input-label" style="font-size:14px;margin-bottom:5px;">Portals</div>
         ${dynamicCol({ containerSelector: 'instance-engine-container', id: dcPortalSource, type: 'search-inputs' })}

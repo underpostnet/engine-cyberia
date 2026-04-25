@@ -1,13 +1,22 @@
 /**
  * Canonical default values and type definitions for a CyberiaInstanceConf document.
  *
- * Single source of truth used by:
+ * Canonical config defaults used by:
  *   - cyberia-instance-conf.model.js  — Mongoose schema `default:` declarations
  *   - grpc-server.js                  — FALLBACK_CONFIG_DEFAULTS for missing instances
- *   - bin/cyberia.js                  — imports ITEM_TYPES for asset type enumeration
+ *
+ * The canonical entity-type ↔ item-type relationship lives in:
+ *   - src/client/components/cyberia-portal/CommonCyberiaPortal.js
+ *
+ * This file derives its item/entity type enums from that shared module.
  *
  * @module src/api/cyberia-instance-conf/cyberia-instance-conf.defaults.js
  */
+
+import {
+  ITEM_TYPES as SHARED_ITEM_TYPES,
+  ENTITY_TYPES as SHARED_ENTITY_TYPES,
+} from '../../client/components/cyberia-portal/CommonCyberiaPortal.js';
 
 // ── Item type registry ───────────────────────────────────────────────────────
 /**
@@ -19,16 +28,10 @@
  * determined separately by `get_priority_for_type()` in entity_render.c.
  *
  * @constant
- * @type {Readonly<{floor:string, skin:string, breastplate:string, weapon:string, skill:string, coin:string}>}
+ * @type {Readonly<Record<string, string>>}
  */
-export const ITEM_TYPES = Object.freeze({
-  floor: 'floor',
-  skin: 'skin',
-  breastplate: 'breastplate',
-  weapon: 'weapon',
-  skill: 'skill',
-  coin: 'coin',
-});
+export const ITEM_TYPES = SHARED_ITEM_TYPES;
+export const ENTITY_TYPES = SHARED_ENTITY_TYPES;
 
 // ── Entity Status Indicator (ESI) registry ───────────────────────────────────
 /**
@@ -46,7 +49,7 @@ export const ITEM_TYPES = Object.freeze({
  *   UO: skull for murderers, shield for invulnerables
  *
  * IMPORTANT: The numeric IDs MUST stay in sync with:
- *   - Go:  cyberia-server/src/entity_status.go   (StatusNone … StatusDead)
+ *   - Go:  cyberia-server/src/entity_status.go   (StatusNone … StatusResourceExtracted)
  *
  * @constant
  */
@@ -99,6 +102,22 @@ export const STATUS_ICONS = Object.freeze([
     borderColor: { r: 160, g: 130, b: 200, a: 200 },
     description: 'Entity is dead / respawning',
   },
+  {
+    id: 6,
+    name: 'resource',
+    iconId: 'arrow-down-gray',
+    bounce: false,
+    borderColor: { r: 100, g: 180, b: 80, a: 220 },
+    description: 'Resource entity — static, exploitable (wood, minerals, etc.)',
+  },
+  {
+    id: 7,
+    name: 'resource-extracted',
+    iconId: 'clock',
+    bounce: false,
+    borderColor: { r: 160, g: 130, b: 200, a: 200 },
+    description: 'Resource entity extracted/depleted (dead state)',
+  },
 ]);
 
 // ── Equipment rules ──────────────────────────────────────────────────────────
@@ -122,7 +141,7 @@ export const STATUS_ICONS = Object.freeze([
 export const EQUIPMENT_RULES_DEFAULTS = Object.freeze({
   // Item types that players are allowed to activate (equip).
   // Types not in this list are non-activable (coins, floors, etc.).
-  activeItemTypes: ['skin', 'breastplate', 'weapon'],
+  activeItemTypes: [ITEM_TYPES.skin, ITEM_TYPES.breastplate, ITEM_TYPES.weapon],
   // Enforce at most one active item per item type.
   onePerType: true,
   // Require at least one active skin when the player owns any skin.
@@ -144,6 +163,9 @@ export const EQUIPMENT_RULES_DEFAULTS = Object.freeze({
  *   deadItemIds — Array of ObjectLayer item IDs for the dead / ghost / respawning
  *                 state.  Empty array = no dead-state OL; same solid fill as live.
  *                 Replaces the old flat ghostItemId field for players.
+ *   dropItemIds — Array of ObjectLayer item IDs granted to the extractor when
+ *                 a resource-type entity is depleted. These are inventory/drop
+ *                 items only and are NOT auto-activated on the entity itself.
  *   colorKey    — Named palette colour key (see colors in CYBERIA_INSTANCE_CONF_DEFAULTS).
  *                 Used as solid-colour fallback when the entity carries NO active
  *                 ObjectLayer items, or while atlas textures are still loading.
@@ -165,12 +187,34 @@ export const EQUIPMENT_RULES_DEFAULTS = Object.freeze({
  *   floor / obstacle / portal / foreground
  *
  * @constant
- * @type {ReadonlyArray<{entityType:string, liveItemIds:string[], deadItemIds:string[], colorKey:string}>}
+ * @type {ReadonlyArray<{entityType:string, liveItemIds:string[], deadItemIds:string[], dropItemIds:string[], colorKey:string}>}
  */
+export const RESOURCE_ENTITY_TYPE_DEFAULTS = Object.freeze([
+  Object.freeze({
+    entityType: ENTITY_TYPES.resource,
+    liveItemIds: ['wood-1'],
+    deadItemIds: ['wood-extracted-1'],
+    // Until dedicated resource-drop OLs are authored, reuse the wood stack item.
+    dropItemIds: ['wood-drop-1'],
+    colorKey: 'RESOURCE',
+    defaultObjectLayers: [],
+  }),
+  Object.freeze({
+    entityType: ENTITY_TYPES.resource,
+    liveItemIds: ['wood-2'],
+    deadItemIds: ['wood-extracted-2'],
+    dropItemIds: ['wood-drop-2'],
+    colorKey: 'RESOURCE',
+    defaultObjectLayers: [],
+  }),
+]);
+
+export const RESOURCE_ENTITY_TYPE_DEFAULT = RESOURCE_ENTITY_TYPE_DEFAULTS[0];
+
 export const ENTITY_TYPE_DEFAULTS = Object.freeze([
   // ── Characters ─────────────────────────────────────────────────────────
   {
-    entityType: 'player',
+    entityType: ENTITY_TYPES.player,
     liveItemIds: ['anon', 'atlas_pistol_mk2'],
     deadItemIds: ['ghost'],
     colorKey: 'PLAYER',
@@ -180,48 +224,50 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
     defaultObjectLayers: [
       { itemId: 'anon', active: true, quantity: 1 },
       { itemId: 'atlas_pistol_mk2', active: true, quantity: 1 },
-      { itemId: 'purple', active: false, quantity: 1 },
+      // { itemId: 'purple', active: false, quantity: 1 },
       { itemId: 'ghost', active: false, quantity: 1 },
-      { itemId: 'atlas_pistol_mk2_bullet', active: false, quantity: 5 },
-      { itemId: 'lain', active: false, quantity: 1 },
-      { itemId: 'hatchet', active: false, quantity: 1 },
-      { itemId: 'wason', active: false, quantity: 1 },
-      { itemId: 'scp-2040', active: false, quantity: 1 },
-      { itemId: 'punk', active: false, quantity: 1 },
-      { itemId: 'kaneki', active: false, quantity: 1 },
-      { itemId: 'junko', active: false, quantity: 1 },
-      { itemId: 'eiri', active: false, quantity: 1 },
-      { itemId: 'alex', active: false, quantity: 1 },
-      { itemId: 'agent', active: false, quantity: 1 },
+      // { itemId: 'gp1', active: false, quantity: 1 },
+      // { itemId: 'gp2', active: false, quantity: 1 },
+      // { itemId: 'lain', active: false, quantity: 1 },
+      // { itemId: 'hatchet', active: false, quantity: 1 },
+      // { itemId: 'wason', active: false, quantity: 1 },
+      // { itemId: 'scp-2040', active: false, quantity: 1 },
+      // { itemId: 'punk', active: false, quantity: 1 },
+      // { itemId: 'kaneki', active: false, quantity: 1 },
+      // { itemId: 'junko', active: false, quantity: 1 },
+      // { itemId: 'eiri', active: false, quantity: 1 },
+      // { itemId: 'alex', active: false, quantity: 1 },
+      // { itemId: 'agent', active: false, quantity: 1 },
       { itemId: 'coin', active: false, quantity: 0 },
     ],
   },
   {
-    entityType: 'other_player',
+    entityType: ENTITY_TYPES.other_player,
     liveItemIds: ['anon', 'atlas_pistol_mk2'],
     deadItemIds: ['ghost'],
     colorKey: 'OTHER_PLAYER',
     defaultObjectLayers: [
       { itemId: 'anon', active: true, quantity: 1 },
       { itemId: 'atlas_pistol_mk2', active: true, quantity: 1 },
-      { itemId: 'purple', active: false, quantity: 1 },
+      // { itemId: 'purple', active: false, quantity: 1 },
       { itemId: 'ghost', active: false, quantity: 1 },
-      { itemId: 'atlas_pistol_mk2_bullet', active: false, quantity: 5 },
-      { itemId: 'lain', active: false, quantity: 1 },
-      { itemId: 'hatchet', active: false, quantity: 1 },
-      { itemId: 'wason', active: false, quantity: 1 },
-      { itemId: 'scp-2040', active: false, quantity: 1 },
-      { itemId: 'punk', active: false, quantity: 1 },
-      { itemId: 'kaneki', active: false, quantity: 1 },
-      { itemId: 'junko', active: false, quantity: 1 },
-      { itemId: 'eiri', active: false, quantity: 1 },
-      { itemId: 'alex', active: false, quantity: 1 },
-      { itemId: 'agent', active: false, quantity: 1 },
+      // { itemId: 'gp1', active: false, quantity: 1 },
+      // { itemId: 'gp2', active: false, quantity: 1 },
+      // { itemId: 'lain', active: false, quantity: 1 },
+      // { itemId: 'hatchet', active: false, quantity: 1 },
+      // { itemId: 'wason', active: false, quantity: 1 },
+      // { itemId: 'scp-2040', active: false, quantity: 1 },
+      // { itemId: 'punk', active: false, quantity: 1 },
+      // { itemId: 'kaneki', active: false, quantity: 1 },
+      // { itemId: 'junko', active: false, quantity: 1 },
+      // { itemId: 'eiri', active: false, quantity: 1 },
+      // { itemId: 'alex', active: false, quantity: 1 },
+      // { itemId: 'agent', active: false, quantity: 1 },
       { itemId: 'coin', active: false, quantity: 0 },
     ],
   },
   {
-    entityType: 'bot',
+    entityType: ENTITY_TYPES.bot,
     liveItemIds: ['purple'],
     deadItemIds: ['ghost'],
     colorKey: 'BOT',
@@ -231,28 +277,89 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
     ],
   },
   {
-    entityType: 'skill',
+    entityType: ENTITY_TYPES.skill,
     liveItemIds: ['atlas_pistol_mk2_bullet'],
     deadItemIds: [],
     colorKey: 'SKILL',
     defaultObjectLayers: [{ itemId: 'atlas_pistol_mk2_bullet', active: true, quantity: 1 }],
   },
   {
-    entityType: 'coin',
+    entityType: ENTITY_TYPES.coin,
     liveItemIds: ['coin'],
     deadItemIds: [],
     colorKey: 'COIN',
     defaultObjectLayers: [{ itemId: 'coin', active: true, quantity: 1 }],
   },
   // ── World objects ───────────────────────────────────────────────────────
-  { entityType: 'floor', liveItemIds: ['grass'], deadItemIds: [], colorKey: 'FLOOR', defaultObjectLayers: [] },
-  { entityType: 'obstacle', liveItemIds: [], deadItemIds: [], colorKey: 'OBSTACLE', defaultObjectLayers: [] },
-  { entityType: 'portal', liveItemIds: [], deadItemIds: [], colorKey: 'PORTAL', defaultObjectLayers: [] },
-  { entityType: 'portal', liveItemIds: [], deadItemIds: [], colorKey: 'PORTAL_INTER_PORTAL', defaultObjectLayers: [] },
-  { entityType: 'portal', liveItemIds: [], deadItemIds: [], colorKey: 'PORTAL_INTER_RANDOM', defaultObjectLayers: [] },
-  { entityType: 'portal', liveItemIds: [], deadItemIds: [], colorKey: 'PORTAL_INTRA_RANDOM', defaultObjectLayers: [] },
-  { entityType: 'portal', liveItemIds: [], deadItemIds: [], colorKey: 'PORTAL_INTRA_PORTAL', defaultObjectLayers: [] },
-  { entityType: 'foreground', liveItemIds: [], deadItemIds: [], colorKey: 'FOREGROUND', defaultObjectLayers: [] },
+  {
+    entityType: ENTITY_TYPES.floor,
+    liveItemIds: ['grass'],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'FLOOR',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: ENTITY_TYPES.obstacle,
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'OBSTACLE',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: ENTITY_TYPES.portal,
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'PORTAL',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: ENTITY_TYPES.portal,
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'PORTAL_INTER_PORTAL',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: ENTITY_TYPES.portal,
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'PORTAL_INTER_RANDOM',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: ENTITY_TYPES.portal,
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'PORTAL_INTRA_RANDOM',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: 'portal',
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'PORTAL_INTRA_PORTAL',
+    defaultObjectLayers: [],
+  },
+  {
+    entityType: ENTITY_TYPES.foreground,
+    liveItemIds: [],
+    deadItemIds: [],
+    dropItemIds: [],
+    colorKey: 'FOREGROUND',
+    defaultObjectLayers: [],
+  },
+  // ── Resource entities ────────────────────────────────────────────
+  // Static, exploitable map objects (wood, minerals, organic matter, etc.).
+  // liveItemIds render while alive, deadItemIds while depleted, and dropItemIds
+  // are transferred to the extractor. On respawn, original live OLs are restored.
+  ...RESOURCE_ENTITY_TYPE_DEFAULTS,
 ]);
 
 // ── Instance configuration defaults ─────────────────────────────────────────
@@ -295,6 +402,7 @@ export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
     { key: 'GHOST', r: 200, g: 200, b: 255, a: 100 }, // rgba(200, 200, 255, 0.39)
     { key: 'COIN', r: 255, g: 215, b: 0, a: 255 }, // rgba(255, 215, 0, 1)
     { key: 'SKILL', r: 255, g: 255, b: 50, a: 255 }, // rgba(255, 255, 50, 1)
+    { key: 'RESOURCE', r: 100, g: 180, b: 80, a: 255 }, // rgba(100, 180, 80, 1)
     // ── UI-only ────────────────────────────────────────────────────
     { key: 'WEAPON', r: 180, g: 50, b: 50, a: 255 }, // rgba(180, 50, 50, 1)
     // ── Interaction overlay — self-player bubble/panel border ──────
@@ -378,7 +486,7 @@ export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
   // Replaces flat fields: userDefaultItemId, botDefaultItemId, ghostItemId,
   // coinItemId, defaultFloorItemId, weaponDefaultItemId.
   // See ENTITY_TYPE_DEFAULTS for documentation of each field.
-  // liveItemIds / deadItemIds are arrays of ObjectLayer item IDs.
+  // liveItemIds / deadItemIds / dropItemIds are arrays of ObjectLayer item IDs.
   entityDefaults: ENTITY_TYPE_DEFAULTS.map((e) => ({ ...e })),
 
   // ── Entity Status Indicators (ESI) ─────────────────────────────────
@@ -389,9 +497,54 @@ export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
 
   // ── Skill system ───────────────────────────────────────────────────
   skillConfig: [
-    { triggerItemId: 'atlas_pistol_mk2', logicEventIds: ['atlas_pistol_mk2_logic'] },
-    { triggerItemId: 'coin', logicEventIds: ['coin_drop_or_transaction'] },
-    { triggerItemId: 'anon', logicEventIds: ['doppelganger'] },
+    {
+      triggerItemId: 'atlas_pistol_mk2',
+      skills: [
+        {
+          logicEventId: 'projectile',
+          name: 'Projectile',
+          description:
+            'Fires a projectile in the direction of the tap. Spawn chance and lifetime scale with Intelligence and Range.',
+          summonedEntityItemId: 'atlas_pistol_mk2_bullet',
+        },
+      ],
+    },
+    {
+      triggerItemId: 'coin',
+      skills: [
+        {
+          logicEventId: 'coin_drop_or_transaction',
+          name: 'Coin Drop',
+          description:
+            'Coins are dropped automatically when an entity is killed. Transfer amount scales with kill percent rules.',
+          summonedEntityItemId: 'coin',
+        },
+      ],
+    },
+    {
+      triggerItemId: 'anon',
+      skills: [
+        {
+          logicEventId: 'doppelganger',
+          name: 'Doppelganger',
+          description:
+            'Summons a passive clone of yourself that wanders nearby. Spawn chance scales with Intelligence.',
+          summonedEntityItemId: '$active_skin',
+        },
+      ],
+    },
+    {
+      triggerItemId: 'hatchet',
+      skills: [
+        {
+          logicEventId: 'projectile',
+          name: 'Projectile',
+          description:
+            'Fires a projectile in the direction of the tap. Spawn chance and lifetime scale with Intelligence and Range.',
+          summonedEntityItemId: 'hatchet-skill',
+        },
+      ],
+    },
   ],
 
   skillRules: {

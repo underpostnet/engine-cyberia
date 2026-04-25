@@ -16,6 +16,7 @@
 import dotenv from 'dotenv';
 import { Command } from 'commander';
 import fs from 'fs-extra';
+import stringify from 'fast-json-stable-stringify';
 import { shellExec } from '../src/server/process.js';
 import { loggerFactory } from '../src/server/logger.js';
 import { generateBesuManifests, deployBesu, removeBesu } from '../src/server/besu-genesis-generator.js';
@@ -28,21 +29,17 @@ import {
   getKeyFramesDirectionsFromNumberFolderDirection,
   buildImgFromTile,
 } from '../src/server/object-layer.js';
-import { ITEM_TYPES as itemTypes } from '../src/api/cyberia-instance-conf/cyberia-instance-conf.defaults.js';
 import { AtlasSpriteSheetGenerator } from '../src/server/atlas-sprite-sheet-generator.js';
-import {
-  generateFrame,
-  generateMultiFrame,
-  lookupSemantic,
-  semanticRegistry,
-} from '../src/server/semantic-layer-generator.js';
+import { generateMultiFrame, lookupSemantic, semanticRegistry } from '../src/server/semantic-layer-generator.js';
 import { IpfsClient } from '../src/server/ipfs-client.js';
 import { createPinRecord } from '../src/api/ipfs/ipfs.service.js';
 import { program as underpostProgram } from '../src/cli/index.js';
 import crypto from 'crypto';
 import nodePath from 'path';
 import Underpost from '../src/index.js';
+import { newInstance } from '../src/client/components/core/CommonJs.js';
 import {
+  ITEM_TYPES as itemTypes,
   DefaultCyberiaItems,
   DefaultSkillConfig,
   DefaultCyberiaDialogues,
@@ -1705,7 +1702,11 @@ try {
     .command('instance [instance-code]')
     .option('--export [path]', 'Export instance and related documents to a backup directory')
     .option('--import [path]', 'Import instance and related documents from a backup directory (preserveUUID, upsert)')
-    .option('--drop', 'Drop existing instance, maps and object layers before importing')
+    .option(
+      '--conf',
+      'When used with --export or --import, only process cyberia-instance.json and cyberia-instance-conf.json',
+    )
+    .option('--drop', 'Drop all documents associated with the instance code before importing or as a standalone action')
     .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
     .option('--mongo-host <mongo-host>', 'Mongo host override')
     .option('--dev', 'Force development environment')
@@ -1749,6 +1750,8 @@ try {
       await DataBaseProvider.load({
         apis: [
           'cyberia-instance',
+          'cyberia-instance-conf',
+          'cyberia-dialogue',
           'cyberia-map',
           'cyberia-entity',
           'object-layer',
@@ -1764,12 +1767,137 @@ try {
 
       const dbModels = DataBaseProvider.instance[`${host}${path}`].mongoose.models;
       const CyberiaInstance = dbModels.CyberiaInstance;
+      const CyberiaInstanceConf = dbModels.CyberiaInstanceConf;
+      const CyberiaDialogue = dbModels.CyberiaDialogue;
       const CyberiaMap = dbModels.CyberiaMap;
       const ObjectLayer = dbModels.ObjectLayer;
       const ObjectLayerRenderFrames = dbModels.ObjectLayerRenderFrames;
       const AtlasSpriteSheet = dbModels.AtlasSpriteSheet;
       const File = dbModels.File;
       const Ipfs = dbModels.Ipfs;
+
+      const toBuffer = (value) => {
+        if (!value) return null;
+        if (Buffer.isBuffer(value)) return value;
+        if (value.type === 'Buffer' && Array.isArray(value.data)) return Buffer.from(value.data);
+        if (value.buffer) return Buffer.from(value.buffer);
+        return Buffer.from(value);
+      };
+
+      const getCanonicalIpfsPaths = (itemKey) => ({
+        objectLayerData: `/object-layer/${itemKey}/${itemKey}_data.json`,
+        atlasSpriteSheet: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet.png`,
+        atlasMetadata: `/object-layer/${itemKey}/${itemKey}_atlas_sprite_sheet_metadata.json`,
+      });
+
+      const collectMfsPaths = (doc = {}) => {
+        const paths = new Set();
+        if (doc.mfsPath) paths.add(doc.mfsPath);
+        for (const p of doc.mfsPaths || []) {
+          if (p) paths.add(p);
+        }
+        return [...paths];
+      };
+
+      const inferResourceType = (doc = {}) => {
+        if (doc.resourceType) return doc.resourceType;
+        for (const path of collectMfsPaths(doc)) {
+          if (path.endsWith('_atlas_sprite_sheet.png')) return 'atlas-sprite-sheet';
+          if (path.endsWith('_atlas_sprite_sheet_metadata.json')) return 'atlas-metadata';
+          if (path.endsWith('_data.json')) return 'object-layer-data';
+        }
+        return null;
+      };
+
+      const findInstanceRelatedIpfsDoc = (ipfsDocs, { linkedCid, resourceType, mfsPath }) =>
+        ipfsDocs.find(
+          (doc) =>
+            inferResourceType(doc) === resourceType &&
+            linkedCid &&
+            doc.cid === linkedCid &&
+            collectMfsPaths(doc).includes(mfsPath),
+        ) ||
+        ipfsDocs.find((doc) => inferResourceType(doc) === resourceType && linkedCid && doc.cid === linkedCid) ||
+        ipfsDocs.find((doc) => inferResourceType(doc) === resourceType && collectMfsPaths(doc).includes(mfsPath)) ||
+        null;
+
+      const upsertCanonicalPinEntry = (pinMap, { cid, resourceType, mfsPath = '' }) => {
+        if (!cid || !resourceType) return;
+        const key = `${resourceType}:${cid}`;
+        const nextPath = mfsPath || '';
+        if (!pinMap.has(key)) {
+          pinMap.set(key, {
+            cid,
+            resourceType,
+            mfsPath: nextPath,
+            mfsPaths: nextPath ? [nextPath] : [],
+          });
+          return;
+        }
+
+        const existing = pinMap.get(key);
+        if (nextPath && !existing.mfsPaths.includes(nextPath)) {
+          existing.mfsPaths.push(nextPath);
+        }
+        if (!existing.mfsPath && nextPath) {
+          existing.mfsPath = nextPath;
+        }
+      };
+
+      const serialiseCanonicalPins = (pinMap) =>
+        [...pinMap.values()].map((entry) => ({
+          cid: entry.cid,
+          resourceType: entry.resourceType,
+          ...(entry.mfsPath ? { mfsPath: entry.mfsPath } : {}),
+          ...(entry.mfsPaths.length ? { mfsPaths: entry.mfsPaths } : {}),
+        }));
+
+      const getDefaultDialoguesByItemId = (itemIds = []) => {
+        const requestedItemIds = new Set(itemIds.filter(Boolean));
+        const defaultsByItemId = new Map();
+
+        for (const dialogue of DefaultCyberiaDialogues) {
+          if (!requestedItemIds.has(dialogue.itemId)) continue;
+          if (!defaultsByItemId.has(dialogue.itemId)) {
+            defaultsByItemId.set(dialogue.itemId, []);
+          }
+          defaultsByItemId.get(dialogue.itemId).push({
+            itemId: dialogue.itemId,
+            order: dialogue.order ?? 0,
+            speaker: dialogue.speaker ?? '',
+            text: dialogue.text,
+            mood: dialogue.mood ?? 'neutral',
+          });
+        }
+
+        for (const dialogues of defaultsByItemId.values()) {
+          dialogues.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        }
+
+        return defaultsByItemId;
+      };
+
+      const rewriteImportedCidReferences = async ({ oldCid, newCid, resourceType }) => {
+        if (!oldCid || !newCid || oldCid === newCid) return;
+
+        if (resourceType === 'object-layer-data') {
+          await ObjectLayer.updateMany({ cid: oldCid }, { $set: { cid: newCid } });
+          return;
+        }
+
+        if (resourceType === 'atlas-sprite-sheet') {
+          await AtlasSpriteSheet.updateMany({ cid: oldCid }, { $set: { cid: newCid } });
+          await ObjectLayer.updateMany({ 'data.render.cid': oldCid }, { $set: { 'data.render.cid': newCid } });
+          return;
+        }
+
+        if (resourceType === 'atlas-metadata') {
+          await ObjectLayer.updateMany(
+            { 'data.render.metadataCid': oldCid },
+            { $set: { 'data.render.metadataCid': newCid } },
+          );
+        }
+      };
 
       // ── EXPORT ──────────────────────────────────────────────────────
       if (options.export !== undefined) {
@@ -1788,13 +1916,12 @@ try {
         fs.ensureDirSync(backupDir);
         logger.info('Exporting instance', { code: instanceCode, backupDir });
 
-        fs.ensureDirSync(`${backupDir}/files`);
-
         // Helper: export a File document to the files/ directory
         const exportFileDoc = async (fileId, fileKey) => {
           if (!fileId) return;
           const file = await File.findById(fileId).lean();
           if (!file) return;
+          fs.ensureDirSync(`${backupDir}/files`);
           const fileExport = { ...file };
           // Handle both Node.js Buffer and BSON Binary types from .lean()
           if (fileExport.data) {
@@ -1808,10 +1935,45 @@ try {
 
         // 1. Save instance document + thumbnail
         fs.writeJsonSync(`${backupDir}/cyberia-instance.json`, instance, { spaces: 2 });
-        if (instance.thumbnail) {
+        if (!options.conf && instance.thumbnail) {
           await exportFileDoc(instance.thumbnail, `thumb-instance-${instanceCode}`);
         }
         logger.info('Exported CyberiaInstance', { code: instanceCode });
+
+        // 1b. Export linked CyberiaInstanceConf (skillRules, equipmentRules, entityDefaults, etc.)
+        // If no conf doc exists yet (instance created before auto-upsert logic), create one using
+        // schema defaults — identical to the behaviour in CyberiaInstanceService.post().
+        let instanceConf =
+          (await CyberiaInstanceConf.findOne({ instanceCode }).lean()) ||
+          (instance.conf ? await CyberiaInstanceConf.findById(instance.conf).lean() : null);
+        if (!instanceConf) {
+          logger.info('No CyberiaInstanceConf found — creating default', { instanceCode });
+          const created = await CyberiaInstanceConf.findOneAndUpdate(
+            { instanceCode },
+            { $setOnInsert: { instanceCode } },
+            { upsert: true, returnDocument: 'after' },
+          );
+          // Back-fill the instance.conf ref if it was missing
+          if (created && !instance.conf) {
+            await CyberiaInstance.findByIdAndUpdate(instance._id, { conf: created._id });
+          }
+          instanceConf = created?.toObject ? created.toObject() : created;
+        }
+        if (instanceConf) {
+          fs.writeJsonSync(`${backupDir}/cyberia-instance-conf.json`, instanceConf, { spaces: 2 });
+          logger.info('Exported CyberiaInstanceConf', { instanceCode });
+        } else {
+          logger.warn('Could not create or find CyberiaInstanceConf', { instanceCode });
+        }
+
+        if (options.conf) {
+          logger.info('Instance export completed in --conf mode', {
+            backupDir,
+            exportedFiles: ['cyberia-instance.json', 'cyberia-instance-conf.json'],
+          });
+          await DataBaseProvider.instance[`${host}${path}`].mongoose.close();
+          return;
+        }
 
         // 2. Collect all map codes (instance maps + portal targets)
         const mapCodes = new Set(instance.cyberiaMapCodes || []);
@@ -1841,6 +2003,99 @@ try {
           }
         }
 
+        // 4b. Add instance-level itemIds
+        for (const id of instance.itemIds || []) {
+          if (id) objectLayerItemIds.add(id);
+        }
+
+        // 4c. Add all itemIds referenced by CyberiaInstanceConf (entityDefaults + skillConfig).
+        //     This ensures liveItemIds, deadItemIds, dropItemIds, defaultObjectLayers and
+        //     skill trigger items are included even if no map entity currently uses them.
+        if (instanceConf) {
+          for (const ed of instanceConf.entityDefaults || []) {
+            for (const id of ed.liveItemIds || []) if (id) objectLayerItemIds.add(id);
+            for (const id of ed.deadItemIds || []) if (id) objectLayerItemIds.add(id);
+            for (const id of ed.dropItemIds || []) if (id) objectLayerItemIds.add(id);
+            for (const slot of ed.defaultObjectLayers || []) {
+              if (slot.itemId) objectLayerItemIds.add(slot.itemId);
+            }
+          }
+          for (const sc of instanceConf.skillConfig || []) {
+            if (sc.triggerItemId) objectLayerItemIds.add(sc.triggerItemId);
+            for (const skill of sc.skills || []) {
+              if (skill.summonedEntityItemId && !skill.summonedEntityItemId.startsWith('$')) {
+                objectLayerItemIds.add(skill.summonedEntityItemId);
+              }
+            }
+          }
+        }
+
+        // 4d. Export dialogues for all relevant itemIds. If an item has no dialogue docs yet
+        //     but ships with DefaultCyberiaDialogues, seed those defaults into Mongo first.
+        if (objectLayerItemIds.size > 0) {
+          const requestedItemIds = [...objectLayerItemIds];
+          const defaultDialoguesByItemId = getDefaultDialoguesByItemId(requestedItemIds);
+          const existingDialogueDocs = await CyberiaDialogue.find({
+            itemId: { $in: requestedItemIds },
+          })
+            .sort({ itemId: 1, order: 1 })
+            .lean();
+
+          const existingDialogueItemIds = new Set(
+            existingDialogueDocs.map((dialogue) => dialogue.itemId).filter(Boolean),
+          );
+          let seededDialogueCount = 0;
+
+          for (const [itemId, dialogues] of defaultDialoguesByItemId.entries()) {
+            if (existingDialogueItemIds.has(itemId)) continue;
+
+            for (const dialogue of dialogues) {
+              await CyberiaDialogue.findOneAndUpdate(
+                { itemId: dialogue.itemId, order: dialogue.order },
+                {
+                  $set: {
+                    speaker: dialogue.speaker,
+                    text: dialogue.text,
+                    mood: dialogue.mood,
+                  },
+                },
+                { upsert: true },
+              );
+              seededDialogueCount++;
+            }
+          }
+
+          const dialogueDocs = await CyberiaDialogue.find({ itemId: { $in: requestedItemIds } })
+            .sort({ itemId: 1, order: 1 })
+            .lean();
+
+          if (seededDialogueCount > 0) {
+            logger.info(`Seeded ${seededDialogueCount} CyberiaDialogue default record(s) for export`);
+          }
+
+          if (dialogueDocs.length > 0) {
+            fs.ensureDirSync(`${backupDir}/cyberia-dialogues`);
+            const dialoguesByItemId = new Map();
+
+            for (const dialogue of dialogueDocs) {
+              if (!dialoguesByItemId.has(dialogue.itemId)) {
+                dialoguesByItemId.set(dialogue.itemId, []);
+              }
+              dialoguesByItemId.get(dialogue.itemId).push(dialogue);
+            }
+
+            for (const [itemId, dialogues] of dialoguesByItemId.entries()) {
+              fs.writeJsonSync(`${backupDir}/cyberia-dialogues/${encodeURIComponent(itemId)}.json`, dialogues, {
+                spaces: 2,
+              });
+            }
+
+            logger.info(`Exported ${dialogueDocs.length} CyberiaDialogue document(s)`, {
+              itemIds: [...dialoguesByItemId.keys()],
+            });
+          }
+        }
+
         // 5. Export object layers with related render frames, atlas, files, and IPFS records
         if (objectLayerItemIds.size > 0) {
           const objectLayers = await ObjectLayer.find({
@@ -1851,47 +2106,244 @@ try {
           fs.ensureDirSync(`${backupDir}/render-frames`);
           fs.ensureDirSync(`${backupDir}/atlas-sprite-sheets`);
           fs.ensureDirSync(`${backupDir}/ipfs`);
+          fs.ensureDirSync(`${backupDir}/ipfs/content`);
 
-          const allCids = new Set();
+          const canonicalPins = new Map();
+          const expectedObjectLayerIpfsRefs = [];
+          const ipfsPayloadFailures = [];
+          let ipfsPayloadExportCount = 0;
+          let ipfsPayloadAliasCount = 0;
+
+          const writeBackupPayload = (cid, payloadBuffer) => {
+            if (!cid) return false;
+            const payloadPath = `${backupDir}/ipfs/content/${cid}.bin`;
+            if (fs.existsSync(payloadPath)) return false;
+            fs.writeFileSync(payloadPath, payloadBuffer);
+            ipfsPayloadExportCount++;
+            return true;
+          };
+
+          const writeBackupPayloadAlias = ({ canonicalCid, linkedCid, payloadBuffer }) => {
+            if (!linkedCid || linkedCid === canonicalCid) return;
+            if (writeBackupPayload(linkedCid, payloadBuffer)) {
+              ipfsPayloadAliasCount++;
+            }
+          };
+
+          const exportCanonicalPayload = async ({ payloadBuffer, resourceType, mfsPath, filename, itemKey }) => {
+            const hashResult = await IpfsClient.hashBufferForIpfs(payloadBuffer, filename);
+            if (!hashResult?.cid) {
+              ipfsPayloadFailures.push({ itemKey, resourceType, mfsPath, reason: 'Failed to hash payload via Kubo' });
+              return null;
+            }
+
+            writeBackupPayload(hashResult.cid, payloadBuffer);
+            return hashResult.cid;
+          };
 
           for (const ol of objectLayers) {
-            const fileName = ol.data?.item?.id || ol._id.toString();
-            fs.writeJsonSync(`${backupDir}/object-layers/${fileName}.json`, ol, { spaces: 2 });
+            const itemKey = ol.data?.item?.id || ol._id.toString();
+            const itemPaths = getCanonicalIpfsPaths(itemKey);
+            const objectLayerExport = newInstance(ol);
+
+            if (!objectLayerExport.data.render) {
+              objectLayerExport.data.render = {};
+            }
 
             // Export ObjectLayerRenderFrames
             if (ol.objectLayerRenderFramesId) {
               const rf = await ObjectLayerRenderFrames.findById(ol.objectLayerRenderFramesId).lean();
               if (rf) {
-                fs.writeJsonSync(`${backupDir}/render-frames/${fileName}.json`, rf, { spaces: 2 });
+                fs.writeJsonSync(`${backupDir}/render-frames/${itemKey}.json`, rf, { spaces: 2 });
               }
             }
 
-            // Export AtlasSpriteSheet + its File
+            // Export AtlasSpriteSheet + its File using canonical payload bytes from the DB state.
             if (ol.atlasSpriteSheetId) {
               const atlas = await AtlasSpriteSheet.findById(ol.atlasSpriteSheetId).lean();
-              if (atlas) {
-                fs.writeJsonSync(`${backupDir}/atlas-sprite-sheets/${fileName}.json`, atlas, { spaces: 2 });
-                if (atlas.fileId) {
-                  await exportFileDoc(atlas.fileId, `atlas-${fileName}`);
-                }
-                if (atlas.cid) allCids.add(atlas.cid);
+              if (!atlas) {
+                ipfsPayloadFailures.push({
+                  itemKey,
+                  resourceType: 'atlas-sprite-sheet',
+                  mfsPath: itemPaths.atlasSpriteSheet,
+                  reason: 'AtlasSpriteSheet document not found in MongoDB',
+                });
+                continue;
               }
+
+              const atlasExport = newInstance(atlas);
+              if (atlas.fileId) {
+                await exportFileDoc(atlas.fileId, `atlas-${itemKey}`);
+              }
+
+              const atlasFile = atlas.fileId ? await File.findById(atlas.fileId).lean() : null;
+              const atlasBuffer = toBuffer(atlasFile?.data);
+              if (!atlasBuffer) {
+                ipfsPayloadFailures.push({
+                  itemKey,
+                  resourceType: 'atlas-sprite-sheet',
+                  mfsPath: itemPaths.atlasSpriteSheet,
+                  reason: 'Atlas File payload not found in MongoDB',
+                });
+                continue;
+              }
+
+              const atlasCid = await exportCanonicalPayload({
+                payloadBuffer: atlasBuffer,
+                resourceType: 'atlas-sprite-sheet',
+                mfsPath: itemPaths.atlasSpriteSheet,
+                filename: `${itemKey}_atlas_sprite_sheet.png`,
+                itemKey,
+              });
+              if (!atlasCid) continue;
+
+              const linkedAtlasCid = atlas.cid || ol.data?.render?.cid || atlasCid;
+              writeBackupPayloadAlias({
+                canonicalCid: atlasCid,
+                linkedCid: linkedAtlasCid,
+                payloadBuffer: atlasBuffer,
+              });
+              expectedObjectLayerIpfsRefs.push({
+                itemKey,
+                resourceType: 'atlas-sprite-sheet',
+                mfsPath: itemPaths.atlasSpriteSheet,
+                linkedCid: linkedAtlasCid,
+                fallbackCid: atlasCid,
+              });
+
+              const atlasMetadataBuffer = Buffer.from(stringify(atlasExport.metadata || {}), 'utf-8');
+              const atlasMetadataCid = await exportCanonicalPayload({
+                payloadBuffer: atlasMetadataBuffer,
+                resourceType: 'atlas-metadata',
+                mfsPath: itemPaths.atlasMetadata,
+                filename: `${itemKey}_atlas_sprite_sheet_metadata.json`,
+                itemKey,
+              });
+              if (!atlasMetadataCid) continue;
+
+              const linkedAtlasMetadataCid = ol.data?.render?.metadataCid || atlasMetadataCid;
+              writeBackupPayloadAlias({
+                canonicalCid: atlasMetadataCid,
+                linkedCid: linkedAtlasMetadataCid,
+                payloadBuffer: atlasMetadataBuffer,
+              });
+              expectedObjectLayerIpfsRefs.push({
+                itemKey,
+                resourceType: 'atlas-metadata',
+                mfsPath: itemPaths.atlasMetadata,
+                linkedCid: linkedAtlasMetadataCid,
+                fallbackCid: atlasMetadataCid,
+              });
+
+              atlasExport.cid = atlasCid;
+              objectLayerExport.data.render.cid = atlasCid;
+              objectLayerExport.data.render.metadataCid = atlasMetadataCid;
+              fs.writeJsonSync(`${backupDir}/atlas-sprite-sheets/${itemKey}.json`, atlasExport, { spaces: 2 });
+            } else {
+              if (objectLayerExport.data.render?.cid || objectLayerExport.data.render?.metadataCid) {
+                ipfsPayloadFailures.push({
+                  itemKey,
+                  resourceType: 'atlas-sprite-sheet',
+                  mfsPath: itemPaths.atlasSpriteSheet,
+                  reason: 'ObjectLayer references atlas CIDs but no AtlasSpriteSheet document exists',
+                });
+                continue;
+              }
+              delete objectLayerExport.data.render.cid;
+              delete objectLayerExport.data.render.metadataCid;
             }
 
-            // Collect CIDs for IPFS pin records
-            if (ol.cid) allCids.add(ol.cid);
-            if (ol.data?.render?.cid) allCids.add(ol.data.render.cid);
-            if (ol.data?.render?.metadataCid) allCids.add(ol.data.render.metadataCid);
+            const objectLayerBuffer = Buffer.from(stringify(objectLayerExport.data || {}), 'utf-8');
+            const objectLayerCid = await exportCanonicalPayload({
+              payloadBuffer: objectLayerBuffer,
+              resourceType: 'object-layer-data',
+              mfsPath: itemPaths.objectLayerData,
+              filename: `${itemKey}_data.json`,
+              itemKey,
+            });
+            if (!objectLayerCid) continue;
+
+            const linkedObjectLayerCid = ol.cid || objectLayerCid;
+            writeBackupPayloadAlias({
+              canonicalCid: objectLayerCid,
+              linkedCid: linkedObjectLayerCid,
+              payloadBuffer: objectLayerBuffer,
+            });
+            expectedObjectLayerIpfsRefs.push({
+              itemKey,
+              resourceType: 'object-layer-data',
+              mfsPath: itemPaths.objectLayerData,
+              linkedCid: linkedObjectLayerCid,
+              fallbackCid: objectLayerCid,
+            });
+
+            objectLayerExport.cid = objectLayerCid;
+            fs.writeJsonSync(`${backupDir}/object-layers/${itemKey}.json`, objectLayerExport, { spaces: 2 });
           }
 
-          // Export IPFS pin records for all collected CIDs
-          if (allCids.size > 0) {
-            const ipfsDocs = await Ipfs.find({ cid: { $in: [...allCids] } }).lean();
-            if (ipfsDocs.length > 0) {
-              fs.writeJsonSync(`${backupDir}/ipfs/pins.json`, ipfsDocs, { spaces: 2 });
-              logger.info(`Exported ${ipfsDocs.length} Ipfs pin record(s)`);
+          if (ipfsPayloadFailures.length > 0) {
+            for (const failure of ipfsPayloadFailures) {
+              logger.error('Canonical IPFS payload export failed', failure);
             }
+            await DataBaseProvider.instance[`${host}${path}`].mongoose.close();
+            process.exit(1);
           }
+
+          const relatedPinPaths = [
+            ...new Set(expectedObjectLayerIpfsRefs.map((entry) => entry.mfsPath).filter(Boolean)),
+          ];
+          const relatedPinCids = [
+            ...new Set(
+              expectedObjectLayerIpfsRefs.flatMap((entry) => [entry.linkedCid, entry.fallbackCid]).filter(Boolean),
+            ),
+          ];
+          const relatedIpfsDocs =
+            relatedPinPaths.length > 0 || relatedPinCids.length > 0
+              ? await Ipfs.find({
+                  $or: [
+                    ...(relatedPinPaths.length ? [{ mfsPath: { $in: relatedPinPaths } }] : []),
+                    ...(relatedPinPaths.length ? [{ mfsPaths: { $in: relatedPinPaths } }] : []),
+                    ...(relatedPinCids.length ? [{ cid: { $in: relatedPinCids } }] : []),
+                  ],
+                }).lean()
+              : [];
+
+          let ipfsCollectionMatchCount = 0;
+          let ipfsCollectionFallbackCount = 0;
+
+          for (const ref of expectedObjectLayerIpfsRefs) {
+            const matchingDoc = findInstanceRelatedIpfsDoc(relatedIpfsDocs, ref);
+            const exportCid = matchingDoc?.cid || ref.linkedCid || ref.fallbackCid;
+
+            if (!exportCid) {
+              logger.warn('Skipping instance IPFS pin export because the ObjectLayer ref has no linked CID', {
+                itemKey: ref.itemKey,
+                resourceType: ref.resourceType,
+                mfsPath: ref.mfsPath,
+              });
+              continue;
+            }
+
+            upsertCanonicalPinEntry(canonicalPins, {
+              cid: exportCid,
+              resourceType: ref.resourceType,
+              mfsPath: ref.mfsPath,
+            });
+
+            if (matchingDoc) ipfsCollectionMatchCount++;
+            else ipfsCollectionFallbackCount++;
+          }
+
+          const sanitised = serialiseCanonicalPins(canonicalPins);
+          fs.writeJsonSync(`${backupDir}/ipfs/pins.json`, sanitised, { spaces: 2 });
+          logger.info(
+            `Exported ${sanitised.length} instance-related Ipfs pin record(s) and ${ipfsPayloadExportCount} raw payload file(s)`,
+            {
+              matchedFromIpfsCollection: ipfsCollectionMatchCount,
+              fallbackFromObjectLayerRefs: ipfsCollectionFallbackCount,
+              rawPayloadAliases: ipfsPayloadAliasCount,
+            },
+          );
 
           logger.info(`Exported ${objectLayers.length} ObjectLayer document(s)`, {
             itemIds: [...objectLayerItemIds],
@@ -1919,7 +2371,7 @@ try {
         logger.info('Importing instance', { code: instanceCode, backupDir });
 
         // 0. Drop existing documents if --drop is set
-        if (options.drop) {
+        if (options.drop && !options.conf) {
           const existingInstance = await CyberiaInstance.findOne({ code: instanceCode }).lean();
           if (existingInstance) {
             const dropMapCodes = new Set(existingInstance.cyberiaMapCodes || []);
@@ -1931,13 +2383,41 @@ try {
             // Collect thumbnail File IDs to drop
             const thumbFileIds = [];
             if (existingInstance.thumbnail) thumbFileIds.push(existingInstance.thumbnail);
+            const dropOlItemIds = new Set();
 
             // Query other instances/maps for shared thumbnail exclusion
             const otherInstances = await CyberiaInstance.find({ code: { $ne: instanceCode } }, { thumbnail: 1 }).lean();
 
+            // Add instance-level itemIds (may not appear in any map entity)
+            for (const id of existingInstance.itemIds || []) if (id) dropOlItemIds.add(id);
+
+            // Add conf entityDefaults and skillConfig itemIds (liveItemIds, deadItemIds, dropItemIds, defaultObjectLayers)
+            const existingConf =
+              (await CyberiaInstanceConf.findOne({ instanceCode }).lean()) ||
+              (existingInstance.conf ? await CyberiaInstanceConf.findById(existingInstance.conf).lean() : null);
+            if (existingConf) {
+              for (const ed of existingConf.entityDefaults || []) {
+                for (const id of ed.liveItemIds || []) if (id) dropOlItemIds.add(id);
+                for (const id of ed.deadItemIds || []) if (id) dropOlItemIds.add(id);
+                for (const id of ed.dropItemIds || []) if (id) dropOlItemIds.add(id);
+                for (const slot of ed.defaultObjectLayers || []) if (slot.itemId) dropOlItemIds.add(slot.itemId);
+              }
+              for (const sc of existingConf.skillConfig || []) {
+                if (sc.triggerItemId) dropOlItemIds.add(sc.triggerItemId);
+                for (const skill of sc.skills || []) {
+                  if (skill.summonedEntityItemId && !skill.summonedEntityItemId.startsWith('$'))
+                    dropOlItemIds.add(skill.summonedEntityItemId);
+                }
+              }
+            }
+
+            const otherMaps = await CyberiaMap.find(
+              { code: { $nin: [...dropMapCodes] } },
+              { 'entities.objectLayerItemIds': 1, thumbnail: 1 },
+            ).lean();
+
             if (dropMapCodes.size > 0) {
               const dropMaps = await CyberiaMap.find({ code: { $in: [...dropMapCodes] } }).lean();
-              const dropOlItemIds = new Set();
               for (const map of dropMaps) {
                 if (map.thumbnail) thumbFileIds.push(map.thumbnail);
                 for (const entity of map.entities || []) {
@@ -1947,110 +2427,106 @@ try {
                 }
               }
 
-              // Exclude OL item IDs referenced by maps outside this instance
-              const otherMaps = await CyberiaMap.find(
-                { code: { $nin: [...dropMapCodes] } },
-                { 'entities.objectLayerItemIds': 1, thumbnail: 1 },
-              ).lean();
-              const sharedOlItemIds = new Set();
-              for (const m of otherMaps) {
-                for (const entity of m.entities || []) {
-                  for (const itemId of entity.objectLayerItemIds || []) {
-                    if (dropOlItemIds.has(itemId)) sharedOlItemIds.add(itemId);
-                  }
-                }
-              }
-              for (const shared of sharedOlItemIds) dropOlItemIds.delete(shared);
-              if (sharedOlItemIds.size > 0) {
-                logger.info(`Preserved ${sharedOlItemIds.size} ObjectLayer(s) shared with other maps`);
-              }
-
-              // Exclude thumbnail File IDs referenced by other instances or maps
-              const otherMapThumbs = otherMaps.map((m) => m.thumbnail?.toString()).filter(Boolean);
-              const otherInstThumbs = otherInstances.map((i) => i.thumbnail?.toString()).filter(Boolean);
-              const sharedThumbIds = new Set([...otherMapThumbs, ...otherInstThumbs]);
-              for (let i = thumbFileIds.length - 1; i >= 0; i--) {
-                if (sharedThumbIds.has(thumbFileIds[i].toString())) thumbFileIds.splice(i, 1);
-              }
-
-              if (dropOlItemIds.size > 0) {
-                // Gather ObjectLayers to collect related doc IDs and CIDs
-                const olDocs = await ObjectLayer.find(
-                  { 'data.item.id': { $in: [...dropOlItemIds] } },
-                  {
-                    cid: 1,
-                    'data.item.id': 1,
-                    'data.render': 1,
-                    objectLayerRenderFramesId: 1,
-                    atlasSpriteSheetId: 1,
-                  },
-                ).lean();
-
-                const cidsToUnpin = new Set();
-                const renderFrameIds = [];
-                const atlasIds = [];
-                const itemKeysToClean = new Set();
-
-                for (const doc of olDocs) {
-                  if (doc.cid) cidsToUnpin.add(doc.cid);
-                  if (doc.data?.render?.cid) cidsToUnpin.add(doc.data.render.cid);
-                  if (doc.data?.render?.metadataCid) cidsToUnpin.add(doc.data.render.metadataCid);
-                  if (doc.data?.item?.id) itemKeysToClean.add(doc.data.item.id);
-                  if (doc.objectLayerRenderFramesId) renderFrameIds.push(doc.objectLayerRenderFramesId);
-                  if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
-                }
-
-                // Delete AtlasSpriteSheet + referenced File docs
-                if (atlasIds.length > 0) {
-                  const atlasDocs = await AtlasSpriteSheet.find(
-                    { _id: { $in: atlasIds } },
-                    { fileId: 1, cid: 1 },
-                  ).lean();
-                  const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
-                  for (const atlas of atlasDocs) {
-                    if (atlas.cid) cidsToUnpin.add(atlas.cid);
-                  }
-                  if (atlasFileIds.length > 0) {
-                    const fileResult = await File.deleteMany({ _id: { $in: atlasFileIds } });
-                    logger.info(`Dropped ${fileResult.deletedCount} File document(s) (atlas)`);
-                  }
-                  const atlasResult = await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
-                  logger.info(`Dropped ${atlasResult.deletedCount} AtlasSpriteSheet document(s)`);
-                }
-
-                // Delete RenderFrames
-                if (renderFrameIds.length > 0) {
-                  const rfResult = await ObjectLayerRenderFrames.deleteMany({ _id: { $in: renderFrameIds } });
-                  logger.info(`Dropped ${rfResult.deletedCount} ObjectLayerRenderFrames document(s)`);
-                }
-
-                // Delete IPFS pin records
-                if (cidsToUnpin.size > 0) {
-                  const ipfsResult = await Ipfs.deleteMany({ cid: { $in: [...cidsToUnpin] } });
-                  logger.info(`Dropped ${ipfsResult.deletedCount} Ipfs pin record(s)`);
-                }
-
-                // Unpin CIDs from IPFS Kubo + Cluster and remove MFS paths
-                let unpinCount = 0;
-                for (const cid of cidsToUnpin) {
-                  const ok = await IpfsClient.unpinCid(cid);
-                  if (ok) unpinCount++;
-                }
-                let mfsCount = 0;
-                for (const itemKey of itemKeysToClean) {
-                  const ok = await IpfsClient.removeMfsPath(`/object-layer/${itemKey}`);
-                  if (ok) mfsCount++;
-                }
-                logger.info(
-                  `IPFS cleanup: ${unpinCount}/${cidsToUnpin.size} CIDs unpinned, ${mfsCount}/${itemKeysToClean.size} MFS paths removed`,
-                );
-
-                const olResult = await ObjectLayer.deleteMany({ 'data.item.id': { $in: [...dropOlItemIds] } });
-                logger.info(`Dropped ${olResult.deletedCount} ObjectLayer document(s)`);
-              }
-
               const mapResult = await CyberiaMap.deleteMany({ code: { $in: [...dropMapCodes] } });
               logger.info(`Dropped ${mapResult.deletedCount} CyberiaMap document(s)`);
+            }
+
+            // Exclude OL item IDs referenced by maps outside this instance
+            const sharedOlItemIds = new Set();
+            for (const m of otherMaps) {
+              for (const entity of m.entities || []) {
+                for (const itemId of entity.objectLayerItemIds || []) {
+                  if (dropOlItemIds.has(itemId)) sharedOlItemIds.add(itemId);
+                }
+              }
+            }
+            for (const shared of sharedOlItemIds) dropOlItemIds.delete(shared);
+            if (sharedOlItemIds.size > 0) {
+              logger.info(`Preserved ${sharedOlItemIds.size} ObjectLayer(s) shared with other maps`);
+            }
+
+            // Exclude thumbnail File IDs referenced by other instances or maps
+            const otherMapThumbs = otherMaps.map((m) => m.thumbnail?.toString()).filter(Boolean);
+            const otherInstThumbs = otherInstances.map((i) => i.thumbnail?.toString()).filter(Boolean);
+            const sharedThumbIds = new Set([...otherMapThumbs, ...otherInstThumbs]);
+            for (let i = thumbFileIds.length - 1; i >= 0; i--) {
+              if (sharedThumbIds.has(thumbFileIds[i].toString())) thumbFileIds.splice(i, 1);
+            }
+
+            if (dropOlItemIds.size > 0) {
+              const dialogueResult = await CyberiaDialogue.deleteMany({ itemId: { $in: [...dropOlItemIds] } });
+              logger.info(`Dropped ${dialogueResult.deletedCount} CyberiaDialogue document(s)`);
+
+              // Gather ObjectLayers to collect related doc IDs and CIDs
+              const olDocs = await ObjectLayer.find(
+                { 'data.item.id': { $in: [...dropOlItemIds] } },
+                {
+                  cid: 1,
+                  'data.item.id': 1,
+                  'data.render': 1,
+                  objectLayerRenderFramesId: 1,
+                  atlasSpriteSheetId: 1,
+                },
+              ).lean();
+
+              const cidsToUnpin = new Set();
+              const renderFrameIds = [];
+              const atlasIds = [];
+              const itemKeysToClean = new Set();
+
+              for (const doc of olDocs) {
+                if (doc.cid) cidsToUnpin.add(doc.cid);
+                if (doc.data?.render?.cid) cidsToUnpin.add(doc.data.render.cid);
+                if (doc.data?.render?.metadataCid) cidsToUnpin.add(doc.data.render.metadataCid);
+                if (doc.data?.item?.id) itemKeysToClean.add(doc.data.item.id);
+                if (doc.objectLayerRenderFramesId) renderFrameIds.push(doc.objectLayerRenderFramesId);
+                if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
+              }
+
+              // Delete AtlasSpriteSheet + referenced File docs
+              if (atlasIds.length > 0) {
+                const atlasDocs = await AtlasSpriteSheet.find({ _id: { $in: atlasIds } }, { fileId: 1, cid: 1 }).lean();
+                const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
+                for (const atlas of atlasDocs) {
+                  if (atlas.cid) cidsToUnpin.add(atlas.cid);
+                }
+                if (atlasFileIds.length > 0) {
+                  const fileResult = await File.deleteMany({ _id: { $in: atlasFileIds } });
+                  logger.info(`Dropped ${fileResult.deletedCount} File document(s) (atlas)`);
+                }
+                const atlasResult = await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
+                logger.info(`Dropped ${atlasResult.deletedCount} AtlasSpriteSheet document(s)`);
+              }
+
+              // Delete RenderFrames
+              if (renderFrameIds.length > 0) {
+                const rfResult = await ObjectLayerRenderFrames.deleteMany({ _id: { $in: renderFrameIds } });
+                logger.info(`Dropped ${rfResult.deletedCount} ObjectLayerRenderFrames document(s)`);
+              }
+
+              // Delete IPFS pin records
+              if (cidsToUnpin.size > 0) {
+                const ipfsResult = await Ipfs.deleteMany({ cid: { $in: [...cidsToUnpin] } });
+                logger.info(`Dropped ${ipfsResult.deletedCount} Ipfs pin record(s)`);
+              }
+
+              // Unpin CIDs from IPFS Kubo + Cluster and remove MFS paths
+              let unpinCount = 0;
+              for (const cid of cidsToUnpin) {
+                const ok = await IpfsClient.unpinCid(cid);
+                if (ok) unpinCount++;
+              }
+              let mfsCount = 0;
+              for (const itemKey of itemKeysToClean) {
+                const ok = await IpfsClient.removeMfsPath(`/object-layer/${itemKey}`);
+                if (ok) mfsCount++;
+              }
+              logger.info(
+                `IPFS cleanup: ${unpinCount}/${cidsToUnpin.size} CIDs unpinned, ${mfsCount}/${itemKeysToClean.size} MFS paths removed`,
+              );
+
+              const olResult = await ObjectLayer.deleteMany({ 'data.item.id': { $in: [...dropOlItemIds] } });
+              logger.info(`Dropped ${olResult.deletedCount} ObjectLayer document(s)`);
             }
 
             // Drop thumbnail File documents (instance + maps), excluding shared ones
@@ -2061,9 +2537,46 @@ try {
 
             await CyberiaInstance.deleteOne({ code: instanceCode });
             logger.info('Dropped CyberiaInstance', { code: instanceCode });
+            await CyberiaInstanceConf.deleteOne({ instanceCode });
+            logger.info('Dropped CyberiaInstanceConf', { instanceCode });
           } else {
             logger.info('No existing instance to drop', { code: instanceCode });
           }
+        } else if (options.drop && options.conf) {
+          logger.info(
+            'Skipping full instance drop because --conf only imports cyberia-instance.json and cyberia-instance-conf.json',
+          );
+        }
+
+        if (options.conf) {
+          const confImportPath = `${backupDir}/cyberia-instance-conf.json`;
+          if (fs.existsSync(confImportPath)) {
+            const confData = fs.readJsonSync(confImportPath);
+            if (confData._id) await CyberiaInstanceConf.deleteOne({ _id: confData._id });
+            await CyberiaInstanceConf.deleteOne({ instanceCode: confData.instanceCode });
+            await CyberiaInstanceConf.create(confData);
+            logger.info('Imported CyberiaInstanceConf', { instanceCode: confData.instanceCode });
+          } else {
+            logger.warn(`CyberiaInstanceConf backup not found: ${confImportPath}`);
+          }
+
+          const instancePath = `${backupDir}/cyberia-instance.json`;
+          if (fs.existsSync(instancePath)) {
+            const instanceData = fs.readJsonSync(instancePath);
+            await CyberiaInstance.deleteOne({ code: instanceCode });
+            await CyberiaInstance.deleteOne({ _id: instanceData._id });
+            await CyberiaInstance.create(instanceData);
+            logger.info('Imported CyberiaInstance', { code: instanceCode });
+          } else {
+            logger.warn(`Instance file not found: ${instancePath}`);
+          }
+
+          logger.info('Instance import completed in --conf mode', {
+            backupDir,
+            importedFiles: ['cyberia-instance.json', 'cyberia-instance-conf.json'],
+          });
+          await DataBaseProvider.instance[`${host}${path}`].mongoose.close();
+          return;
         }
 
         // 1. Import File documents first (atlas PNG + thumbnail dependencies)
@@ -2113,6 +2626,9 @@ try {
           for (const f of atlasFiles) {
             const atlasData = fs.readJsonSync(`${atlasDir}/${f}`);
             await AtlasSpriteSheet.deleteOne({ _id: atlasData._id });
+            if (atlasData.metadata?.itemKey) {
+              await AtlasSpriteSheet.deleteOne({ 'metadata.itemKey': atlasData.metadata.itemKey });
+            }
             await AtlasSpriteSheet.create(atlasData);
             atlasCount++;
           }
@@ -2127,50 +2643,88 @@ try {
           for (const file of olFiles) {
             const olData = fs.readJsonSync(`${olDir}/${file}`);
             await ObjectLayer.deleteOne({ _id: olData._id });
+            if (olData.sha256) {
+              await ObjectLayer.deleteOne({ sha256: olData.sha256 });
+            }
             await ObjectLayer.create(olData);
             olCount++;
           }
           logger.info(`Imported ${olCount} ObjectLayer document(s)`);
         }
 
-        // 5. Import IPFS pin records and re-pin CIDs
-        const ipfsFile = `${backupDir}/ipfs/pins.json`;
-        if (fs.existsSync(ipfsFile)) {
-          const ipfsDocs = fs.readJsonSync(ipfsFile);
-          let ipfsCount = 0;
-          const pinnedCids = new Set();
-          for (const doc of ipfsDocs) {
-            await Ipfs.deleteOne({ _id: doc._id });
-            await Ipfs.create(doc);
-            ipfsCount++;
-            if (doc.cid) pinnedCids.add(doc.cid);
+        // 4b. Regenerate static frame PNGs from imported render-frames + object-layer documents.
+        //     Mirrors the writeStaticFrameAssets call in `ol --import` so src/client/public/cyberia
+        //     and the public/<host><path> deployment dir are populated even when the cyberia
+        //     asset directory was wiped (e.g. git clean / rm -rf).
+        const rfImportDir = `${backupDir}/render-frames`;
+        const olImportDir = `${backupDir}/object-layers`;
+        if (fs.existsSync(rfImportDir) && fs.existsSync(olImportDir)) {
+          const srcBasePath = './src/client/public/cyberia/';
+          const publicBasePath = `./public/${host}${path}`;
+          let staticWriteCount = 0;
+          const rfFileList = fs.readdirSync(rfImportDir).filter((f) => f.endsWith('.json'));
+          for (const rfFile of rfFileList) {
+            const rfData = fs.readJsonSync(`${rfImportDir}/${rfFile}`);
+            const itemId = nodePath.basename(rfFile, '.json');
+            const olFile = `${olImportDir}/${itemId}.json`;
+            if (!fs.existsSync(olFile)) {
+              logger.warn(`Skipping static asset generation for '${itemId}' — no matching object-layer file`);
+              continue;
+            }
+            const olData = fs.readJsonSync(olFile);
+            const itemType = olData.data?.item?.type;
+            if (!itemType) {
+              logger.warn(`Skipping static asset generation for '${itemId}' — missing data.item.type`);
+              continue;
+            }
+            // rfData matches the ObjectLayerRenderFrames schema: { frames, colors, frame_duration }
+            const objectLayerRenderFramesData = {
+              frames: rfData.frames || {},
+              colors: rfData.colors || [],
+              frame_duration: rfData.frame_duration ?? 100,
+            };
+            try {
+              const written = await ObjectLayerEngine.writeStaticFrameAssets({
+                basePaths: [srcBasePath, publicBasePath],
+                itemType,
+                itemId,
+                objectLayerRenderFramesData,
+                objectLayerData: olData,
+                cellPixelDim: 20,
+              });
+              staticWriteCount += written.length;
+            } catch (err) {
+              logger.warn(`Failed to write static assets for '${itemId}': ${err.message}`);
+            }
           }
-          logger.info(`Imported ${ipfsCount} Ipfs pin record(s)`);
-
-          // Re-pin CIDs to IPFS Kubo + Cluster
-          let repinCount = 0;
-          for (const cid of pinnedCids) {
-            const ok = await IpfsClient.pinCid(cid);
-            if (ok) repinCount++;
-          }
-          logger.info(`IPFS re-pin: ${repinCount}/${pinnedCids.size} CIDs pinned`);
+          logger.info(`Static frame PNGs written: ${staticWriteCount} file(s) across src/client/public and public/`);
         }
 
-        // 6. Import maps (preserveUUID: delete by code then create with exact _id)
+        // 5. Import maps (preserveUUID: delete by code then create with exact _id)
         const mapsDir = `${backupDir}/maps`;
         if (fs.existsSync(mapsDir)) {
           const mapFiles = fs.readdirSync(mapsDir).filter((f) => f.endsWith('.json'));
           let mapCount = 0;
           for (const file of mapFiles) {
             const mapData = fs.readJsonSync(`${mapsDir}/${file}`);
-            // Remove any existing map with this code (may have different _id)
             await CyberiaMap.deleteOne({ code: mapData.code });
-            // Also remove if an old doc with this _id exists
             await CyberiaMap.deleteOne({ _id: mapData._id });
             await CyberiaMap.create(mapData);
             mapCount++;
           }
           logger.info(`Imported ${mapCount} CyberiaMap document(s)`);
+        }
+
+        // 6. Import CyberiaInstanceConf (skillRules, equipmentRules, entityDefaults, etc.)
+        const confImportPath = `${backupDir}/cyberia-instance-conf.json`;
+        if (fs.existsSync(confImportPath)) {
+          const confData = fs.readJsonSync(confImportPath);
+          if (confData._id) await CyberiaInstanceConf.deleteOne({ _id: confData._id });
+          await CyberiaInstanceConf.deleteOne({ instanceCode: confData.instanceCode });
+          await CyberiaInstanceConf.create(confData);
+          logger.info('Imported CyberiaInstanceConf', { instanceCode: confData.instanceCode });
+        } else {
+          logger.warn(`CyberiaInstanceConf backup not found: ${confImportPath}`);
         }
 
         // 7. Import instance (preserveUUID: delete by code then create with exact _id)
@@ -2183,6 +2737,283 @@ try {
           logger.info('Imported CyberiaInstance', { code: instanceCode });
         } else {
           logger.warn(`Instance file not found: ${instancePath}`);
+        }
+
+        // 8. Import CyberiaDialogue documents
+        const dialoguesDir = `${backupDir}/cyberia-dialogues`;
+        if (fs.existsSync(dialoguesDir)) {
+          const dialogueFiles = fs.readdirSync(dialoguesDir).filter((f) => f.endsWith('.json'));
+          let dialogueCount = 0;
+
+          for (const file of dialogueFiles) {
+            const rawDialogueData = fs.readJsonSync(`${dialoguesDir}/${file}`);
+            const dialogues = Array.isArray(rawDialogueData) ? rawDialogueData : [rawDialogueData];
+            const dialogueItemIds = [...new Set(dialogues.map((dialogue) => dialogue.itemId).filter(Boolean))];
+            if (dialogueItemIds.length === 0) {
+              logger.warn(`Skipping CyberiaDialogue backup without itemId: ${file}`);
+              continue;
+            }
+
+            await CyberiaDialogue.deleteMany({ itemId: { $in: dialogueItemIds } });
+
+            const dialogueIds = dialogues.map((dialogue) => dialogue._id).filter(Boolean);
+            if (dialogueIds.length > 0) {
+              await CyberiaDialogue.deleteMany({ _id: { $in: dialogueIds } });
+            }
+
+            await CyberiaDialogue.create(dialogues);
+            dialogueCount += dialogues.length;
+          }
+
+          logger.info(`Imported ${dialogueCount} CyberiaDialogue document(s)`);
+        }
+
+        // 9. Restore IPFS pin records and payloads
+        const ipfsFile = `${backupDir}/ipfs/pins.json`;
+        if (fs.existsSync(ipfsFile)) {
+          const ipfsDocs = fs.readJsonSync(ipfsFile);
+          const ipfsContentDir = `${backupDir}/ipfs/content`;
+          let ipfsCount = 0;
+          let ipfsSkipped = 0;
+
+          const backupPins = new Map();
+          for (const doc of ipfsDocs) {
+            const resourceType = inferResourceType(doc);
+            if (!resourceType) {
+              logger.warn(
+                `Ipfs record is missing resourceType and cannot be inferred (cid: ${doc.cid}, mfsPath: ${doc.mfsPath ?? '(none)'}) — skipping`,
+              );
+              ipfsSkipped++;
+              continue;
+            }
+
+            const mfsPaths = collectMfsPaths(doc);
+            if (mfsPaths.length === 0) {
+              upsertCanonicalPinEntry(backupPins, { cid: doc.cid, resourceType, mfsPath: '' });
+            } else {
+              for (const mfsPath of mfsPaths) {
+                upsertCanonicalPinEntry(backupPins, { cid: doc.cid, resourceType, mfsPath });
+              }
+            }
+          }
+
+          const backupPinEntries = serialiseCanonicalPins(backupPins);
+          const backupCids = [...new Set(backupPinEntries.map((entry) => entry.cid).filter(Boolean))];
+          if (backupCids.length > 0) {
+            await Ipfs.deleteMany({ cid: { $in: backupCids } });
+          }
+
+          const restoreAdditionalMfsPaths = async (cid, mfsPaths, primaryPath) => {
+            let restoredCount = 0;
+            for (const mfsPath of mfsPaths) {
+              if (!mfsPath || mfsPath === primaryPath) continue;
+              const ok = await IpfsClient.restoreMfsPath(cid, mfsPath);
+              if (ok) restoredCount++;
+            }
+            return restoredCount;
+          };
+
+          const upsertImportedPin = async ({ cid, resourceType, mfsPath }) => {
+            if (!cid || !resourceType) return;
+            await Ipfs.deleteMany({ cid, resourceType });
+            await createPinRecord({ cid, resourceType, mfsPath: mfsPath || '', options: { host, path } });
+          };
+
+          if (fs.existsSync(ipfsContentDir)) {
+            let cidRewriteCount = 0;
+            let extraMfsRestoreCount = 0;
+
+            for (const [index, doc] of backupPinEntries.entries()) {
+              const mfsPaths = collectMfsPaths(doc);
+              const primaryPath = mfsPaths[0] || '';
+              const payloadPath = `${ipfsContentDir}/${doc.cid}.bin`;
+
+              logger.info('IPFS raw payload restore start', {
+                index: index + 1,
+                total: backupPinEntries.length,
+                cid: doc.cid,
+                resourceType: doc.resourceType,
+                mfsPath: primaryPath || null,
+              });
+
+              if (!fs.existsSync(payloadPath)) {
+                logger.warn('IPFS raw payload file missing from backup', {
+                  cid: doc.cid,
+                  resourceType: doc.resourceType,
+                  mfsPath: primaryPath || null,
+                });
+                ipfsSkipped++;
+                continue;
+              }
+
+              const addResult = await IpfsClient.addToIpfs(
+                fs.readFileSync(payloadPath),
+                nodePath.basename(primaryPath || doc.cid),
+                primaryPath || undefined,
+              );
+
+              if (!addResult?.cid) {
+                logger.warn('IPFS raw payload restore failed', {
+                  cid: doc.cid,
+                  resourceType: doc.resourceType,
+                  mfsPath: primaryPath || null,
+                });
+                ipfsSkipped++;
+                continue;
+              }
+
+              const finalCid = addResult.cid;
+              if (doc.cid !== finalCid) {
+                await rewriteImportedCidReferences({
+                  oldCid: doc.cid,
+                  newCid: finalCid,
+                  resourceType: doc.resourceType,
+                });
+                cidRewriteCount++;
+                logger.warn('IPFS raw payload CID mismatch during import; rewriting imported references', {
+                  oldCid: doc.cid,
+                  newCid: finalCid,
+                  resourceType: doc.resourceType,
+                  mfsPath: primaryPath || null,
+                });
+              }
+
+              extraMfsRestoreCount += await restoreAdditionalMfsPaths(finalCid, mfsPaths, primaryPath);
+              await upsertImportedPin({ cid: finalCid, resourceType: doc.resourceType, mfsPath: primaryPath });
+              ipfsCount++;
+            }
+
+            logger.info(
+              `Imported ${ipfsCount} Ipfs pin record(s) from exact backup payloads${ipfsSkipped ? `, skipped ${ipfsSkipped}` : ''}`,
+            );
+            logger.info(
+              `IPFS raw payload restore: ${ipfsCount}/${backupPinEntries.length} record(s) restored, ${extraMfsRestoreCount} additional MFS path(s) restored${cidRewriteCount ? `, ${cidRewriteCount} CID rewrite(s)` : ''}`,
+            );
+          } else {
+            logger.warn(
+              'Backup has no raw IPFS payload files under ipfs/content/. Rebuilding a canonical IPFS layout from imported ObjectLayer, AtlasSpriteSheet, and File documents.',
+            );
+
+            const importedItemIds = fs.existsSync(olDir)
+              ? fs
+                  .readdirSync(olDir)
+                  .filter((f) => f.endsWith('.json'))
+                  .map((f) => nodePath.basename(f, '.json'))
+              : [];
+            const importedObjectLayers = importedItemIds.length
+              ? await ObjectLayer.find({ 'data.item.id': { $in: importedItemIds } }).lean()
+              : [];
+
+            let rebuiltObjectLayers = 0;
+
+            for (const [index, objectLayerDoc] of importedObjectLayers.entries()) {
+              const itemKey = objectLayerDoc.data?.item?.id || objectLayerDoc._id.toString();
+              const itemPaths = getCanonicalIpfsPaths(itemKey);
+              const updatedData = newInstance(objectLayerDoc.data || {});
+              if (!updatedData.render) updatedData.render = {};
+
+              logger.info('IPFS legacy canonical rebuild start', {
+                index: index + 1,
+                total: importedObjectLayers.length,
+                itemKey,
+              });
+
+              let atlasCid = '';
+              let atlasMetadataCid = '';
+
+              if (objectLayerDoc.atlasSpriteSheetId) {
+                const atlasDoc = await AtlasSpriteSheet.findById(objectLayerDoc.atlasSpriteSheetId).lean();
+                if (atlasDoc) {
+                  const atlasFile = atlasDoc.fileId ? await File.findById(atlasDoc.fileId).lean() : null;
+                  const atlasBuffer = toBuffer(atlasFile?.data);
+
+                  if (atlasBuffer) {
+                    const atlasAddResult = await IpfsClient.addBufferToIpfs(
+                      atlasBuffer,
+                      `${itemKey}_atlas_sprite_sheet.png`,
+                      itemPaths.atlasSpriteSheet,
+                    );
+                    if (atlasAddResult?.cid) {
+                      atlasCid = atlasAddResult.cid;
+                      await AtlasSpriteSheet.updateOne({ _id: atlasDoc._id }, { $set: { cid: atlasCid } });
+                      await createPinRecord({
+                        cid: atlasCid,
+                        resourceType: 'atlas-sprite-sheet',
+                        mfsPath: itemPaths.atlasSpriteSheet,
+                        options: { host, path },
+                      });
+                      ipfsCount++;
+                    } else {
+                      logger.warn(`Failed to rebuild atlas sprite sheet payload for '${itemKey}'`);
+                    }
+                  } else if (atlasDoc.fileId) {
+                    logger.warn(`Atlas File payload missing for '${itemKey}'`);
+                  }
+
+                  const atlasMetadataResult = await IpfsClient.addJsonToIpfs(
+                    atlasDoc.metadata || {},
+                    `${itemKey}_atlas_sprite_sheet_metadata.json`,
+                    itemPaths.atlasMetadata,
+                  );
+                  if (atlasMetadataResult?.cid) {
+                    atlasMetadataCid = atlasMetadataResult.cid;
+                    await createPinRecord({
+                      cid: atlasMetadataCid,
+                      resourceType: 'atlas-metadata',
+                      mfsPath: itemPaths.atlasMetadata,
+                      options: { host, path },
+                    });
+                    ipfsCount++;
+                  } else {
+                    logger.warn(`Failed to rebuild atlas metadata payload for '${itemKey}'`);
+                  }
+                }
+              }
+
+              if (atlasCid) {
+                updatedData.render.cid = atlasCid;
+              } else {
+                delete updatedData.render.cid;
+              }
+              if (atlasMetadataCid) {
+                updatedData.render.metadataCid = atlasMetadataCid;
+              } else {
+                delete updatedData.render.metadataCid;
+              }
+
+              const objectLayerAddResult = await IpfsClient.addJsonToIpfs(
+                updatedData,
+                `${itemKey}_data.json`,
+                itemPaths.objectLayerData,
+              );
+              if (objectLayerAddResult?.cid) {
+                await ObjectLayer.updateOne(
+                  { _id: objectLayerDoc._id },
+                  {
+                    $set: {
+                      cid: objectLayerAddResult.cid,
+                      data: updatedData,
+                    },
+                  },
+                );
+                await createPinRecord({
+                  cid: objectLayerAddResult.cid,
+                  resourceType: 'object-layer-data',
+                  mfsPath: itemPaths.objectLayerData,
+                  options: { host, path },
+                });
+                ipfsCount++;
+                rebuiltObjectLayers++;
+              } else {
+                logger.warn(`Failed to rebuild object-layer-data payload for '${itemKey}'`);
+                ipfsSkipped++;
+              }
+            }
+
+            logger.info(
+              `Legacy IPFS rebuild: ${rebuiltObjectLayers}/${importedObjectLayers.length} ObjectLayer payload(s) rebuilt, ${ipfsCount} canonical pin record(s) upserted${ipfsSkipped ? `, skipped ${ipfsSkipped}` : ''}`,
+            );
+          }
         }
 
         logger.info('Instance import completed', { backupDir });
@@ -2201,13 +3032,41 @@ try {
           // Collect thumbnail File IDs to drop
           const thumbFileIds = [];
           if (existingInstance.thumbnail) thumbFileIds.push(existingInstance.thumbnail);
+          const dropOlItemIds = new Set();
 
           // Query other instances for shared thumbnail exclusion
           const otherInstances = await CyberiaInstance.find({ code: { $ne: instanceCode } }, { thumbnail: 1 }).lean();
 
+          // Add instance-level itemIds (may not appear in any map entity)
+          for (const id of existingInstance.itemIds || []) if (id) dropOlItemIds.add(id);
+
+          // Add conf entityDefaults and skillConfig itemIds (liveItemIds, deadItemIds, dropItemIds, defaultObjectLayers)
+          const existingConf =
+            (await CyberiaInstanceConf.findOne({ instanceCode }).lean()) ||
+            (existingInstance.conf ? await CyberiaInstanceConf.findById(existingInstance.conf).lean() : null);
+          if (existingConf) {
+            for (const ed of existingConf.entityDefaults || []) {
+              for (const id of ed.liveItemIds || []) if (id) dropOlItemIds.add(id);
+              for (const id of ed.deadItemIds || []) if (id) dropOlItemIds.add(id);
+              for (const id of ed.dropItemIds || []) if (id) dropOlItemIds.add(id);
+              for (const slot of ed.defaultObjectLayers || []) if (slot.itemId) dropOlItemIds.add(slot.itemId);
+            }
+            for (const sc of existingConf.skillConfig || []) {
+              if (sc.triggerItemId) dropOlItemIds.add(sc.triggerItemId);
+              for (const skill of sc.skills || []) {
+                if (skill.summonedEntityItemId && !skill.summonedEntityItemId.startsWith('$'))
+                  dropOlItemIds.add(skill.summonedEntityItemId);
+              }
+            }
+          }
+
+          const otherMaps = await CyberiaMap.find(
+            { code: { $nin: [...dropMapCodes] } },
+            { 'entities.objectLayerItemIds': 1, thumbnail: 1 },
+          ).lean();
+
           if (dropMapCodes.size > 0) {
             const dropMaps = await CyberiaMap.find({ code: { $in: [...dropMapCodes] } }).lean();
-            const dropOlItemIds = new Set();
             for (const map of dropMaps) {
               if (map.thumbnail) thumbFileIds.push(map.thumbnail);
               for (const entity of map.entities || []) {
@@ -2216,103 +3075,101 @@ try {
                 }
               }
             }
-
-            // Exclude OL item IDs referenced by maps outside this instance
-            const otherMaps = await CyberiaMap.find(
-              { code: { $nin: [...dropMapCodes] } },
-              { 'entities.objectLayerItemIds': 1, thumbnail: 1 },
-            ).lean();
-            const sharedOlItemIds = new Set();
-            for (const m of otherMaps) {
-              for (const entity of m.entities || []) {
-                for (const itemId of entity.objectLayerItemIds || []) {
-                  if (dropOlItemIds.has(itemId)) sharedOlItemIds.add(itemId);
-                }
-              }
-            }
-            for (const shared of sharedOlItemIds) dropOlItemIds.delete(shared);
-            if (sharedOlItemIds.size > 0) {
-              logger.info(`Preserved ${sharedOlItemIds.size} ObjectLayer(s) shared with other maps`);
-            }
-
-            // Exclude thumbnail File IDs referenced by other instances or maps
-            const otherMapThumbs = otherMaps.map((m) => m.thumbnail?.toString()).filter(Boolean);
-            const otherInstThumbs = otherInstances.map((i) => i.thumbnail?.toString()).filter(Boolean);
-            const sharedThumbIds = new Set([...otherMapThumbs, ...otherInstThumbs]);
-            for (let i = thumbFileIds.length - 1; i >= 0; i--) {
-              if (sharedThumbIds.has(thumbFileIds[i].toString())) thumbFileIds.splice(i, 1);
-            }
-
-            if (dropOlItemIds.size > 0) {
-              const olDocs = await ObjectLayer.find(
-                { 'data.item.id': { $in: [...dropOlItemIds] } },
-                {
-                  cid: 1,
-                  'data.item.id': 1,
-                  'data.render': 1,
-                  objectLayerRenderFramesId: 1,
-                  atlasSpriteSheetId: 1,
-                },
-              ).lean();
-
-              const cidsToUnpin = new Set();
-              const renderFrameIds = [];
-              const atlasIds = [];
-              const itemKeysToClean = new Set();
-
-              for (const doc of olDocs) {
-                if (doc.cid) cidsToUnpin.add(doc.cid);
-                if (doc.data?.render?.cid) cidsToUnpin.add(doc.data.render.cid);
-                if (doc.data?.render?.metadataCid) cidsToUnpin.add(doc.data.render.metadataCid);
-                if (doc.data?.item?.id) itemKeysToClean.add(doc.data.item.id);
-                if (doc.objectLayerRenderFramesId) renderFrameIds.push(doc.objectLayerRenderFramesId);
-                if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
-              }
-
-              if (atlasIds.length > 0) {
-                const atlasDocs = await AtlasSpriteSheet.find({ _id: { $in: atlasIds } }, { fileId: 1, cid: 1 }).lean();
-                const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
-                for (const atlas of atlasDocs) {
-                  if (atlas.cid) cidsToUnpin.add(atlas.cid);
-                }
-                if (atlasFileIds.length > 0) {
-                  const fileResult = await File.deleteMany({ _id: { $in: atlasFileIds } });
-                  logger.info(`Dropped ${fileResult.deletedCount} File document(s) (atlas)`);
-                }
-                const atlasResult = await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
-                logger.info(`Dropped ${atlasResult.deletedCount} AtlasSpriteSheet document(s)`);
-              }
-
-              if (renderFrameIds.length > 0) {
-                const rfResult = await ObjectLayerRenderFrames.deleteMany({ _id: { $in: renderFrameIds } });
-                logger.info(`Dropped ${rfResult.deletedCount} ObjectLayerRenderFrames document(s)`);
-              }
-
-              if (cidsToUnpin.size > 0) {
-                const ipfsResult = await Ipfs.deleteMany({ cid: { $in: [...cidsToUnpin] } });
-                logger.info(`Dropped ${ipfsResult.deletedCount} Ipfs pin record(s)`);
-              }
-
-              let unpinCount = 0;
-              for (const cid of cidsToUnpin) {
-                const ok = await IpfsClient.unpinCid(cid);
-                if (ok) unpinCount++;
-              }
-              let mfsCount = 0;
-              for (const itemKey of itemKeysToClean) {
-                const ok = await IpfsClient.removeMfsPath(`/object-layer/${itemKey}`);
-                if (ok) mfsCount++;
-              }
-              logger.info(
-                `IPFS cleanup: ${unpinCount}/${cidsToUnpin.size} CIDs unpinned, ${mfsCount}/${itemKeysToClean.size} MFS paths removed`,
-              );
-
-              const olResult = await ObjectLayer.deleteMany({ 'data.item.id': { $in: [...dropOlItemIds] } });
-              logger.info(`Dropped ${olResult.deletedCount} ObjectLayer document(s)`);
-            }
-
             const mapResult = await CyberiaMap.deleteMany({ code: { $in: [...dropMapCodes] } });
             logger.info(`Dropped ${mapResult.deletedCount} CyberiaMap document(s)`);
+          }
+
+          // Exclude OL item IDs referenced by maps outside this instance
+          const sharedOlItemIds = new Set();
+          for (const m of otherMaps) {
+            for (const entity of m.entities || []) {
+              for (const itemId of entity.objectLayerItemIds || []) {
+                if (dropOlItemIds.has(itemId)) sharedOlItemIds.add(itemId);
+              }
+            }
+          }
+          for (const shared of sharedOlItemIds) dropOlItemIds.delete(shared);
+          if (sharedOlItemIds.size > 0) {
+            logger.info(`Preserved ${sharedOlItemIds.size} ObjectLayer(s) shared with other maps`);
+          }
+
+          // Exclude thumbnail File IDs referenced by other instances or maps
+          const otherMapThumbs = otherMaps.map((m) => m.thumbnail?.toString()).filter(Boolean);
+          const otherInstThumbs = otherInstances.map((i) => i.thumbnail?.toString()).filter(Boolean);
+          const sharedThumbIds = new Set([...otherMapThumbs, ...otherInstThumbs]);
+          for (let i = thumbFileIds.length - 1; i >= 0; i--) {
+            if (sharedThumbIds.has(thumbFileIds[i].toString())) thumbFileIds.splice(i, 1);
+          }
+
+          if (dropOlItemIds.size > 0) {
+            const dialogueResult = await CyberiaDialogue.deleteMany({ itemId: { $in: [...dropOlItemIds] } });
+            logger.info(`Dropped ${dialogueResult.deletedCount} CyberiaDialogue document(s)`);
+
+            const olDocs = await ObjectLayer.find(
+              { 'data.item.id': { $in: [...dropOlItemIds] } },
+              {
+                cid: 1,
+                'data.item.id': 1,
+                'data.render': 1,
+                objectLayerRenderFramesId: 1,
+                atlasSpriteSheetId: 1,
+              },
+            ).lean();
+
+            const cidsToUnpin = new Set();
+            const renderFrameIds = [];
+            const atlasIds = [];
+            const itemKeysToClean = new Set();
+
+            for (const doc of olDocs) {
+              if (doc.cid) cidsToUnpin.add(doc.cid);
+              if (doc.data?.render?.cid) cidsToUnpin.add(doc.data.render.cid);
+              if (doc.data?.render?.metadataCid) cidsToUnpin.add(doc.data.render.metadataCid);
+              if (doc.data?.item?.id) itemKeysToClean.add(doc.data.item.id);
+              if (doc.objectLayerRenderFramesId) renderFrameIds.push(doc.objectLayerRenderFramesId);
+              if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
+            }
+
+            if (atlasIds.length > 0) {
+              const atlasDocs = await AtlasSpriteSheet.find({ _id: { $in: atlasIds } }, { fileId: 1, cid: 1 }).lean();
+              const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
+              for (const atlas of atlasDocs) {
+                if (atlas.cid) cidsToUnpin.add(atlas.cid);
+              }
+              if (atlasFileIds.length > 0) {
+                const fileResult = await File.deleteMany({ _id: { $in: atlasFileIds } });
+                logger.info(`Dropped ${fileResult.deletedCount} File document(s) (atlas)`);
+              }
+              const atlasResult = await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
+              logger.info(`Dropped ${atlasResult.deletedCount} AtlasSpriteSheet document(s)`);
+            }
+
+            if (renderFrameIds.length > 0) {
+              const rfResult = await ObjectLayerRenderFrames.deleteMany({ _id: { $in: renderFrameIds } });
+              logger.info(`Dropped ${rfResult.deletedCount} ObjectLayerRenderFrames document(s)`);
+            }
+
+            if (cidsToUnpin.size > 0) {
+              const ipfsResult = await Ipfs.deleteMany({ cid: { $in: [...cidsToUnpin] } });
+              logger.info(`Dropped ${ipfsResult.deletedCount} Ipfs pin record(s)`);
+            }
+
+            let unpinCount = 0;
+            for (const cid of cidsToUnpin) {
+              const ok = await IpfsClient.unpinCid(cid);
+              if (ok) unpinCount++;
+            }
+            let mfsCount = 0;
+            for (const itemKey of itemKeysToClean) {
+              const ok = await IpfsClient.removeMfsPath(`/object-layer/${itemKey}`);
+              if (ok) mfsCount++;
+            }
+            logger.info(
+              `IPFS cleanup: ${unpinCount}/${cidsToUnpin.size} CIDs unpinned, ${mfsCount}/${itemKeysToClean.size} MFS paths removed`,
+            );
+
+            const olResult = await ObjectLayer.deleteMany({ 'data.item.id': { $in: [...dropOlItemIds] } });
+            logger.info(`Dropped ${olResult.deletedCount} ObjectLayer document(s)`);
           }
 
           // Drop thumbnail File documents (instance + maps), excluding shared ones
@@ -2323,6 +3180,8 @@ try {
 
           await CyberiaInstance.deleteOne({ code: instanceCode });
           logger.info('Dropped CyberiaInstance', { code: instanceCode });
+          await CyberiaInstanceConf.deleteOne({ instanceCode });
+          logger.info('Dropped CyberiaInstanceConf', { instanceCode });
         } else {
           logger.info('No existing instance to drop', { code: instanceCode });
         }
@@ -3298,17 +4157,37 @@ try {
     .description('Generate one procedural example of every registered semantic prefix')
     .action(async (options) => {
       const SEMANTIC_TYPES = [
-        'floor-desert',
-        'floor-grass',
+        // 'floor-desert',
+        // 'floor-grass',
         // 'floor-water',
         // 'floor-stone',
         // 'floor-lava',
         'skin-random',
-        // 'skin-dark',
-        // 'skin-light',
-        // 'skin-vivid',
-        // 'skin-natural',
+        'skin-dark',
+        'skin-light',
+        'skin-vivid',
+        'skin-natural',
         'skin-shaved',
+        // 'resource-desert-petal',
+        // 'resource-desert-stone',
+        // 'resource-desert-polygon',
+        // 'resource-desert-thread',
+        // 'resource-grass-petal',
+        // 'resource-grass-stone',
+        // 'resource-grass-polygon',
+        // 'resource-grass-thread',
+        // 'resource-water-petal',
+        // 'resource-water-stone',
+        // 'resource-water-polygon',
+        // 'resource-water-thread',
+        // 'resource-stone-petal',
+        // 'resource-stone-stone',
+        // 'resource-stone-polygon',
+        // 'resource-stone-thread',
+        // 'resource-lava-petal',
+        // 'resource-lava-stone',
+        // 'resource-lava-polygon',
+        // 'resource-lava-thread',
       ];
 
       const baseSeed = options.seed || 'example';

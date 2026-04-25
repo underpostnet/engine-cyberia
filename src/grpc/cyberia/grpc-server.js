@@ -10,6 +10,7 @@
 
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { DataBaseProvider } from '../../db/DataBaseProvider.js';
@@ -50,6 +51,101 @@ function getModels(dbKey) {
   return bucket.mongoose.models;
 }
 
+function countSharedItemIds(source = [], target = []) {
+  if (!Array.isArray(source) || source.length === 0 || !Array.isArray(target) || target.length === 0) {
+    return 0;
+  }
+  const targetSet = new Set(target.filter(Boolean));
+  let count = 0;
+  for (const itemId of source) {
+    if (targetSet.has(itemId)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function normalizeEntityDefault(entityDefault = {}, canonical = {}) {
+  const defaultObjectLayers = entityDefault.defaultObjectLayers ?? canonical.defaultObjectLayers ?? [];
+  return {
+    entityType: entityDefault.entityType ?? canonical.entityType ?? '',
+    liveItemIds: [...(entityDefault.liveItemIds ?? canonical.liveItemIds ?? [])],
+    deadItemIds: [...(entityDefault.deadItemIds ?? canonical.deadItemIds ?? [])],
+    dropItemIds: [...(entityDefault.dropItemIds ?? canonical.dropItemIds ?? [])],
+    colorKey: entityDefault.colorKey ?? canonical.colorKey ?? '',
+    defaultObjectLayers: defaultObjectLayers.map((ol) => ({
+      itemId: ol.itemId || '',
+      active: !!ol.active,
+      quantity: ol.quantity || 0,
+    })),
+  };
+}
+
+function selectCanonicalEntityDefaultIndex(entityDefault, canonicalDefaults, usedIndexes) {
+  const pickBestIndex = (candidateIndexes) => {
+    let firstSameTypeIndex = -1;
+    let bestLiveOverlapIndex = -1;
+    let bestLiveOverlap = 0;
+    let bestLiveItemCount = Number.POSITIVE_INFINITY;
+
+    for (const index of candidateIndexes) {
+      const canonical = canonicalDefaults[index];
+      if (canonical.entityType !== entityDefault.entityType) {
+        continue;
+      }
+      if (firstSameTypeIndex === -1) {
+        firstSameTypeIndex = index;
+      }
+      if (entityDefault.colorKey && canonical.colorKey === entityDefault.colorKey) {
+        return index;
+      }
+
+      const liveOverlap = countSharedItemIds(entityDefault.liveItemIds, canonical.liveItemIds);
+      if (
+        liveOverlap > 0 &&
+        (bestLiveOverlapIndex === -1 ||
+          liveOverlap > bestLiveOverlap ||
+          (liveOverlap === bestLiveOverlap && (canonical.liveItemIds?.length ?? 0) < bestLiveItemCount))
+      ) {
+        bestLiveOverlapIndex = index;
+        bestLiveOverlap = liveOverlap;
+        bestLiveItemCount = canonical.liveItemIds?.length ?? 0;
+      }
+    }
+
+    if (bestLiveOverlapIndex !== -1) {
+      return bestLiveOverlapIndex;
+    }
+    return firstSameTypeIndex;
+  };
+
+  const unusedCandidateIndexes = canonicalDefaults.map((_, index) => index).filter((index) => !usedIndexes.has(index));
+
+  const preferredIndex = pickBestIndex(unusedCandidateIndexes);
+  if (preferredIndex !== -1) {
+    return preferredIndex;
+  }
+  return pickBestIndex(canonicalDefaults.map((_, index) => index));
+}
+
+function mergeEntityDefaults(entityDefaults = []) {
+  const mergedDefaults = ENTITY_TYPE_DEFAULTS.map((canonical) => normalizeEntityDefault(canonical, canonical));
+  const usedCanonicalIndexes = new Set();
+
+  for (const entityDefault of entityDefaults) {
+    const canonicalIndex = selectCanonicalEntityDefaultIndex(entityDefault, ENTITY_TYPE_DEFAULTS, usedCanonicalIndexes);
+    if (canonicalIndex === -1) {
+      mergedDefaults.push(normalizeEntityDefault(entityDefault));
+      continue;
+    }
+
+    mergedDefaults[canonicalIndex] = normalizeEntityDefault(entityDefault, ENTITY_TYPE_DEFAULTS[canonicalIndex]);
+    usedCanonicalIndexes.add(canonicalIndex);
+  }
+
+  return mergedDefaults;
+}
+
 // ── Mongoose doc → protobuf message converters ───────────────────
 
 function toObjectLayerMsg(doc) {
@@ -58,13 +154,6 @@ function toObjectLayerMsg(doc) {
   const stats = d.stats || {};
   const ledger = d.ledger || {};
   const render = d.render || {};
-  const rf = doc.objectLayerRenderFramesId;
-  let frameDuration = 250;
-  let isStateless = false;
-  if (rf && typeof rf === 'object') {
-    if (rf.frame_duration != null) frameDuration = rf.frame_duration;
-    if (rf.is_stateless != null) isStateless = rf.is_stateless;
-  }
   return {
     mongoId: String(doc._id),
     stats: {
@@ -92,12 +181,24 @@ function toObjectLayerMsg(doc) {
     },
     sha256: doc.sha256 || '',
     cid: doc.cid || '',
-    frameDuration,
-    isStateless,
   };
 }
 
+/**
+ * Parse a CSS rgba() colour string into {r, g, b, a} integer components.
+ * Returns {r:0, g:0, b:0, a:0} (transparent) when the string is absent or malformed.
+ */
+function parseRgba(str) {
+  if (!str) return { r: 0, g: 0, b: 0, a: 0 };
+  const m = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+  if (!m) return { r: 0, g: 0, b: 0, a: 0 };
+  // CSS alpha is 0-1 (float); proto uses 0-255 (int).
+  const cssAlpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
+  return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: Math.round(cssAlpha * 255) };
+}
+
 function toEntityMsg(ent) {
+  const rgba = parseRgba(ent.color);
   return {
     entityType: ent.entityType || 'floor',
     initCellX: ent.initCellX || 0,
@@ -111,6 +212,10 @@ function toEntityMsg(ent) {
     maxLife: ent.maxLife || 0,
     lifeRegen: ent.lifeRegen || 0,
     portalSubtype: ent.portalSubtype || '',
+    colorR: rgba.r,
+    colorG: rgba.g,
+    colorB: rgba.b,
+    colorA: rgba.a,
   };
 }
 
@@ -159,36 +264,23 @@ function toInstanceConfig(gc) {
   const fb = FALLBACK_CONFIG_DEFAULTS;
   if (!gc) return buildFallbackConfig();
 
-  const colors =
-    gc.colors && gc.colors.length > 0
-      ? gc.colors.map((c) => ({
-          key: c.key || '',
-          r: c.r ?? 0,
-          g: c.g ?? 0,
-          b: c.b ?? 0,
-          a: c.a ?? 255,
-        }))
-      : fb.colors.map((c) => ({ ...c }));
-
-  // Merge entity defaults: use canonical ENTITY_TYPE_DEFAULTS as base, overlay with
-  // any instance-specific overrides stored in gc.entityDefaults.
-  const gcDefaults = gc.entityDefaults && gc.entityDefaults.length > 0 ? gc.entityDefaults : [];
-  const gcDefaultsMap = Object.fromEntries(gcDefaults.map((d) => [d.entityType, d]));
-  const entityDefaults = ENTITY_TYPE_DEFAULTS.map((canonical) => {
-    const override = gcDefaultsMap[canonical.entityType] ?? {};
-    const dols = override.defaultObjectLayers ?? canonical.defaultObjectLayers ?? [];
-    return {
-      entityType: canonical.entityType,
-      liveItemIds: override.liveItemIds ?? canonical.liveItemIds,
-      deadItemIds: override.deadItemIds ?? canonical.deadItemIds,
-      colorKey: override.colorKey ?? canonical.colorKey,
-      defaultObjectLayers: dols.map((ol) => ({
-        itemId: ol.itemId || '',
-        active: !!ol.active,
-        quantity: ol.quantity || 0,
-      })),
-    };
+  // Per-key merge: start with canonical defaults, overlay any DB-defined colours.
+  const dbColorMap = new Map((gc.colors || []).map((c) => [c.key, c]));
+  const colors = fb.colors.map((c) => {
+    const ov = dbColorMap.get(c.key);
+    return ov ? { key: c.key, r: ov.r ?? c.r, g: ov.g ?? c.g, b: ov.b ?? c.b, a: ov.a ?? c.a } : { ...c };
   });
+  // Append any DB colours whose keys are absent from the canonical defaults.
+  for (const [key, c] of dbColorMap) {
+    if (!colors.some((fc) => fc.key === key)) {
+      colors.push({ key, r: c.r ?? 0, g: c.g ?? 0, b: c.b ?? 0, a: c.a ?? 255 });
+    }
+  }
+
+  // Merge entity defaults while preserving duplicate builds (for example,
+  // multiple resource or portal variants sharing the same entityType).
+  const gcDefaults = gc.entityDefaults && gc.entityDefaults.length > 0 ? gc.entityDefaults : [];
+  const entityDefaults = mergeEntityDefaults(gcDefaults);
 
   return {
     cellSize: gc.cellSize ?? fb.cellSize,
@@ -233,9 +325,14 @@ function toInstanceConfig(gc) {
     lifeRegenChance: gc.lifeRegenChance ?? fb.lifeRegenChance,
     maxChance: gc.maxChance ?? fb.maxChance,
     entityDefaults,
-    skillConfig: (gc.skillConfig || []).map((sc) => ({
+    skillConfig: (gc.skillConfig && gc.skillConfig.length > 0 ? gc.skillConfig : fb.skillConfig).map((sc) => ({
       triggerItemId: sc.triggerItemId || '',
-      logicEventIds: sc.logicEventIds || [],
+      skills: (sc.skills || []).map((sk) => ({
+        logicEventId: sk.logicEventId || '',
+        name: sk.name || '',
+        description: sk.description || '',
+        summonedEntityItemId: sk.summonedEntityItemId || '',
+      })),
     })),
     skillRules: {
       projectileSpawnChance: gc.skillRules?.projectileSpawnChance ?? fb.skillRules.projectileSpawnChance,
@@ -303,7 +400,6 @@ function buildHandlers(dbKey) {
           filter['data.item.type'] = call.request.itemTypeFilter;
         }
         const cursor = models.ObjectLayer.find(filter)
-          .populate('objectLayerRenderFramesId', { _id: 1, frame_duration: 1, is_stateless: 1 })
           .lean()
           .cursor();
         for await (const doc of cursor) {
@@ -320,7 +416,6 @@ function buildHandlers(dbKey) {
       try {
         const models = getModels(dbKey);
         const doc = await models.ObjectLayer.findOne({ 'data.item.id': call.request.itemId })
-          .populate('objectLayerRenderFramesId', { _id: 1, frame_duration: 1, is_stateless: 1 })
           .lean();
         if (!doc)
           return callback({ code: grpc.status.NOT_FOUND, message: `ObjectLayer "${call.request.itemId}" not found` });
@@ -344,7 +439,7 @@ function buildHandlers(dbKey) {
           models.GlobalMapCodeRegistry.findOneAndUpdate(
             { mapCode },
             { instanceCode, status: 'active' },
-            { upsert: true, new: true, timestamps: true },
+            { upsert: true, returnDocument: 'after', timestamps: true },
           ).catch((err) => logger.warn('getMapData registry update failed:', err.message));
         }
 
@@ -380,6 +475,7 @@ function buildHandlers(dbKey) {
           for (const d of fallbackConf.entityDefaults || []) {
             for (const id of d.liveItemIds || []) fallbackItemIds.add(id);
             for (const id of d.deadItemIds || []) fallbackItemIds.add(id);
+            for (const id of d.dropItemIds || []) fallbackItemIds.add(id);
             for (const ol of d.defaultObjectLayers || []) {
               if (ol.itemId) fallbackItemIds.add(ol.itemId);
             }
@@ -387,7 +483,6 @@ function buildHandlers(dbKey) {
 
           const fallbackOlDocs = fallbackItemIds.size
             ? await models.ObjectLayer.find({ 'data.item.id': { $in: [...fallbackItemIds] } })
-                .populate('objectLayerRenderFramesId', { _id: 1, frame_duration: 1, is_stateless: 1 })
                 .lean()
             : [];
 
@@ -415,6 +510,7 @@ function buildHandlers(dbKey) {
             })),
             objectLayers: fallbackOlDocs.map(toObjectLayerMsg),
             config: toInstanceConfig(fallbackConf),
+            version: 'fallback',
           });
           return;
         }
@@ -432,13 +528,13 @@ function buildHandlers(dbKey) {
           }
         }
 
-        // Also include "system" item IDs from the instance config so the
-        // Go server has their OL data cached without extra round trips:
-        // Include OL item IDs from entityDefaults so the Go server has all
-        // default atlas data cached at startup without needing extra round trips.
-        for (const d of conf.entityDefaults || []) {
+        // Include system OL items from BOTH canonical ENTITY_TYPE_DEFAULTS AND
+        // the DB conf so the Go server always caches all default atlases even if
+        // the DB doc has incomplete entityDefaults.
+        for (const d of [...ENTITY_TYPE_DEFAULTS, ...(conf.entityDefaults || [])]) {
           for (const id of d.liveItemIds || []) itemIds.add(id);
           for (const id of d.deadItemIds || []) itemIds.add(id);
+          for (const id of d.dropItemIds || []) itemIds.add(id);
           for (const ol of d.defaultObjectLayers || []) {
             if (ol.itemId) itemIds.add(ol.itemId);
           }
@@ -446,15 +542,22 @@ function buildHandlers(dbKey) {
 
         const olDocs = itemIds.size
           ? await models.ObjectLayer.find({ 'data.item.id': { $in: [...itemIds] } })
-              .populate('objectLayerRenderFramesId', { _id: 1, frame_duration: 1, is_stateless: 1 })
               .lean()
           : [];
+
+        // Opaque version string from updatedAt timestamps — the Go server
+        // compares this to skip full world rebuilds when nothing changed.
+        const versionParts = [String(inst.updatedAt || inst._id)];
+        for (const m of mapDocs) versionParts.push(String(m.updatedAt || m._id));
+        if (conf.updatedAt) versionParts.push(String(conf.updatedAt));
+        const version = crypto.createHash('sha256').update(versionParts.join('|')).digest('hex');
 
         callback(null, {
           instance: toInstanceMsg(inst),
           maps: mapDocs.map(toMapMsg),
           objectLayers: olDocs.map(toObjectLayerMsg),
           config: toInstanceConfig(conf),
+          version,
         });
       } catch (err) {
         logger.error('getFullInstance:', err);

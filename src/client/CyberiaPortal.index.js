@@ -9,7 +9,7 @@ import { SignUpCyberiaPortal } from './components/cyberia-portal/SignUpCyberiaPo
 import { MenuCyberiaPortal } from './components/cyberia-portal/MenuCyberiaPortal.js';
 import { RouterCyberiaPortal } from './components/cyberia-portal/RoutesCyberiaPortal.js';
 import { TranslateCyberiaPortal } from './components/cyberia-portal/TranslateCyberiaPortal.js';
-import { Worker } from './components/core/Worker.js';
+import { AppRunner } from './components/core/AppRunner.js';
 import { CssCyberiaDark, CssCyberiaLight } from './components/cyberia-portal/CssCyberiaPortal.js';
 import { SocketIoCyberiaPortal } from './components/cyberia-portal/SocketIoCyberiaPortal.js';
 import { SocketIo } from './components/core/SocketIo.js';
@@ -17,7 +17,7 @@ import { AppStoreCyberiaPortal } from './components/cyberia-portal/AppStoreCyber
 import { Keyboard } from './components/core/Keyboard.js';
 
 window.onload = () =>
-  Worker.instance({
+  AppRunner.run({
     router: RouterCyberiaPortal,
     render: async () => {
       await Css.loadThemes([CssCyberiaDark, CssCyberiaLight]);
@@ -25,6 +25,8 @@ window.onload = () =>
       await TranslateCyberiaPortal.Init();
       await Responsive.Init();
       await MenuCyberiaPortal.Render();
+    },
+    sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreCyberiaPortal.Data });
       await SocketIoCyberiaPortal.Init();
       await LogInCyberiaPortal();

@@ -4,13 +4,13 @@ import { DataQuery } from '../../server/data-query.js';
 
 const logger = loggerFactory(import.meta);
 
-const ObjectLayerRenderFramesService = {
-  post: async (req, res, options) => {
+class ObjectLayerRenderFramesService {
+  static async post(req, res, options) {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
     const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     return await new ObjectLayerRenderFrames(req.body).save();
-  },
-  get: async (req, res, options) => {
+  }
+  static async get(req, res, options) {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
     const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     if (req.params.id) return await ObjectLayerRenderFrames.findById(req.params.id);
@@ -25,18 +25,18 @@ const ObjectLayerRenderFramesService = {
 
     const totalPages = Math.ceil(total / limit);
     return { data, total, page, totalPages };
-  },
-  put: async (req, res, options) => {
+  }
+  static async put(req, res, options) {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
     const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     return await ObjectLayerRenderFrames.findByIdAndUpdate(req.params.id, req.body);
-  },
-  delete: async (req, res, options) => {
+  }
+  static async delete(req, res, options) {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
     const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     if (req.params.id) return await ObjectLayerRenderFrames.findByIdAndDelete(req.params.id);
     else return await ObjectLayerRenderFrames.deleteMany();
-  },
-};
+  }
+}
 
 export { ObjectLayerRenderFramesService };

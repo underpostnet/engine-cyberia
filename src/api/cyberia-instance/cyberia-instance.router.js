@@ -5,9 +5,16 @@ import express from 'express';
 
 const logger = loggerFactory(import.meta);
 
-const CyberiaInstanceRouter = (options) => {
+class CyberiaInstanceRouter {
+  /**
+   * Builds and returns the Express Router for this API.
+   * @param {import('../../server/auth.js').RouterOptions} options
+   * @returns {import('express').Router}
+   * @memberof CyberiaInstanceRouter
+   */
+  static router(options) {
   const router = express.Router();
-  const authMiddleware = options.authMiddleware;
+  const { authMiddleware } = options;
   // ── Custom actions (must come before generic /:id routes) ──────────────
   router.get(`/fallback-world`, async (req, res) => await CyberiaInstanceController.fallbackWorld(req, res, options));
   router.get(
@@ -56,8 +63,9 @@ const CyberiaInstanceRouter = (options) => {
     async (req, res) => await CyberiaInstanceController.delete(req, res, options),
   );
   return router;
-};
+  }
+}
 
-const ApiRouter = CyberiaInstanceRouter;
+const ApiRouter = (options) => CyberiaInstanceRouter.router(options);
 
 export { ApiRouter, CyberiaInstanceRouter };

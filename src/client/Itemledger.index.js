@@ -9,7 +9,7 @@ import { SignUpItemledger } from './components/itemledger/SignUpItemledger.js';
 import { MenuItemledger } from './components/itemledger/MenuItemledger.js';
 import { RouterItemledger } from './components/itemledger/RoutesItemledger.js';
 import { TranslateItemledger } from './components/itemledger/TranslateItemledger.js';
-import { Worker } from './components/core/Worker.js';
+import { AppRunner } from './components/core/AppRunner.js';
 import { Keyboard } from './components/core/Keyboard.js';
 import { SocketIo } from './components/core/SocketIo.js';
 import { SocketIoItemledger } from './components/itemledger/SocketIoItemledger.js';
@@ -23,7 +23,7 @@ const htmlMainBody = async () => {
 };
 
 window.onload = () =>
-  Worker.instance({
+  AppRunner.run({
     router: RouterItemledger,
     render: async () => {
       await Css.loadThemes([CssItemledgerLight, CssItemledgerDark]);
@@ -31,6 +31,8 @@ window.onload = () =>
       await TranslateItemledger.Init();
       await Responsive.Init();
       await MenuItemledger.Render({ htmlMainBody });
+    },
+    sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreItemledger.Data });
       await SocketIoItemledger.Init();
       await LogInItemledger();

@@ -3,8 +3,8 @@ import { CyberiaEntityService } from './cyberia-entity.service.js';
 
 const logger = loggerFactory(import.meta);
 
-const CyberiaEntityController = {
-  post: async (req, res, options) => {
+class CyberiaEntityController {
+  static async post(req, res, options) {
     try {
       const result = await CyberiaEntityService.post(req, res, options);
       return res.status(200).json({
@@ -18,8 +18,8 @@ const CyberiaEntityController = {
         message: error.message,
       });
     }
-  },
-  get: async (req, res, options) => {
+  }
+  static async get(req, res, options) {
     try {
       const { page, limit } = req.query;
       const result = await CyberiaEntityService.get(
@@ -38,8 +38,8 @@ const CyberiaEntityController = {
         message: error.message,
       });
     }
-  },
-  put: async (req, res, options) => {
+  }
+  static async put(req, res, options) {
     try {
       const result = await CyberiaEntityService.put(req, res, options);
       return res.status(200).json({
@@ -53,8 +53,8 @@ const CyberiaEntityController = {
         message: error.message,
       });
     }
-  },
-  delete: async (req, res, options) => {
+  }
+  static async delete(req, res, options) {
     try {
       const result = await CyberiaEntityService.delete(req, res, options);
       return res.status(200).json({
@@ -68,7 +68,7 @@ const CyberiaEntityController = {
         message: error.message,
       });
     }
-  },
-};
+  }
+}
 
 export { CyberiaEntityController };

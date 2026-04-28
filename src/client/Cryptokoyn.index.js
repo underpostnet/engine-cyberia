@@ -8,7 +8,7 @@ import { LogOutCryptokoyn } from './components/cryptokoyn/LogOutCryptokoyn.js';
 import { SignUpCryptokoyn } from './components/cryptokoyn/SignUpCryptokoyn.js';
 import { MenuCryptokoyn } from './components/cryptokoyn/MenuCryptokoyn.js';
 import { RouterCryptokoyn } from './components/cryptokoyn/RoutesCryptokoyn.js';
-import { Worker } from './components/core/Worker.js';
+import { AppRunner } from './components/core/AppRunner.js';
 import { Keyboard } from './components/core/Keyboard.js';
 import { SocketIo } from './components/core/SocketIo.js';
 import { SocketIoCryptokoyn } from './components/cryptokoyn/SocketIoCryptokoyn.js';
@@ -16,13 +16,15 @@ import { AppStoreCryptokoyn } from './components/cryptokoyn/AppStoreCryptokoyn.j
 import { CssCryptokoynDark, CssCryptokoynLight } from './components/cryptokoyn/CssCryptokoyn.js';
 
 window.onload = () =>
-  Worker.instance({
+  AppRunner.run({
     router: RouterCryptokoyn,
     render: async () => {
       await Css.loadThemes([CssCryptokoynDark, CssCryptokoynLight]);
       await TranslateCore.Init();
       await Responsive.Init();
       await MenuCryptokoyn.Render();
+    },
+    sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreCryptokoyn.Data });
       await SocketIoCryptokoyn.Init();
       await LogInCryptokoyn();

@@ -4,9 +4,16 @@ import express from 'express';
 
 const logger = loggerFactory(import.meta);
 
-const CyberiaInstanceConfRouter = (options) => {
+class CyberiaInstanceConfRouter {
+  /**
+   * Builds and returns the Express Router for this API.
+   * @param {import('../../server/auth.js').RouterOptions} options
+   * @returns {import('express').Router}
+   * @memberof CyberiaInstanceConfRouter
+   */
+  static router(options) {
   const router = express.Router();
-  const authMiddleware = options.authMiddleware;
+  const { authMiddleware } = options;
   router.post(`/:id`, async (req, res) => await CyberiaInstanceConfController.post(req, res, options));
   router.post(`/`, async (req, res) => await CyberiaInstanceConfController.post(req, res, options));
   router.get(
@@ -20,8 +27,9 @@ const CyberiaInstanceConfRouter = (options) => {
   router.delete(`/:id`, async (req, res) => await CyberiaInstanceConfController.delete(req, res, options));
   router.delete(`/`, async (req, res) => await CyberiaInstanceConfController.delete(req, res, options));
   return router;
-};
+  }
+}
 
-const ApiRouter = CyberiaInstanceConfRouter;
+const ApiRouter = (options) => CyberiaInstanceConfRouter.router(options);
 
 export { ApiRouter, CyberiaInstanceConfRouter };

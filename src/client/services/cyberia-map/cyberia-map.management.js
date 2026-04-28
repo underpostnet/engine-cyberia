@@ -7,8 +7,8 @@ import { DefaultManagement } from '../default/default.management.js';
 import { CyberiaMapService } from './cyberia-map.service.js';
 import { getApiBaseUrl } from '../core/core.service.js';
 
-const CyberiaMapManagement = {
-  RenderTable: async (options = {}) => {
+class CyberiaMapManagement {
+  static async RenderTable(options = {}) {
     const { idModal: rawIdModal, customEvent, readyRowDataEvent, loadMapCallback, appStore } = options;
     const idModal = rawIdModal || 'modal-cyberia-map-management';
     const role = appStore?.Data?.user?.main?.model?.user?.role || 'guest';
@@ -187,7 +187,7 @@ const CyberiaMapManagement = {
     }
 
     return renderResult;
-  },
-};
+  }
+}
 
 export { CyberiaMapManagement };

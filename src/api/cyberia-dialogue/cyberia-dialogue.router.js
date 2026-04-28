@@ -4,9 +4,16 @@ import express from 'express';
 
 const logger = loggerFactory(import.meta);
 
-const CyberiaDialogueRouter = (options) => {
+class CyberiaDialogueRouter {
+  /**
+   * Builds and returns the Express Router for this API.
+   * @param {import('../../server/auth.js').RouterOptions} options
+   * @returns {import('express').Router}
+   * @memberof CyberiaDialogueRouter
+   */
+  static router(options) {
   const router = express.Router();
-  const authMiddleware = options.authMiddleware;
+  const { authMiddleware } = options;
   router.post(`/:id`, async (req, res) => await CyberiaDialogueController.post(req, res, options));
   router.post(`/`, async (req, res) => await CyberiaDialogueController.post(req, res, options));
   // Direct lookup by itemId — C client fetches dialogue by item key (same pattern as atlas /metadata/:itemKey)
@@ -22,8 +29,9 @@ const CyberiaDialogueRouter = (options) => {
   router.delete(`/:id`, async (req, res) => await CyberiaDialogueController.delete(req, res, options));
   router.delete(`/`, async (req, res) => await CyberiaDialogueController.delete(req, res, options));
   return router;
-};
+  }
+}
 
-const ApiRouter = CyberiaDialogueRouter;
+const ApiRouter = (options) => CyberiaDialogueRouter.router(options);
 
 export { ApiRouter, CyberiaDialogueRouter };

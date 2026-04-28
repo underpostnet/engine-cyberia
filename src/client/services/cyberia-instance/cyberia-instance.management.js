@@ -7,8 +7,8 @@ import { DefaultManagement } from '../default/default.management.js';
 import { CyberiaInstanceService } from './cyberia-instance.service.js';
 import { getApiBaseUrl } from '../core/core.service.js';
 
-const CyberiaInstanceManagement = {
-  RenderTable: async (options = {}) => {
+class CyberiaInstanceManagement {
+  static async RenderTable(options = {}) {
     const { idModal: rawIdModal, customEvent, readyRowDataEvent, loadInstanceCallback, appStore } = options;
     const idModal = rawIdModal || 'modal-cyberia-instance-management';
     const role = appStore?.Data?.user?.main?.model?.user?.role || 'guest';
@@ -188,7 +188,7 @@ const CyberiaInstanceManagement = {
     }
 
     return renderResult;
-  },
-};
+  }
+}
 
 export { CyberiaInstanceManagement };

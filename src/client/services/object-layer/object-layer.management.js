@@ -10,8 +10,8 @@ import { BtnIcon } from '../../components/core/BtnIcon.js';
 import { NotificationManager } from '../../components/core/NotificationManager.js';
 import { AgGrid } from '../../components/core/AgGrid.js';
 
-const ObjectLayerManagement = {
-  RenderTable: async ({ appStore, idModal: rawIdModal }) => {
+class ObjectLayerManagement {
+  static async RenderTable({ appStore, idModal: rawIdModal }) {
     const idModal = rawIdModal || 'modal-object-layer-engine-management';
     const serviceId = 'object-layer-engine-management';
     const gridId = `${serviceId}-grid-${idModal}`;
@@ -400,15 +400,15 @@ const ObjectLayerManagement = {
         limitOptions: [10, 25, 50, 100, 200],
       },
     });
-  },
-  Reload: async function (subModalId = 'management') {
+  }
+  static async Reload(subModalId = 'management') {
     const idModal = `modal-object-layer-engine-${subModalId}`;
     if (s(`.modal-object-layer-engine-${subModalId}`))
       Modal.writeHTML({
         idModal,
         html: await Modal.Data[idModal].options.html(),
       });
-  },
-};
+  }
+}
 
 export { ObjectLayerManagement };

@@ -8,8 +8,8 @@ logger.info('Load service');
 
 const endpoint = 'ipfs';
 
-const IpfsService = {
-  post: (options = { id: '', body: {} }) =>
+class IpfsService {
+  static post = (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
         method: 'POST',
@@ -28,8 +28,8 @@ const IpfsService = {
           logger.error(error);
           return reject(error);
         }),
-    ),
-  put: (options = { id: '', body: {} }) =>
+    );
+  static put = (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
         method: 'PUT',
@@ -48,8 +48,8 @@ const IpfsService = {
           logger.error(error);
           return reject(error);
         }),
-    ),
-  get: (options = {}) => {
+    );
+  static get(options = {}) {
     const { id, page, limit, filterModel, sortModel, sort, asc, order } = options;
     const url = buildQueryUrl(getApiBaseUrl({ id, endpoint }), {
       page,
@@ -79,8 +79,8 @@ const IpfsService = {
           return reject(error);
         }),
     );
-  },
-  delete: (options = { id: '', body: {} }) =>
+  }
+  static delete = (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
         method: 'DELETE',
@@ -99,8 +99,8 @@ const IpfsService = {
           logger.error(error);
           return reject(error);
         }),
-    ),
-  verify: () =>
+    );
+  static verify = () =>
     new Promise((resolve, reject) =>
       fetch(`${getApiBaseUrl({ endpoint })}/verify`, {
         method: 'GET',
@@ -118,7 +118,7 @@ const IpfsService = {
           logger.error(error);
           return reject(error);
         }),
-    ),
-};
+    );
+}
 
 export { IpfsService };

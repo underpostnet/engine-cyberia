@@ -48,21 +48,21 @@ const removePinRecordsAndUnpin = async (cid, options) => {
   }
 };
 
-const IpfsService = {
+class IpfsService {
   /** Expose helpers so other modules can import them directly. */
-  createPinRecord,
-  removePinRecordsAndUnpin,
+  static createPinRecord = createPinRecord;
+  static removePinRecordsAndUnpin = removePinRecordsAndUnpin;
 
   // ──────────────────────────────────────────────
   //  Standard CRUD
   // ──────────────────────────────────────────────
 
-  post: async (req, res, options) => {
+  static async post(req, res, options) {
     const Ipfs = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Ipfs;
     return await new Ipfs(req.body).save();
-  },
+  }
 
-  get: async (req, res, options) => {
+  static async get(req, res, options) {
     const Ipfs = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Ipfs;
     if (req.params.id) {
       return await Ipfs.findById(req.params.id).select(IpfsDto.select.get());
@@ -74,14 +74,14 @@ const IpfsService = {
     ]);
     const totalPages = Math.ceil(total / limit);
     return { data, total, page, totalPages };
-  },
+  }
 
-  put: async (req, res, options) => {
+  static async put(req, res, options) {
     const Ipfs = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Ipfs;
     return await Ipfs.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
-  },
+  }
 
-  delete: async (req, res, options) => {
+  static async delete(req, res, options) {
     const Ipfs = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Ipfs;
     if (req.params.id) {
       const record = await Ipfs.findById(req.params.id);
@@ -101,7 +101,7 @@ const IpfsService = {
       return null;
     }
     return await Ipfs.deleteMany();
-  },
+  }
 
   // ──────────────────────────────────────────────
   //  Health / audit
@@ -117,7 +117,7 @@ const IpfsService = {
    * Response shape:
    *   { total, pinned, unpinned, errors, entries: [{ cid, resourceType, mfsPath, pinned, error? }] }
    */
-  verify: async (req, res, options) => {
+  static async verify(req, res, options) {
     const Ipfs = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Ipfs;
     const records = await Ipfs.find({}).select(IpfsDto.select.get()).lean();
 
@@ -139,7 +139,7 @@ const IpfsService = {
     );
 
     return { total: records.length, pinned, unpinned, errors, entries };
-  },
-};
+  }
+}
 
 export { IpfsService, createPinRecord, removePinRecordsAndUnpin };

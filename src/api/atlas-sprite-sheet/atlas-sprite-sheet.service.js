@@ -49,8 +49,8 @@ async function withResolvedAtlasFrameDuration(doc, ObjectLayer) {
   };
 }
 
-const AtlasSpriteSheetService = {
-  blob: async (req, res, options) => {
+class AtlasSpriteSheetService {
+  static async blob(req, res, options) {
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
     const AtlasSpriteSheet =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.AtlasSpriteSheet;
@@ -65,8 +65,8 @@ const AtlasSpriteSheetService = {
     if (!fileDoc || !fileDoc.data) throw new Error(`File not found for atlas itemKey: ${itemKey}`);
 
     return { buffer: Buffer.from(fileDoc.data), mimetype: fileDoc.mimetype || 'image/png', name: fileDoc.name };
-  },
-  generate: async (req, res, options, generateOptions = {}) => {
+  }
+  static async generate(req, res, options, generateOptions = {}) {
     /** @type {import('../object-layer/object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
     /** @type {import('../file/file.model.js').FileModel} */
@@ -190,8 +190,8 @@ const AtlasSpriteSheetService = {
     await objectLayer.save();
 
     return atlasDoc;
-  },
-  deleteByObjectLayerId: async (req, res, options) => {
+  }
+  static async deleteByObjectLayerId(req, res, options) {
     /** @type {import('../object-layer/object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
     /** @type {import('../file/file.model.js').FileModel} */
@@ -249,14 +249,14 @@ const AtlasSpriteSheetService = {
     }
 
     return { success: true };
-  },
-  post: async (req, res, options) => {
+  }
+  static async post(req, res, options) {
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
     const AtlasSpriteSheet =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.AtlasSpriteSheet;
     return await new AtlasSpriteSheet(req.body).save();
-  },
-  get: async (req, res, options) => {
+  }
+  static async get(req, res, options) {
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
     const AtlasSpriteSheet =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.AtlasSpriteSheet;
@@ -280,10 +280,10 @@ const AtlasSpriteSheetService = {
 
     const totalPages = Math.ceil(total / limit);
     return { data, total, page, totalPages };
-  },
+  }
   // Returns atlas metadata (layout + frames) for the client.
   // Client fetches this once per itemKey, caches it, then fetches the PNG blob.
-  getMetadata: async (req, res, options) => {
+  static async getMetadata(req, res, options) {
     /** @type {import('../object-layer/object-layer.model.js').ObjectLayerModel} */
     const ObjectLayer = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayer;
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
@@ -323,14 +323,14 @@ const AtlasSpriteSheetService = {
       page,
       totalPages,
     };
-  },
-  put: async (req, res, options) => {
+  }
+  static async put(req, res, options) {
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
     const AtlasSpriteSheet =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.AtlasSpriteSheet;
     return await AtlasSpriteSheet.findByIdAndUpdate(req.params.id, req.body);
-  },
-  delete: async (req, res, options) => {
+  }
+  static async delete(req, res, options) {
     /** @type {import('./atlas-sprite-sheet.model.js').AtlasSpriteSheetModel} */
     const AtlasSpriteSheet =
       DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.AtlasSpriteSheet;
@@ -382,7 +382,7 @@ const AtlasSpriteSheetService = {
       }
       return await AtlasSpriteSheet.deleteMany();
     }
-  },
-};
+  }
+}
 
 export { AtlasSpriteSheetService };

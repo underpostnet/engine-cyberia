@@ -9,7 +9,7 @@ import { SignUpUnderpost } from './components/underpost/SignUpUnderpost.js';
 import { MenuUnderpost } from './components/underpost/MenuUnderpost.js';
 import { RouterUnderpost } from './components/underpost/RoutesUnderpost.js';
 import { TranslateUnderpost } from './components/underpost/TranslateUnderpost.js';
-import { Worker } from './components/core/Worker.js';
+import { AppRunner } from './components/core/AppRunner.js';
 import { Keyboard } from './components/core/Keyboard.js';
 import { SocketIoUnderpost } from './components/underpost/SocketIoUnderpost.js';
 import { SocketIo } from './components/core/SocketIo.js';
@@ -17,7 +17,7 @@ import { AppStoreUnderpost } from './components/underpost/AppStoreUnderpost.js';
 import { CssUnderpostDark, CssUnderpostLight } from './components/underpost/CssUnderpost.js';
 
 window.onload = () =>
-  Worker.instance({
+  AppRunner.run({
     router: RouterUnderpost,
     render: async () => {
       await Css.loadThemes([CssUnderpostDark, CssUnderpostLight]);
@@ -25,6 +25,8 @@ window.onload = () =>
       await TranslateUnderpost.Init();
       await Responsive.Init();
       await MenuUnderpost.Render();
+    },
+    sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreUnderpost.Data });
       await SocketIoUnderpost.Init();
       await LogInUnderpost();

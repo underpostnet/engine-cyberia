@@ -18,9 +18,10 @@ import { Badge } from '../core/Badge.js';
 import { SettingsCryptokoyn } from './SettingsCryptokoyn.js';
 import { Recover } from '../core/Recover.js';
 
-const MenuCryptokoyn = {
-  Data: {},
-  Render: async function () {
+class MenuCryptokoyn {
+  static Data = {};
+
+  static async Render() {
     const id = getId(this.Data, 'menu-');
     this.Data[id] = {};
     const RouterInstance = RouterCryptokoyn();
@@ -346,7 +347,7 @@ const MenuCryptokoyn = {
         RouterInstance,
       });
     });
-  },
-};
+  }
+}
 
 export { MenuCryptokoyn };

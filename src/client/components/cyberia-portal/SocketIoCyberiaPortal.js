@@ -1,6 +1,12 @@
 import { SocketIoHandlerProvider } from '../core/SocketIoHandler.js';
 import { AppStoreCyberiaPortal } from './AppStoreCyberiaPortal.js';
 
-const SocketIoCyberiaPortal = SocketIoHandlerProvider.create(AppStoreCyberiaPortal);
+class SocketIoCyberiaPortal {
+  static Handler = SocketIoHandlerProvider.create(AppStoreCyberiaPortal);
+
+  static Init(...args) {
+    return this.Handler.Init(...args);
+  }
+}
 
 export { SocketIoCyberiaPortal };

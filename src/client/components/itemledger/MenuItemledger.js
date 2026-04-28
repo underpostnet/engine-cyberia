@@ -19,9 +19,10 @@ import { Docs } from '../core/Docs.js';
 import { Recover } from '../core/Recover.js';
 import { DefaultManagement } from '../../services/default/default.management.js';
 
-const MenuItemledger = {
-  Data: {},
-  Render: async function (options = { htmlMainBody: () => html`` }) {
+class MenuItemledger {
+  static Data = {};
+
+  static async Render(options = { htmlMainBody: () => html`` }) {
     const id = getId(this.Data, 'menu-');
     this.Data[id] = {};
     const RouterInstance = RouterItemledger();
@@ -347,7 +348,7 @@ const MenuItemledger = {
         RouterInstance,
       });
     });
-  },
-};
+  }
+}
 
 export { MenuItemledger };

@@ -29,9 +29,9 @@ window.onload = () =>
     sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreUnderpost.Data });
       await SocketIoUnderpost.Init();
-      await LogInUnderpost();
-      await LogOutUnderpost();
-      await SignUpUnderpost();
+      await LogInUnderpost.Init();
+      await LogOutUnderpost.Init();
+      await SignUpUnderpost.Init();
       await Keyboard.Init();
     },
   });

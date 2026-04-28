@@ -1,6 +1,12 @@
 import { SocketIoHandlerProvider } from '../core/SocketIoHandler.js';
 import { AppStoreCryptokoyn } from './AppStoreCryptokoyn.js';
 
-const SocketIoCryptokoyn = SocketIoHandlerProvider.create(AppStoreCryptokoyn);
+class SocketIoCryptokoyn {
+  static Handler = SocketIoHandlerProvider.create(AppStoreCryptokoyn);
+
+  static Init(...args) {
+    return this.Handler.Init(...args);
+  }
+}
 
 export { SocketIoCryptokoyn };

@@ -29,9 +29,9 @@ window.onload = () =>
     sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreCyberiaPortal.Data });
       await SocketIoCyberiaPortal.Init();
-      await LogInCyberiaPortal();
-      await LogOutCyberiaPortal();
-      await SignUpCyberiaPortal();
+      await LogInCyberiaPortal.Init();
+      await LogOutCyberiaPortal.Init();
+      await SignUpCyberiaPortal.Init();
       await Keyboard.Init();
     },
   });

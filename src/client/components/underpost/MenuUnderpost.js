@@ -26,9 +26,10 @@ import { Polyhedron } from '../core/Polyhedron.js';
 import { FileExplorer } from '../core/FileExplorer.js';
 import { Content } from '../core/Content.js';
 
-const MenuUnderpost = {
-  Data: {},
-  Render: async function () {
+class MenuUnderpost {
+  static Data = {};
+
+  static async Render() {
     const id = getId(this.Data, 'menu-');
     this.Data[id] = {};
     const RouterInstance = RouterUnderpost();
@@ -685,7 +686,7 @@ const MenuUnderpost = {
     EventsUI.onClick(`.main-btn-github`, async () => {
       location.href = `https://github.com/underpostnet/pwa-microservices-template/`;
     });
-  },
-};
+  }
+}
 
 export { MenuUnderpost };

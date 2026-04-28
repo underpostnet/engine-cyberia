@@ -35,9 +35,9 @@ window.onload = () =>
     sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreItemledger.Data });
       await SocketIoItemledger.Init();
-      await LogInItemledger();
-      await LogOutItemledger();
-      await SignUpItemledger();
+      await LogInItemledger.Init();
+      await LogOutItemledger.Init();
+      await SignUpItemledger.Init();
       await Keyboard.Init();
     },
   });

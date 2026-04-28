@@ -32,9 +32,10 @@ import { MainBodyCyberiaPortal } from './MainBodyCyberiaPortal.js';
 import { MapEngineCyberia } from '../cyberia/MapEngineCyberia.js';
 import { InstanceEngineCyberia } from '../cyberia/InstanceEngineCyberia.js';
 
-const MenuCyberiaPortal = {
-  Data: {},
-  Render: async function () {
+class MenuCyberiaPortal {
+  static Data = {};
+
+  static async Render() {
     const id = getId(this.Data, 'menu-');
     this.Data[id] = {};
     const RouterInstance = RouterCyberiaPortal();
@@ -668,7 +669,7 @@ const MenuCyberiaPortal = {
       const { protocol, hostname } = window.location;
       return (location.href = `${protocol}//${hostname}/admin${['', 0][random(0, 1)]}`);
     };
-  },
-};
+  }
+}
 
 export { MenuCyberiaPortal };

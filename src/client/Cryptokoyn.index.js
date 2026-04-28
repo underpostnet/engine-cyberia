@@ -27,9 +27,9 @@ window.onload = () =>
     sessionInit: async () => {
       await SocketIo.Init({ channels: AppStoreCryptokoyn.Data });
       await SocketIoCryptokoyn.Init();
-      await LogInCryptokoyn();
-      await LogOutCryptokoyn();
-      await SignUpCryptokoyn();
+      await LogInCryptokoyn.Init();
+      await LogOutCryptokoyn.Init();
+      await SignUpCryptokoyn.Init();
       await Keyboard.Init();
     },
   });

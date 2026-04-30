@@ -1,13 +1,9 @@
 import { Auth } from '../../components/core/Auth.js';
 import { loggerFactory } from '../../components/core/Logger.js';
 import { getApiBaseUrl, headersFactory, payloadFactory, buildQueryUrl } from '../core/core.service.js';
-
 const logger = loggerFactory(import.meta);
-
 logger.info('Load service');
-
 const endpoint = 'instance';
-
 class InstanceService {
   static post = (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
@@ -49,7 +45,7 @@ class InstanceService {
           return reject(error);
         }),
     );
-  static get(
+  static get = (
     options = {
       id: '',
       page: 1,
@@ -59,7 +55,7 @@ class InstanceService {
       sort: undefined,
       asc: undefined,
     },
-  ) {
+  ) => {
     const url = buildQueryUrl(getApiBaseUrl({ id: options.id, endpoint }), {
       page: options.page,
       limit: options.limit,
@@ -86,7 +82,7 @@ class InstanceService {
           return reject(error);
         }),
     );
-  }
+  };
   static delete = (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
@@ -108,5 +104,4 @@ class InstanceService {
         }),
     );
 }
-
 export { InstanceService };

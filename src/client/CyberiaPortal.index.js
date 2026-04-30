@@ -1,37 +1,31 @@
 'use strict';
 
-import { Css } from './components/core/Css.js';
-import { Responsive } from './components/core/Responsive.js';
-import { TranslateCore } from './components/core/Translate.js';
+import { Worker } from './components/core/Worker.js';
+import { RouterCyberiaPortal } from './components/cyberia-portal/RouterCyberiaPortal.js';
+import { AppShellCyberiaPortal } from './components/cyberia-portal/AppShellCyberiaPortal.js';
+import { AppStoreCyberiaPortal } from './components/cyberia-portal/AppStoreCyberiaPortal.js';
+import { SocketIoCyberiaPortal } from './components/cyberia-portal/SocketIoCyberiaPortal.js';
 import { LogInCyberiaPortal } from './components/cyberia-portal/LogInCyberiaPortal.js';
 import { LogOutCyberiaPortal } from './components/cyberia-portal/LogOutCyberiaPortal.js';
 import { SignUpCyberiaPortal } from './components/cyberia-portal/SignUpCyberiaPortal.js';
-import { MenuCyberiaPortal } from './components/cyberia-portal/MenuCyberiaPortal.js';
-import { RouterCyberiaPortal } from './components/cyberia-portal/RoutesCyberiaPortal.js';
-import { TranslateCyberiaPortal } from './components/cyberia-portal/TranslateCyberiaPortal.js';
-import { AppRunner } from './components/core/AppRunner.js';
 import { CssCyberiaDark, CssCyberiaLight } from './components/cyberia-portal/CssCyberiaPortal.js';
-import { SocketIoCyberiaPortal } from './components/cyberia-portal/SocketIoCyberiaPortal.js';
-import { SocketIo } from './components/core/SocketIo.js';
-import { AppStoreCyberiaPortal } from './components/cyberia-portal/AppStoreCyberiaPortal.js';
-import { Keyboard } from './components/core/Keyboard.js';
+import { TranslateCyberiaPortal } from './components/cyberia-portal/TranslateCyberiaPortal.js';
+
+const CssCyberiaPortalThemes = [CssCyberiaDark, CssCyberiaLight];
 
 window.onload = () =>
-  AppRunner.run({
+  Worker.instance({
     router: RouterCyberiaPortal,
-    render: async () => {
-      await Css.loadThemes([CssCyberiaDark, CssCyberiaLight]);
-      await TranslateCore.Init();
-      await TranslateCyberiaPortal.Init();
-      await Responsive.Init();
-      await MenuCyberiaPortal.Render();
-    },
-    sessionInit: async () => {
-      await SocketIo.Init({ channels: AppStoreCyberiaPortal.Data });
-      await SocketIoCyberiaPortal.Init();
-      await LogInCyberiaPortal.Init();
-      await LogOutCyberiaPortal.Init();
-      await SignUpCyberiaPortal.Init();
-      await Keyboard.Init();
+
+    themes: CssCyberiaPortalThemes,
+    translate: TranslateCyberiaPortal,
+    render: AppShellCyberiaPortal,
+    appStore: AppStoreCyberiaPortal,
+
+    session: {
+      socket: SocketIoCyberiaPortal,
+      login: LogInCyberiaPortal,
+      signout: LogOutCyberiaPortal,
+      signup: SignUpCyberiaPortal,
     },
   });

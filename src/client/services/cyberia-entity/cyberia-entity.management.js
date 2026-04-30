@@ -2,11 +2,11 @@ import { DefaultManagement } from '../default/default.management.js';
 import { CyberiaEntityService } from './cyberia-entity.service.js';
 
 class CyberiaEntityManagement {
-  static async RenderTable(options = {}) {
+  static instance = async (options = {}) => {
     const { idModal: rawIdModal, customEvent, readyRowDataEvent } = options;
     const idModal = rawIdModal || 'modal-cyberia-entity-management';
 
-    const renderResult = await DefaultManagement.RenderTable({
+    const renderResult = await DefaultManagement.instance({
       idModal,
       serviceId: 'cyberia-entity-management',
       entity: 'cyberia-entity',
@@ -51,7 +51,7 @@ class CyberiaEntityManagement {
     }
 
     return renderResult;
-  }
+  };
 }
 
 export { CyberiaEntityManagement };

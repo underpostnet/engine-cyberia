@@ -4,16 +4,9 @@ import express from 'express';
 
 const logger = loggerFactory(import.meta);
 
-class AtlasSpriteSheetRouter {
-  /**
-   * Builds and returns the Express Router for this API.
-   * @param {import('../../server/auth.js').RouterOptions} options
-   * @returns {import('express').Router}
-   * @memberof AtlasSpriteSheetRouter
-   */
-  static router(options) {
+const AtlasSpriteSheetRouter = (options) => {
   const router = express.Router();
-  const { authMiddleware } = options;
+  const authMiddleware = options.authMiddleware;
   router.post(
     `/generate/:id`,
     authMiddleware,
@@ -42,9 +35,8 @@ class AtlasSpriteSheetRouter {
   router.delete(`/:id`, authMiddleware, async (req, res) => await AtlasSpriteSheetController.delete(req, res, options));
   router.delete(`/`, authMiddleware, async (req, res) => await AtlasSpriteSheetController.delete(req, res, options));
   return router;
-  }
-}
+};
 
-const ApiRouter = (options) => AtlasSpriteSheetRouter.router(options);
+const ApiRouter = AtlasSpriteSheetRouter;
 
 export { ApiRouter, AtlasSpriteSheetRouter };

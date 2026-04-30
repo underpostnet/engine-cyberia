@@ -5,14 +5,16 @@ import { DataQuery } from '../../server/data-query.js';
 const logger = loggerFactory(import.meta);
 
 class CyberiaInstanceConfService {
-  static async post(req, res, options) {
+  static post = async (req, res, options) => {
     /** @type {import('./cyberia-instance-conf.model.js').CyberiaInstanceConfModel} */
-    const CyberiaInstanceConf = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
+    const CyberiaInstanceConf =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
     return await new CyberiaInstanceConf(req.body).save();
-  }
-  static async get(req, res, options) {
+  };
+  static get = async (req, res, options) => {
     /** @type {import('./cyberia-instance-conf.model.js').CyberiaInstanceConfModel} */
-    const CyberiaInstanceConf = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
+    const CyberiaInstanceConf =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
     if (req.params.id) return await CyberiaInstanceConf.findById(req.params.id);
 
     // Parse query parameters using DataQuery helper
@@ -25,18 +27,20 @@ class CyberiaInstanceConfService {
 
     const totalPages = Math.ceil(total / limit);
     return { data, total, page, totalPages };
-  }
-  static async put(req, res, options) {
+  };
+  static put = async (req, res, options) => {
     /** @type {import('./cyberia-instance-conf.model.js').CyberiaInstanceConfModel} */
-    const CyberiaInstanceConf = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
+    const CyberiaInstanceConf =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
     return await CyberiaInstanceConf.findByIdAndUpdate(req.params.id, req.body);
-  }
-  static async delete(req, res, options) {
+  };
+  static delete = async (req, res, options) => {
     /** @type {import('./cyberia-instance-conf.model.js').CyberiaInstanceConfModel} */
-    const CyberiaInstanceConf = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
+    const CyberiaInstanceConf =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaInstanceConf;
     if (req.params.id) return await CyberiaInstanceConf.findByIdAndDelete(req.params.id);
     else return await CyberiaInstanceConf.deleteMany();
-  }
+  };
 }
 
 export { CyberiaInstanceConfService };

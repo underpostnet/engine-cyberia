@@ -1,7 +1,7 @@
 import { Account } from '../core/Account.js';
 import { BtnIcon } from '../core/BtnIcon.js';
 import { getId, newInstance } from '../core/CommonJs.js';
-import { Css, darkTheme, ThemeEvents, Themes } from '../core/Css.js';
+import { Css, ThemeEvents, Themes, darkTheme } from '../core/Css.js';
 import { EventsUI } from '../core/EventsUI.js';
 import { LogIn } from '../core/LogIn.js';
 import { LogOut } from '../core/LogOut.js';
@@ -10,129 +10,127 @@ import { SignUp } from '../core/SignUp.js';
 import { Translate } from '../core/Translate.js';
 import { htmls, s } from '../core/VanillaJs.js';
 import { getProxyPath } from '../core/Router.js';
-import { AppStoreItemledger } from './AppStoreItemledger.js';
+import { AppStoreCryptokoyn } from './AppStoreCryptokoyn.js';
 import Sortable from 'sortablejs';
-import { RouterItemledger, BannerAppTemplate } from './RoutesItemledger.js';
-import { SettingsItemledger } from './SettingsItemledger.js';
+import { RouterCryptokoyn, BannerAppTemplate } from './RouterCryptokoyn.js';
+import { Wallet } from '../core/Wallet.js';
 import { Badge } from '../core/Badge.js';
-import { Docs } from '../core/Docs.js';
+import { SettingsCryptokoyn } from './SettingsCryptokoyn.js';
 import { Recover } from '../core/Recover.js';
-import { DefaultManagement } from '../../services/default/default.management.js';
 
-class MenuItemledger {
+class AppShellCryptokoyn {
   static Data = {};
-
-  static async Render(options = { htmlMainBody: () => html`` }) {
-    const id = getId(this.Data, 'menu-');
-    this.Data[id] = {};
-    const RouterInstance = RouterItemledger();
+  static async instance() {
+    const id = getId(AppShellCryptokoyn.Data, 'menu-');
+    AppShellCryptokoyn.Data[id] = {};
+    const RouterInstance = RouterCryptokoyn.instance();
 
     const { barConfig } = await Themes[Css.currentTheme]();
 
     const badgeNotificationMenuStyle = { top: '-33px', left: '24px' };
     const barMode = undefined; // 'top-bottom-bar';
-    await Modal.Render({
+    await Modal.instance({
       id: 'modal-menu',
       html: html`
         <div class="fl menu-btn-container">
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-home main-btn-menu-active',
             useMenuBtn: true,
             label: renderMenuLabel({
-              icon: html`<img class="inl itemledger-menu-icon" src="${getProxyPath()}assets/ui-icons/home.png" />`,
-              text: html`<span class="menu-label-text">${Translate.Render('home')}</span>`,
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/home.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('home')}</span>`,
             }),
             // style: 'display: none',
             attrs: `data-id="home"`,
             tabHref: `${getProxyPath()}`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('home')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('home')),
           })}
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-log-in',
             useMenuBtn: true,
             label: renderMenuLabel({
-              icon: html`<img class="inl itemledger-menu-icon" src="${getProxyPath()}assets/ui-icons/log-in.png" />`,
-              text: html`<span class="menu-label-text">${Translate.Render('log-in')}</span>`,
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/log-in.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('log-in')}</span>`,
             }),
             attrs: `data-id="log-in"`,
             tabHref: `${getProxyPath()}log-in`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('log-in')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('log-in')),
           })}
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-sign-up',
             useMenuBtn: true,
             label: renderMenuLabel({
-              icon: html`<img class="inl itemledger-menu-icon" src="${getProxyPath()}assets/ui-icons/sign-up.png" />`,
-              text: html`<span class="menu-label-text">${Translate.Render('sign-up')}</span>`,
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/sign-up.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('sign-up')}</span>`,
             }),
             attrs: `data-id="sign-up"`,
             tabHref: `${getProxyPath()}sign-up`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('sign-up')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('sign-up')),
           })}
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-log-out',
             useMenuBtn: true,
             label: renderMenuLabel({
-              icon: html`<img class="inl itemledger-menu-icon" src="${getProxyPath()}assets/ui-icons/log-out.png" />`,
-              text: html`<span class="menu-label-text">${Translate.Render('log-out')}</span>`,
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/log-out.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('log-out')}</span>`,
             }),
             attrs: `data-id="log-out"`,
             style: 'display: none',
             tabHref: `${getProxyPath()}log-out`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('log-out')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('log-out')),
           })}
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-account',
             useMenuBtn: true,
             label: renderMenuLabel({
-              icon: html`<img class="inl itemledger-menu-icon" src="${getProxyPath()}assets/ui-icons/account.png" />`,
-              text: html`<span class="menu-label-text">${Translate.Render('account')}</span>`,
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/account.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('account')}</span>`,
             }),
             style: 'display: none',
             attrs: `data-id="account"`,
             tabHref: `${getProxyPath()}account`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('account')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('account')),
           })}
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
+            class: 'in wfa main-btn-menu main-btn-wallet',
+            useMenuBtn: true,
+            label: renderMenuLabel({
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/wallet.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('wallet')}</span>`,
+            }),
+            attrs: `data-id="wallet"`,
+            tabHref: `${getProxyPath()}wallet`,
+            handleContainerClass: 'handle-btn-container',
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('wallet')),
+          })}
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-settings',
             useMenuBtn: true,
             label: renderMenuLabel({
-              icon: html`<img class="inl itemledger-menu-icon" src="${getProxyPath()}assets/ui-icons/settings.png" />`,
-              text: html`<span class="menu-label-text">${Translate.Render('settings')}</span>`,
+              icon: html`<img class="inl cryptokoyn-menu-icon" src="${getProxyPath()}assets/ui-icons/settings.png" />`,
+              text: html`<span class="menu-label-text">${Translate.instance('settings')}</span>`,
             }),
             attrs: `data-id="settings"`,
             tabHref: `${getProxyPath()}settings`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('settings')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('settings')),
           })}
-          ${await BtnIcon.Render({
-            class: 'in wfa main-btn-menu main-btn-docs hide',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<i class="fas fa-book"></i>`,
-              text: html`<span class="menu-label-text">${Translate.Render('docs')}</span>`,
-            }),
-            attrs: `data-id="docs"`,
-            tabHref: `${getProxyPath()}docs`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('docs')),
-          })}
-          ${await BtnIcon.Render({
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-recover hide',
             useMenuBtn: true,
             label: renderMenuLabel({
               icon: html`<i class="fa-solid fa-arrow-rotate-left"></i>`,
-              text: html`<span class="menu-label-text">${Translate.Render('recover')}</span>`,
+              text: html`<span class="menu-label-text">${Translate.instance('recover')}</span>`,
             }),
             attrs: `data-id="recover"`,
             tabHref: `${getProxyPath()}recover`,
             handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.Render(buildBadgeToolTipMenuOption('recover')),
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('recover')),
           })}
         </div>
       `,
@@ -141,19 +139,23 @@ class MenuItemledger {
       // titleClass: 'hide',
       titleRender: () => {
         ThemeEvents['titleRender'] = () => {
-          const srcLogo = `${getProxyPath()}assets/ui-icons/itemledger.png`;
-          htmls('.action-btn-app-icon-render', html`<img class="inl top-bar-app-icon" src="${srcLogo}" />`);
+          const srcLogo = `${getProxyPath()}assets/ui-icons/cryptokoyn.png`;
+          // negative-color
+          htmls(
+            '.action-btn-app-icon-render',
+            html`<img class="inl top-bar-app-icon ${darkTheme ? '' : ''}" src="${srcLogo}" />`,
+          );
         };
         setTimeout(ThemeEvents['titleRender']);
         return '';
       },
       mode: 'slide-menu',
       RouterInstance,
-      htmlMainBody: options?.htmlMainBody ? options.htmlMainBody : undefined,
-      searchCustomImgClass: 'itemledger-menu-icon',
+      htmlMainBody: html``,
+      searchCustomImgClass: 'cryptokoyn-menu-icon',
     });
 
-    this.Data[id].sortable = new Sortable(s(`.menu-btn-container`), {
+    AppShellCryptokoyn.Data[id].sortable = new Sortable(s(`.menu-btn-container`), {
       animation: 150,
       group: `menu-sortable`,
       forceFallback: true,
@@ -204,15 +206,15 @@ class MenuItemledger {
 
     EventsUI.onClick(`.main-btn-sign-up`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
+      await Modal.instance({
         id: 'modal-sign-up',
         route: 'sign-up',
         barConfig,
         title: renderViewTitle({
-          icon: html`<img class="inl itemledger-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/sign-up.png" />`,
-          text: `<span class='inl itemledger-text-title-modal'>${Translate.Render('sign-up')}</span>`,
+          icon: html`<img class="inl cryptokoyn-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/sign-up.png" />`,
+          text: `<span class='inl cryptokoyn-text-title-modal'>${Translate.instance('sign-up')}</span>`,
         }),
-        html: async () => await SignUp.Render({ idModal: 'modal-sign-up' }),
+        html: async () => await SignUp.instance({ idModal: 'modal-sign-up' }),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -223,15 +225,15 @@ class MenuItemledger {
 
     EventsUI.onClick(`.main-btn-log-out`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
+      await Modal.instance({
         id: 'modal-log-out',
         route: 'log-out',
         barConfig,
         title: renderViewTitle({
-          icon: html`<img class="inl itemledger-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/log-out.png" />`,
-          text: `<span class='inl itemledger-text-title-modal'>${Translate.Render('log-out')}</span>`,
+          icon: html`<img class="inl cryptokoyn-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/log-out.png" />`,
+          text: `<span class='inl cryptokoyn-text-title-modal'>${Translate.instance('log-out')}</span>`,
         }),
-        html: async () => await LogOut.Render(),
+        html: async () => await LogOut.instance(),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -242,15 +244,15 @@ class MenuItemledger {
 
     EventsUI.onClick(`.main-btn-log-in`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
+      await Modal.instance({
         id: 'modal-log-in',
         route: 'log-in',
         barConfig,
         title: renderViewTitle({
-          icon: html`<img class="inl itemledger-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/log-in.png" />`,
-          text: `<span class='inl itemledger-text-title-modal'>${Translate.Render('log-in')}</span>`,
+          icon: html`<img class="inl cryptokoyn-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/log-in.png" />`,
+          text: `<span class='inl cryptokoyn-text-title-modal'>${Translate.instance('log-in')}</span>`,
         }),
-        html: async () => await LogIn.Render(),
+        html: async () => await LogIn.instance(),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -261,18 +263,18 @@ class MenuItemledger {
 
     EventsUI.onClick(`.main-btn-account`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
+      await Modal.instance({
         id: 'modal-account',
         route: 'account',
         barConfig,
         title: renderViewTitle({
-          icon: html`<img class="inl itemledger-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/account.png" />`,
-          text: `<span class='inl itemledger-text-title-modal'>${Translate.Render('account')}</span>`,
+          icon: html`<img class="inl cryptokoyn-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/account.png" />`,
+          text: `<span class='inl cryptokoyn-text-title-modal'>${Translate.instance('account')}</span>`,
         }),
         html: async () =>
-          await Account.Render({
+          await Account.instance({
             idModal: 'modal-account',
-            user: AppStoreItemledger.Data.user.main.model.user,
+            user: AppStoreCryptokoyn.Data.user.main.model.user,
             disabled: [],
           }),
         handleType: 'bar',
@@ -283,20 +285,17 @@ class MenuItemledger {
       });
     });
 
-    EventsUI.onClick(`.main-btn-settings`, async () => {
+    EventsUI.onClick(`.main-btn-wallet`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
-        id: 'modal-settings',
-        route: 'settings',
+      await Modal.instance({
+        id: 'modal-wallet',
+        route: 'wallet',
         barConfig,
         title: renderViewTitle({
-          icon: html`<img
-            class="inl itemledger-menu-icon-modal"
-            src="${getProxyPath()}assets/ui-icons/settings.png"
-          />`,
-          text: `<span class='inl itemledger-text-title-modal'>${Translate.Render('settings')}</span>`,
+          icon: html`<img class="inl cryptokoyn-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/wallet.png" />`,
+          text: `<span class='inl cryptokoyn-text-title-modal'>${Translate.instance('wallet')}</span>`,
         }),
-        html: async () => await SettingsItemledger.Render({ idModal: 'modal-settings' }),
+        html: async () => await Wallet.instance({ idModal: 'modal-wallet' }),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -305,22 +304,21 @@ class MenuItemledger {
       });
     });
 
-    EventsUI.onClick(`.main-btn-docs`, async () => {
+    EventsUI.onClick(`.main-btn-settings`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
-        id: 'modal-docs',
-        route: 'docs',
+      await Modal.instance({
+        id: 'modal-settings',
+        route: 'settings',
         barConfig,
         title: renderViewTitle({
-          icon: html`<i class="fas fa-book"></i>`,
-          text: Translate.Render('docs'),
+          icon: html`<img
+            class="inl cryptokoyn-menu-icon-modal"
+            src="${getProxyPath()}assets/ui-icons/settings.png"
+          />`,
+          text: `<span class='inl cryptokoyn-text-title-modal'>${Translate.instance('settings')}</span>`,
         }),
-        html: async () =>
-          await Docs.Init({
-            idModal: 'modal-docs',
-          }),
+        html: async () => await SettingsCryptokoyn.instance({ idModal: 'modal-settings' }),
         handleType: 'bar',
-        observer: true,
         maximize: true,
         mode: 'view',
         slideMenu: 'modal-menu',
@@ -331,16 +329,16 @@ class MenuItemledger {
 
     EventsUI.onClick(`.main-btn-recover`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
-      await Modal.Render({
+      await Modal.instance({
         id: 'modal-recover',
         route: 'recover',
         barConfig,
         title: renderViewTitle({
           icon: html`<i class="fa-solid fa-arrow-rotate-left"></i>`,
-          text: Translate.Render('recover'),
+          text: Translate.instance('recover'),
         }),
         html: async () =>
-          await Recover.Render({ idModal: 'modal-recover', user: AppStoreItemledger.Data.user.main.model.user }),
+          await Recover.instance({ idModal: 'modal-recover', user: AppStoreCryptokoyn.Data.user.main.model.user }),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -351,4 +349,4 @@ class MenuItemledger {
   }
 }
 
-export { MenuItemledger };
+export { AppShellCryptokoyn };

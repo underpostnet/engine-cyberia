@@ -11,7 +11,7 @@ import { NotificationManager } from '../../components/core/NotificationManager.j
 import { AgGrid } from '../../components/core/AgGrid.js';
 
 class ObjectLayerManagement {
-  static async RenderTable({ appStore, idModal: rawIdModal }) {
+  static instance = async ({ appStore, idModal: rawIdModal }) => {
     const idModal = rawIdModal || 'modal-object-layer-engine-management';
     const serviceId = 'object-layer-engine-management';
     const gridId = `${serviceId}-grid-${idModal}`;
@@ -31,7 +31,7 @@ class ObjectLayerManagement {
           return;
         }
 
-        this.eGui.innerHTML = html` ${await BtnIcon.Render({
+        this.eGui.innerHTML = html` ${await BtnIcon.instance({
           label: html`<div class="abs center">
             <i class="fas fa-eye"></i>
           </div> `,
@@ -77,7 +77,7 @@ class ObjectLayerManagement {
           return;
         }
 
-        this.eGui.innerHTML = html` ${await BtnIcon.Render({
+        this.eGui.innerHTML = html` ${await BtnIcon.instance({
           label: html`<div class="abs center">
             <i class="fas fa-edit"></i>
           </div> `,
@@ -168,7 +168,7 @@ class ObjectLayerManagement {
           return;
         }
 
-        this.eGui.innerHTML = html` ${await BtnIcon.Render({
+        this.eGui.innerHTML = html` ${await BtnIcon.instance({
           label: html`<div class="abs center">
             <i class="fas fa-trash" style="color: #dc3545;"></i>
           </div> `,
@@ -306,7 +306,7 @@ class ObjectLayerManagement {
       },
       {
         field: 'data.render.cid',
-        headerName: 'Render CID',
+        headerName: 'instance CID',
         width: 160,
         cellRenderer: AtlasCidRenderer,
         editable: false,
@@ -315,7 +315,7 @@ class ObjectLayerManagement {
       },
       {
         field: 'data.render.metadataCid',
-        headerName: 'Render Metadata CID',
+        headerName: 'instance Metadata CID',
         width: 160,
         cellRenderer: MetadataCidRenderer,
         editable: false,
@@ -364,7 +364,7 @@ class ObjectLayerManagement {
         : []),
     ];
 
-    return await DefaultManagement.RenderTable({
+    return await DefaultManagement.instance({
       idModal,
       serviceId,
       entity: 'object-layer',
@@ -400,7 +400,7 @@ class ObjectLayerManagement {
         limitOptions: [10, 25, 50, 100, 200],
       },
     });
-  }
+  };
   static async Reload(subModalId = 'management') {
     const idModal = `modal-object-layer-engine-${subModalId}`;
     if (s(`.modal-object-layer-engine-${subModalId}`))

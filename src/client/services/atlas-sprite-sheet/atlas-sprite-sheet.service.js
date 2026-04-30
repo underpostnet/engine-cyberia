@@ -1,13 +1,9 @@
 import { Auth } from '../../components/core/Auth.js';
 import { loggerFactory } from '../../components/core/Logger.js';
 import { getApiBaseUrl, headersFactory, payloadFactory, buildQueryUrl } from '../core/core.service.js';
-
 const logger = loggerFactory(import.meta);
-
 logger.info('Load service');
-
 const endpoint = 'atlas-sprite-sheet';
-
 class AtlasSpriteSheetService {
   static generateAtlas = (options = { id: '' }) =>
     new Promise((resolve, reject) =>
@@ -87,7 +83,7 @@ class AtlasSpriteSheetService {
           return reject(error);
         }),
     );
-  static get(options = {}) {
+  static get = (options = {}) => {
     const { id, page, limit, filterModel, sortModel, sort, asc, order } = options;
     const url = buildQueryUrl(getApiBaseUrl({ id, endpoint }), {
       page,
@@ -98,7 +94,6 @@ class AtlasSpriteSheetService {
       asc,
       order,
     });
-
     return new Promise((resolve, reject) =>
       fetch(url.toString(), {
         method: 'GET',
@@ -117,7 +112,7 @@ class AtlasSpriteSheetService {
           return reject(error);
         }),
     );
-  }
+  };
   static delete = (options = { id: '', body: {} }) =>
     new Promise((resolve, reject) =>
       fetch(getApiBaseUrl({ id: options.id, endpoint }), {
@@ -139,5 +134,4 @@ class AtlasSpriteSheetService {
         }),
     );
 }
-
 export { AtlasSpriteSheetService };

@@ -4,7 +4,7 @@ import { AtlasSpriteSheetService } from './atlas-sprite-sheet.service.js';
 const logger = loggerFactory(import.meta);
 
 class AtlasSpriteSheetController {
-  static async blob(req, res, options) {
+  static blob = async (req, res, options) => {
     try {
       if (req && req.headers && req.headers.origin) {
         res.set('Access-Control-Allow-Origin', req.headers.origin);
@@ -23,8 +23,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async generate(req, res, options) {
+  };
+  static generate = async (req, res, options) => {
     try {
       const result = await AtlasSpriteSheetService.generate(req, res, options);
       return res.status(200).json({
@@ -38,8 +38,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async deleteByObjectLayerId(req, res, options) {
+  };
+  static deleteByObjectLayerId = async (req, res, options) => {
     try {
       const result = await AtlasSpriteSheetService.deleteByObjectLayerId(req, res, options);
       return res.status(200).json({
@@ -53,8 +53,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async post(req, res, options) {
+  };
+  static post = async (req, res, options) => {
     try {
       const result = await AtlasSpriteSheetService.post(req, res, options);
       return res.status(200).json({
@@ -68,8 +68,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async get(req, res, options) {
+  };
+  static get = async (req, res, options) => {
     try {
       if (req && req.headers && req.headers.origin) {
         res.set('Access-Control-Allow-Origin', req.headers.origin);
@@ -92,8 +92,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async put(req, res, options) {
+  };
+  static put = async (req, res, options) => {
     try {
       const result = await AtlasSpriteSheetService.put(req, res, options);
       return res.status(200).json({
@@ -107,8 +107,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async delete(req, res, options) {
+  };
+  static delete = async (req, res, options) => {
     try {
       const result = await AtlasSpriteSheetService.delete(req, res, options);
       return res.status(200).json({
@@ -122,8 +122,8 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
-  static async getMetadata(req, res, options) {
+  };
+  static getMetadata = async (req, res, options) => {
     try {
       if (req && req.headers && req.headers.origin) {
         res.set('Access-Control-Allow-Origin', req.headers.origin);
@@ -146,7 +146,7 @@ class AtlasSpriteSheetController {
         message: error.message,
       });
     }
-  }
+  };
 }
 
 export { AtlasSpriteSheetController };

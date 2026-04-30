@@ -5,13 +5,13 @@ import { DataQuery } from '../../server/data-query.js';
 const logger = loggerFactory(import.meta);
 
 class CyberiaMapService {
-  static async post(req, res, options) {
+  static post = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaMap;
     if (req.auth && req.auth.user) req.body.creator = req.auth.user._id;
     return await new CyberiaMap(req.body).save();
-  }
-  static async get(req, res, options) {
+  };
+  static get = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaMap;
     const populateCreator = { path: 'creator', model: 'User', select: '_id username' };
@@ -40,8 +40,8 @@ class CyberiaMapService {
 
     const totalPages = Math.ceil(total / limit);
     return { data, total, page, totalPages };
-  }
-  static async put(req, res, options) {
+  };
+  static put = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaMap;
     const map = await CyberiaMap.findById(req.params.id);
@@ -53,8 +53,8 @@ class CyberiaMapService {
       await File.findByIdAndDelete(map.thumbnail);
     }
     return await CyberiaMap.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
-  }
-  static async delete(req, res, options) {
+  };
+  static delete = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.CyberiaMap;
     if (req.params.id) {
@@ -68,7 +68,7 @@ class CyberiaMapService {
       }
       return await CyberiaMap.findByIdAndDelete(req.params.id);
     } else return await CyberiaMap.deleteMany();
-  }
+  };
 }
 
 export { CyberiaMapService };

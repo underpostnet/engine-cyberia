@@ -8,7 +8,7 @@ import { CyberiaInstanceService } from './cyberia-instance.service.js';
 import { getApiBaseUrl } from '../core/core.service.js';
 
 class CyberiaInstanceManagement {
-  static async RenderTable(options = {}) {
+  static instance = async (options = {}) => {
     const { idModal: rawIdModal, customEvent, readyRowDataEvent, loadInstanceCallback, appStore } = options;
     const idModal = rawIdModal || 'modal-cyberia-instance-management';
     const role = appStore?.Data?.user?.main?.model?.user?.role || 'guest';
@@ -24,7 +24,7 @@ class CyberiaInstanceManagement {
         const cellRenderId = getId(this.tokens, 'load-instance-');
         this.tokens[cellRenderId] = {};
 
-        this.eGui.innerHTML = html`${await BtnIcon.Render({
+        this.eGui.innerHTML = html`${await BtnIcon.instance({
           label: html`<div class="abs center">
             <i class="fa-solid fa-upload"></i>
           </div>`,
@@ -112,7 +112,7 @@ class CyberiaInstanceManagement {
       }
     }
 
-    const renderResult = await DefaultManagement.RenderTable({
+    const renderResult = await DefaultManagement.instance({
       idModal,
       serviceId: 'cyberia-instance-management',
       entity: 'cyberia-instance',
@@ -188,7 +188,7 @@ class CyberiaInstanceManagement {
     }
 
     return renderResult;
-  }
+  };
 }
 
 export { CyberiaInstanceManagement };

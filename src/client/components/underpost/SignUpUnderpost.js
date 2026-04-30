@@ -1,10 +1,10 @@
 import { SignUp } from '../core/SignUp.js';
 
 class SignUpUnderpost {
-  static async Init() {
-    SignUp.Event['SignUpUnderpost'] = async (options) => {
-      const { user } = options;
-    };
+  static instance() {
+  SignUp.onSignup(async (options) => {
+    const { user } = options;
+  }, { key: 'SignUpUnderpost' });
   }
 }
 

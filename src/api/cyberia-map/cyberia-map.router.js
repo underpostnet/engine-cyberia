@@ -5,16 +5,9 @@ import express from 'express';
 
 const logger = loggerFactory(import.meta);
 
-class CyberiaMapRouter {
-  /**
-   * Builds and returns the Express Router for this API.
-   * @param {import('../../server/auth.js').RouterOptions} options
-   * @returns {import('express').Router}
-   * @memberof CyberiaMapRouter
-   */
-  static router(options) {
+const CyberiaMapRouter = (options) => {
   const router = express.Router();
-  const { authMiddleware } = options;
+  const authMiddleware = options.authMiddleware;
   router.post(
     `/:id`,
     authMiddleware,
@@ -40,9 +33,8 @@ class CyberiaMapRouter {
     async (req, res) => await CyberiaMapController.delete(req, res, options),
   );
   return router;
-  }
-}
+};
 
-const ApiRouter = (options) => CyberiaMapRouter.router(options);
+const ApiRouter = CyberiaMapRouter;
 
 export { ApiRouter, CyberiaMapRouter };

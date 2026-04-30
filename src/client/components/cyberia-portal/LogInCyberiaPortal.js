@@ -5,16 +5,16 @@ import { AppStoreCyberiaPortal } from './AppStoreCyberiaPortal.js';
 import { ObjectLayerManagement } from '../../services/object-layer/object-layer.management.js';
 
 class LogInCyberiaPortal {
-  static async Init() {
-    LogIn.Event['LogInCyberiaPortal'] = async (options) => {
-      const { token, user } = options;
+  static async instance() {
+  LogIn.onLogin(async (options) => {
+    const { token, user } = options;
 
-      AppStoreCyberiaPortal.Data.user.main.model.user = user;
-
-      await ObjectLayerManagement.Reload('viewer');
-    };
-    const { user } = await Auth.sessionIn();
     AppStoreCyberiaPortal.Data.user.main.model.user = user;
+
+    await ObjectLayerManagement.Reload('viewer');
+  }, { key: 'LogInCyberiaPortal' });
+  const { user } = await Auth.sessionIn();
+  AppStoreCyberiaPortal.Data.user.main.model.user = user;
   }
 }
 

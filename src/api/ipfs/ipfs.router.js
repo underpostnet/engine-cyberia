@@ -5,16 +5,9 @@ import express from 'express';
 
 const logger = loggerFactory(import.meta);
 
-class IpfsRouter {
-  /**
-   * Builds and returns the Express Router for this API.
-   * @param {import('../../server/auth.js').RouterOptions} options
-   * @returns {import('express').Router}
-   * @memberof IpfsRouter
-   */
-  static router(options) {
+const IpfsRouter = (options) => {
   const router = express.Router();
-  const { authMiddleware } = options;
+  const authMiddleware = options.authMiddleware;
   // Health / audit — must come before /:id to avoid matching conflicts.
   router.get(`/verify`, authMiddleware, adminGuard, async (req, res) => await IpfsController.verify(req, res, options));
   router.post(`/:id`, authMiddleware, adminGuard, async (req, res) => await IpfsController.post(req, res, options));
@@ -26,9 +19,8 @@ class IpfsRouter {
   router.delete(`/:id`, authMiddleware, adminGuard, async (req, res) => await IpfsController.delete(req, res, options));
   router.delete(`/`, authMiddleware, adminGuard, async (req, res) => await IpfsController.delete(req, res, options));
   return router;
-  }
-}
+};
 
-const ApiRouter = (options) => IpfsRouter.router(options);
+const ApiRouter = IpfsRouter;
 
 export { ApiRouter, IpfsRouter };

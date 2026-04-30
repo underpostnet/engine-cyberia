@@ -2,11 +2,11 @@
 import { SignUp } from '../core/SignUp.js';
 
 class SignUpCyberiaPortal {
-  static async Init() {
-    SignUp.Event['SignUpCyberiaPortal'] = async (options) => {
-      const { user } = options;
-      // await createCyberiaUser({ user });
-    };
+  static instance() {
+  SignUp.onSignup(async (options) => {
+    const { user } = options;
+    // await createCyberiaUser({ user });
+  }, { key: 'SignUpCyberiaPortal' });
   }
 }
 

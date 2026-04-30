@@ -6,12 +6,12 @@ import { InstanceDto } from './instance.model.js';
 const logger = loggerFactory(import.meta);
 
 class InstanceService {
-  static async post(req, res, options) {
+  static post = async (req, res, options) => {
     /** @type {import('./instance.model.js').InstanceModel} */
     const Instance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Instance;
     return await new Instance(req.body).save();
-  }
-  static async get(req, res, options) {
+  };
+  static get = async (req, res, options) => {
     /** @type {import('./instance.model.js').InstanceModel} */
     const Instance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Instance;
 
@@ -58,18 +58,18 @@ class InstanceService {
             return { data: dataUser, total: totalUser, page, totalPages: Math.ceil(totalUser / limit) };
         }
     }
-  }
-  static async put(req, res, options) {
+  };
+  static put = async (req, res, options) => {
     /** @type {import('./instance.model.js').InstanceModel} */
     const Instance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Instance;
     return await Instance.findByIdAndUpdate(req.params.id, req.body);
-  }
-  static async delete(req, res, options) {
+  };
+  static delete = async (req, res, options) => {
     /** @type {import('./instance.model.js').InstanceModel} */
     const Instance = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.Instance;
     if (req.params.id) return await Instance.findByIdAndDelete(req.params.id);
     else return await Instance.deleteMany();
-  }
+  };
 }
 
 export { InstanceService };

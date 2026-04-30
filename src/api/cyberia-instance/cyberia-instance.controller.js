@@ -4,7 +4,7 @@ import { CyberiaInstanceService } from './cyberia-instance.service.js';
 const logger = loggerFactory(import.meta);
 
 class CyberiaInstanceController {
-  static async fallbackWorld(req, res, options) {
+  static fallbackWorld = async (req, res, options) => {
     try {
       const result = await CyberiaInstanceService.fallbackWorld(req);
       return res.status(200).json({ status: 'success', data: result });
@@ -12,8 +12,8 @@ class CyberiaInstanceController {
       logger.error(error, error.stack);
       return res.status(400).json({ status: 'error', message: error.message });
     }
-  }
-  static async portalConnect(req, res, options) {
+  };
+  static portalConnect = async (req, res, options) => {
     try {
       const result = await CyberiaInstanceService.portalConnect(req, res, options);
       return res.status(200).json({ status: 'success', data: result });
@@ -21,8 +21,8 @@ class CyberiaInstanceController {
       logger.error(error, error.stack);
       return res.status(400).json({ status: 'error', message: error.message });
     }
-  }
-  static async post(req, res, options) {
+  };
+  static post = async (req, res, options) => {
     try {
       const result = await CyberiaInstanceService.post(req, res, options);
       return res.status(200).json({
@@ -36,8 +36,8 @@ class CyberiaInstanceController {
         message: error.message,
       });
     }
-  }
-  static async get(req, res, options) {
+  };
+  static get = async (req, res, options) => {
     try {
       const { page, limit } = req.query;
       const result = await CyberiaInstanceService.get(
@@ -56,8 +56,8 @@ class CyberiaInstanceController {
         message: error.message,
       });
     }
-  }
-  static async put(req, res, options) {
+  };
+  static put = async (req, res, options) => {
     try {
       const result = await CyberiaInstanceService.put(req, res, options);
       return res.status(200).json({
@@ -71,8 +71,8 @@ class CyberiaInstanceController {
         message: error.message,
       });
     }
-  }
-  static async delete(req, res, options) {
+  };
+  static delete = async (req, res, options) => {
     try {
       const result = await CyberiaInstanceService.delete(req, res, options);
       return res.status(200).json({
@@ -86,7 +86,7 @@ class CyberiaInstanceController {
         message: error.message,
       });
     }
-  }
+  };
 }
 
 export { CyberiaInstanceController };

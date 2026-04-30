@@ -5,16 +5,9 @@ import { adminGuard } from '../../server/auth.js';
 
 const logger = loggerFactory(import.meta);
 
-class ObjectLayerRouter {
-  /**
-   * Builds and returns the Express Router for this API.
-   * @param {import('../../server/auth.js').RouterOptions} options
-   * @returns {import('express').Router}
-   * @memberof ObjectLayerRouter
-   */
-  static router(options) {
+const ObjectLayerRouter = (options) => {
   const router = express.Router();
-  const { authMiddleware } = options;
+  const authMiddleware = options.authMiddleware;
   router.post(`/frame-image/:itemType/:itemId/:directionCode`, async (req, res) => {
     /*
         #swagger.auto = false
@@ -714,9 +707,8 @@ class ObjectLayerRouter {
     return await ObjectLayerController.delete(req, res, options);
   });
   return router;
-  }
-}
+};
 
-const ApiRouter = (options) => ObjectLayerRouter.router(options);
+const ApiRouter = ObjectLayerRouter;
 
 export { ApiRouter, ObjectLayerRouter };

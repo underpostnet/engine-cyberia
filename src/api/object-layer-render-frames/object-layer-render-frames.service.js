@@ -5,14 +5,16 @@ import { DataQuery } from '../../server/data-query.js';
 const logger = loggerFactory(import.meta);
 
 class ObjectLayerRenderFramesService {
-  static async post(req, res, options) {
+  static post = async (req, res, options) => {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
-    const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
+    const ObjectLayerRenderFrames =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     return await new ObjectLayerRenderFrames(req.body).save();
-  }
-  static async get(req, res, options) {
+  };
+  static get = async (req, res, options) => {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
-    const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
+    const ObjectLayerRenderFrames =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     if (req.params.id) return await ObjectLayerRenderFrames.findById(req.params.id);
 
     // Parse query parameters using DataQuery helper
@@ -25,18 +27,20 @@ class ObjectLayerRenderFramesService {
 
     const totalPages = Math.ceil(total / limit);
     return { data, total, page, totalPages };
-  }
-  static async put(req, res, options) {
+  };
+  static put = async (req, res, options) => {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
-    const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
+    const ObjectLayerRenderFrames =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     return await ObjectLayerRenderFrames.findByIdAndUpdate(req.params.id, req.body);
-  }
-  static async delete(req, res, options) {
+  };
+  static delete = async (req, res, options) => {
     /** @type {import('./object-layer-render-frames.model.js').ObjectLayerRenderFramesModel} */
-    const ObjectLayerRenderFrames = DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
+    const ObjectLayerRenderFrames =
+      DataBaseProvider.instance[`${options.host}${options.path}`].mongoose.models.ObjectLayerRenderFrames;
     if (req.params.id) return await ObjectLayerRenderFrames.findByIdAndDelete(req.params.id);
     else return await ObjectLayerRenderFrames.deleteMany();
-  }
+  };
 }
 
 export { ObjectLayerRenderFramesService };

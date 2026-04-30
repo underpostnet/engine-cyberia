@@ -8,7 +8,7 @@ import { CyberiaMapService } from './cyberia-map.service.js';
 import { getApiBaseUrl } from '../core/core.service.js';
 
 class CyberiaMapManagement {
-  static async RenderTable(options = {}) {
+  static instance = async (options = {}) => {
     const { idModal: rawIdModal, customEvent, readyRowDataEvent, loadMapCallback, appStore } = options;
     const idModal = rawIdModal || 'modal-cyberia-map-management';
     const role = appStore?.Data?.user?.main?.model?.user?.role || 'guest';
@@ -24,7 +24,7 @@ class CyberiaMapManagement {
         const cellRenderId = getId(this.tokens, 'load-map-');
         this.tokens[cellRenderId] = {};
 
-        this.eGui.innerHTML = html`${await BtnIcon.Render({
+        this.eGui.innerHTML = html`${await BtnIcon.instance({
           label: html`<div class="abs center">
             <i class="fa-solid fa-upload"></i>
           </div>`,
@@ -112,7 +112,7 @@ class CyberiaMapManagement {
       }
     }
 
-    const renderResult = await DefaultManagement.RenderTable({
+    const renderResult = await DefaultManagement.instance({
       idModal,
       serviceId: 'cyberia-map-management',
       entity: 'cyberia-map',
@@ -187,7 +187,7 @@ class CyberiaMapManagement {
     }
 
     return renderResult;
-  }
+  };
 }
 
 export { CyberiaMapManagement };

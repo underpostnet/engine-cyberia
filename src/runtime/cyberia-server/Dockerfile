@@ -1,6 +1,6 @@
 FROM rockylinux:9
 
-# Update and install required packages
+# System packages 
 RUN dnf -y update && \
     dnf -y install epel-release && \
     dnf -y install --allowerasing \
@@ -20,7 +20,6 @@ RUN dnf -y update && \
     perl && \
     dnf clean all
 
-
 # Install Node.js
 RUN curl -fsSL https://rpm.nodesource.com/setup_24.x | bash -
 RUN dnf install nodejs -y
@@ -30,16 +29,26 @@ RUN dnf clean all
 RUN node --version
 RUN npm --version
 
-# Install underpost ci/cd cli
+# Install underpost CLI 
 RUN npm install -g underpost
 RUN underpost --version
 
-# Create working directory
+# Runtime root expected by startup/build scripts.
 WORKDIR /home/dd
 
-# Expose necessary ports
-EXPOSE 22
-EXPOSE 80
-EXPOSE 443
-EXPOSE 3000-3100
-EXPOSE 4000-4100
+RUN underpost clone underpostnet/engine-cyberia && \
+    mv /home/dd/engine-cyberia /home/dd/engine && \
+    cd /home/dd/engine && npm install
+
+RUN mkdir -p /home/dd/engine/cyberia-server
+COPY cyberia-server/ /home/dd/engine/cyberia-server/
+
+RUN cd /home/dd/engine/cyberia-server && \
+    go mod download && \
+    chmod +x build.sh && \
+    ./build.sh
+
+EXPOSE 8081
+
+CMD ["/home/dd/engine/cyberia-server/server"]
+

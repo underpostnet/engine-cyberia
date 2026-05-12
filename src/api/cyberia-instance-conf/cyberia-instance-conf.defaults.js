@@ -118,6 +118,14 @@ export const STATUS_ICONS = Object.freeze([
     borderColor: { r: 160, g: 130, b: 200, a: 200 },
     description: 'Resource entity extracted/depleted (dead state)',
   },
+  {
+    id: 8,
+    name: 'action-provider',
+    iconId: 'chat',
+    bounce: true,
+    borderColor: { r: 220, g: 190, b: 60, a: 240 },
+    description: 'Bot with available quest-talk/shop/storage/craft actions',
+  },
 ]);
 
 // ── Equipment rules ──────────────────────────────────────────────────────────

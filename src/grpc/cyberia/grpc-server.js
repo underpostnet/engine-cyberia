@@ -18,8 +18,10 @@ import { loggerFactory } from '../../server/logger.js';
 import {
   CYBERIA_INSTANCE_CONF_DEFAULTS as FALLBACK_CONFIG_DEFAULTS,
   ENTITY_TYPE_DEFAULTS,
-  STATUS_ICONS,
-} from '../../api/cyberia-instance-conf/cyberia-instance-conf.defaults.js';
+  // STATUS_ICONS deliberately not imported here — see toInstanceConfig.
+  // Server simulation only cares about the numeric u8 IDs (which travel on
+  // the AOI wire). Icon stems + border colours live in SharedDefaultsCyberia.
+} from '../../api/cyberia-server-defaults/cyberia-server-defaults.js';
 import { generateFallbackWorld } from '../../api/cyberia-instance/cyberia-fallback-world.js';
 
 const logger = loggerFactory(import.meta);
@@ -27,7 +29,7 @@ const logger = loggerFactory(import.meta);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PROTO_PATH = path.resolve(__dirname, '../../../cyberia-server/proto/cyberia.proto');
+const PROTO_PATH = path.resolve(__dirname, '../../../cyberia-server/gen/proto/cyberia.proto');
 
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: false,
@@ -72,7 +74,6 @@ function normalizeEntityDefault(entityDefault = {}, canonical = {}) {
     liveItemIds: [...(entityDefault.liveItemIds ?? canonical.liveItemIds ?? [])],
     deadItemIds: [...(entityDefault.deadItemIds ?? canonical.deadItemIds ?? [])],
     dropItemIds: [...(entityDefault.dropItemIds ?? canonical.dropItemIds ?? [])],
-    colorKey: entityDefault.colorKey ?? canonical.colorKey ?? '',
     defaultObjectLayers: defaultObjectLayers.map((ol) => ({
       itemId: ol.itemId || '',
       active: !!ol.active,
@@ -96,10 +97,6 @@ function selectCanonicalEntityDefaultIndex(entityDefault, canonicalDefaults, use
       if (firstSameTypeIndex === -1) {
         firstSameTypeIndex = index;
       }
-      if (entityDefault.colorKey && canonical.colorKey === entityDefault.colorKey) {
-        return index;
-      }
-
       const liveOverlap = countSharedItemIds(entityDefault.liveItemIds, canonical.liveItemIds);
       if (
         liveOverlap > 0 &&
@@ -264,36 +261,24 @@ function toInstanceConfig(gc) {
   const fb = FALLBACK_CONFIG_DEFAULTS;
   if (!gc) return buildFallbackConfig();
 
-  // Per-key merge: start with canonical defaults, overlay any DB-defined colours.
-  const dbColorMap = new Map((gc.colors || []).map((c) => [c.key, c]));
-  const colors = fb.colors.map((c) => {
-    const ov = dbColorMap.get(c.key);
-    return ov ? { key: c.key, r: ov.r ?? c.r, g: ov.g ?? c.g, b: ov.b ?? c.b, a: ov.a ?? c.a } : { ...c };
-  });
-  // Append any DB colours whose keys are absent from the canonical defaults.
-  for (const [key, c] of dbColorMap) {
-    if (!colors.some((fc) => fc.key === key)) {
-      colors.push({ key, r: c.r ?? 0, g: c.g ?? 0, b: c.b ?? 0, a: c.a ?? 255 });
-    }
-  }
+  // STRICT BOUNDARY — this function produces the *simulation* config for
+  // cyberia-server only. Every presentation concern is excluded:
+  //
+  //   - palette (colors), camera tunings, screen factors, devUi,
+  //     interpolationMs, status-icon visuals, entityDefaults[].colorKey,
+  //     cellSize, defaultObj* — all of these reach the client through
+  //     /api/cyberia-client-hints, never through gRPC.
+  //
+  // The Go simulation does not need any of them to advance world state;
+  // the C/WASM cyberia-client owns its own render policy. See
+  // src/client/components/cyberia/SharedDefaultsCyberia.js.
 
-  // Merge entity defaults while preserving duplicate builds (for example,
-  // multiple resource or portal variants sharing the same entityType).
   const gcDefaults = gc.entityDefaults && gc.entityDefaults.length > 0 ? gc.entityDefaults : [];
   const entityDefaults = mergeEntityDefaults(gcDefaults);
 
   return {
-    cellSize: gc.cellSize ?? fb.cellSize,
-    fps: gc.fps ?? fb.fps,
-    interpolationMs: gc.interpolationMs ?? fb.interpolationMs,
-    defaultObjWidth: gc.defaultObjWidth ?? fb.defaultObjWidth,
-    defaultObjHeight: gc.defaultObjHeight ?? fb.defaultObjHeight,
-    cameraSmoothing: gc.cameraSmoothing ?? fb.cameraSmoothing,
-    cameraZoom: gc.cameraZoom ?? fb.cameraZoom,
-    defaultWidthScreenFactor: gc.defaultWidthScreenFactor ?? fb.defaultWidthScreenFactor,
-    defaultHeightScreenFactor: gc.defaultHeightScreenFactor ?? fb.defaultHeightScreenFactor,
-    devUi: gc.devUi ?? fb.devUi,
-    colors,
+    tickRate: gc.tickRate ?? fb.tickRate,
+    snapshotRate: gc.snapshotRate ?? fb.snapshotRate,
     aoiRadius: gc.aoiRadius ?? fb.aoiRadius,
     portalHoldTimeMs: gc.portalHoldTimeMs ?? fb.portalHoldTimeMs,
     portalSpawnRadius: gc.portalSpawnRadius ?? fb.portalSpawnRadius,
@@ -352,23 +337,6 @@ function toInstanceConfig(gc) {
       onePerType: gc.equipmentRules?.onePerType ?? fb.equipmentRules.onePerType,
       requireSkin: gc.equipmentRules?.requireSkin ?? fb.equipmentRules.requireSkin,
     },
-    // Status icon mapping — u8 ID → icon filename stem + border colour.
-    // Border colours come from the frozen STATUS_ICONS constant (canonical
-    // source of truth).  DB entries may override iconId but borderColor is
-    // always canonical — the DB schema defaults are generic grey, not the
-    // actual per-status colours.
-    statusIcons: STATUS_ICONS.map((canon) => {
-      const dbEntry = (gc.statusIcons || []).find((s) => s.id === canon.id);
-      const bc = canon.borderColor || {};
-      return {
-        id: canon.id,
-        iconId: (dbEntry && dbEntry.iconId) || canon.iconId || '',
-        borderColorR: bc.r ?? 100,
-        borderColorG: bc.g ?? 100,
-        borderColorB: bc.b ?? 100,
-        borderColorA: bc.a ?? 200,
-      };
-    }),
   };
 }
 

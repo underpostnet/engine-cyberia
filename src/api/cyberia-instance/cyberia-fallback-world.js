@@ -31,12 +31,68 @@ import {
   OccupancyGrid,
 } from './cyberia-world-generator.js';
 
-import { CYBERIA_INSTANCE_CONF_DEFAULTS } from '../cyberia-instance-conf/cyberia-instance-conf.defaults.js';
+import {
+  CYBERIA_INSTANCE_CONF_DEFAULTS,
+  ENTITY_TYPE_DEFAULTS,
+  RESOURCE_ENTITY_TYPE_DEFAULTS,
+  DefaultCyberiaItems,
+} from '../cyberia-server-defaults/cyberia-server-defaults.js';
+import {
+  CYBERIA_CLIENT_HINTS_DEFAULTS,
+  PALETTE,
+} from '../../client/components/cyberia/SharedDefaultsCyberia.js';
 
 // ── Defaults ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_MAP_COUNT = 4;
 const DEFAULT_GRID_SIZE = 64;
+
+// ── Asset-id integrity ──────────────────────────────────────────────────────
+//
+// Every item id that the fallback world can place on a map must also be
+// present in DefaultCyberiaItems, otherwise the `import-default-items` seed
+// will not create an ObjectLayer for it and the runtime client will fall
+// back to a solid-colour rectangle instead of the intended sprite.
+//
+// auditFallbackItemIds() returns the set of unknown ids encountered in the
+// canonical defaults so callers (CLI, test harness, gRPC fallback path)
+// can surface drift immediately. Returns an empty array when in sync.
+
+const KNOWN_DEFAULT_ITEM_IDS = new Set(DefaultCyberiaItems.map((e) => e.item.id));
+
+function collectReferencedItemIds() {
+  const ids = new Set();
+  const push = (id) => { if (typeof id === 'string' && id.length > 0) ids.add(id); };
+
+  for (const e of ENTITY_TYPE_DEFAULTS) {
+    (e.liveItemIds || []).forEach(push);
+    (e.deadItemIds || []).forEach(push);
+    (e.dropItemIds || []).forEach(push);
+    (e.defaultObjectLayers || []).forEach((ol) => push(ol.itemId));
+  }
+  for (const r of RESOURCE_ENTITY_TYPE_DEFAULTS) {
+    (r.liveItemIds || []).forEach(push);
+    (r.deadItemIds || []).forEach(push);
+    (r.dropItemIds || []).forEach(push);
+  }
+  return ids;
+}
+
+/**
+ * Audit every item id the fallback world can place against the canonical
+ * DefaultCyberiaItems registry.  Returns an array of missing ids; an empty
+ * array means the registry is in sync.
+ *
+ * @returns {string[]}
+ */
+function auditFallbackItemIds() {
+  const referenced = collectReferencedItemIds();
+  const missing = [];
+  for (const id of referenced) {
+    if (!KNOWN_DEFAULT_ITEM_IDS.has(id)) missing.push(id);
+  }
+  return missing.sort();
+}
 
 // ── Single map generator ─────────────────────────────────────────────────────
 
@@ -45,7 +101,7 @@ const DEFAULT_GRID_SIZE = 64;
  * Everything except floor tiles is randomized.
  *
  * @param {string} mapCode
- * @param {Array} colors             Palette from CYBERIA_INSTANCE_CONF_DEFAULTS.
+ * @param {Array} colors             Palette (PALETTE from SharedDefaultsCyberia).
  * @param {object} [opts]
  * @param {number} [opts.gridSize]
  * @param {number} [opts.obstacleCount]
@@ -129,8 +185,26 @@ function generateFallbackWorld(opts = {}) {
     foregroundCount,
     botCount,
     resourceCount,
-    colors = CYBERIA_INSTANCE_CONF_DEFAULTS.colors,
+    // Palette lives in SharedDefaultsCyberia (presentation-owned). The
+    // world generator only uses it to stamp a cosmetic rgba(...) string on
+    // entities so the browser editor / preview can render a coloured
+    // fallback before atlases load. The C client resolves real colours
+    // through domain/presentation_runtime — it does not read this value.
+    colors = PALETTE,
   } = opts;
+
+  // Surface item-id drift loudly on the very first build, so a missing
+  // `bin/cyberia run-workflow import-default-items` run shows up at startup
+  // instead of as silent grey rectangles later.
+  const missing = auditFallbackItemIds();
+  if (missing.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[cyberia-fallback-world] item ids referenced by defaults but absent from DefaultCyberiaItems:',
+      missing.join(', '),
+      '— run `node bin/cyberia run-workflow import-default-items` after adding them.',
+    );
+  }
 
   // Generate map codes.
   const mapCodes = [];
@@ -169,10 +243,11 @@ function generateFallbackWorld(opts = {}) {
     portals,
     topology,
     config: CYBERIA_INSTANCE_CONF_DEFAULTS,
+    presentationHints: CYBERIA_CLIENT_HINTS_DEFAULTS,
     _fallback: true,
   };
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export { generateFallbackWorld, generateFallbackMap };
+export { generateFallbackWorld, generateFallbackMap, auditFallbackItemIds };

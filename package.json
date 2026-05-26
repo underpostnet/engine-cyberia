@@ -3,7 +3,7 @@
     "main": "src/index.js",
     "name": "cyberia",
     "version": "3.2.9",
-    "description": "Cyberia Engine - Object Layer and Assets Management Microservice",
+    "description": "Cyberia CLI — toolchain for the Cyberia MMO data layer, content pipeline, persistence, gRPC services, and ERC-1155 lifecycle on Hyperledger Besu.",
     "scripts": {
         "start": "node --max-old-space-size=8192 src/server",
         "build": "node bin client",
@@ -36,11 +36,21 @@
     },
     "keywords": [
         "cyberia",
+        "cyberia-cli",
+        "sidecar",
+        "data-layer",
+        "engine-cyberia",
         "object-layer",
-        "game-engine",
-        "assets-management",
+        "atlas-sprite-sheet",
+        "ipfs",
+        "erc-1155",
+        "object-layer-token",
+        "hardhat",
+        "hyperledger-besu",
+        "blockchain",
         "web3",
-        "atlas-sprite-sheet"
+        "underpost-platform",
+        "mmo-extension"
     ],
     "author": "https://github.com/underpostnet",
     "license": "MIT",

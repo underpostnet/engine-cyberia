@@ -37,6 +37,7 @@
     "keywords": [
         "cyberia",
         "cyberia-cli",
+        "engine-cyberia",
         "sidecar",
         "data-layer",
         "engine-cyberia",
@@ -50,7 +51,7 @@
         "blockchain",
         "web3",
         "underpost-platform",
-        "mmo-extension"
+        "mmorpg"
     ],
     "author": "https://github.com/underpostnet",
     "license": "MIT",

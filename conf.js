@@ -750,6 +750,7 @@ const DefaultConf = /**/ {
           jsJsonPath: './typedoc.dd-cyberia.json',
           coverageOutputDir: 'hardhat-coverage',
           references: [
+            './src/client/public/cyberia-docs/CYBERIA.md',
             './src/client/public/cyberia-docs/WHITE-PAPER.md',
             './src/client/public/cyberia-docs/ARCHITECTURE.md',
             './src/client/public/cyberia-docs/QUEST-SYSTEM.md',

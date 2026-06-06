@@ -2,7 +2,7 @@
     "type": "module",
     "main": "src/index.js",
     "name": "cyberia",
-    "version": "3.2.14",
+    "version": "3.2.21",
     "description": "Cyberia CLI — toolchain for the Cyberia MMO data layer, content pipeline, persistence, gRPC services, and ERC-1155 lifecycle on Hyperledger Besu.",
     "scripts": {
         "start": "node --max-old-space-size=8192 src/server",

@@ -27,11 +27,12 @@ CyberiaAction {
   sourceCellX:   Number
   sourceCellY:   Number
 
-  // Identity — used to match quest objectives of type 'talk'
-  provideItemId: String  // entity's active skin ObjectLayer item ID (e.g. 'wason', 'alex')
+  // Identity — the NPC skin is derived from the `default-<skin>` dialogue code
+  // (no stored field); 'talk' objectives match the talked-to bot's active skin.
 
-  // Quest grant — first interaction with this NPC starts the linked quest chain
-  grantQuestCode: String  // empty = no quest granted
+  // Quest award — NOT stored on the action. The quest(s) this action awards are
+  // the CyberiaQuest documents whose (sourceMapCode, sourceCellX, sourceCellY)
+  // match this action's cell; the runtime offers the next acceptable one.
 
   // Dialogue
   dialogCode:        String    // greeting dialogue shown on tap
@@ -73,7 +74,7 @@ A single `code` groups many ordered dialogue lines. The C client fetches all lin
 
 | Type         | Description                                                    | Active Payload                                       |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------------- |
-| `quest-talk` | Grants a quest on first interaction, then shows dialogue       | `grantQuestCode`, `dialogCode`, `questDialogueCodes` |
+| `quest-talk` | Awards the quest bound to its cell (via Take Quest), shows dialogue | quests bound by cell, `dialogCode`, `questDialogueCodes` |
 | `talk`       | NPC dialogue only — satisfies `talk` quest objectives          | `dialogCode`, `questDialogueCodes`                   |
 | `shop`       | Item shop — player buys items with in-game currency            | `shopItems[]`                                        |
 | `craft`      | Crafting station — consume ingredients to produce output items | `craftRecipes[]`                                     |
@@ -83,25 +84,26 @@ A single `code` groups many ordered dialogue lines. The C client fetches all lin
 
 ## Action–Quest Integration
 
-The Action System and Quest System are linked through `provideItemId` and `questDialogueCodes`:
+The Action System and Quest System are linked by **cell** (the action and the
+quest it awards share `sourceMapCode/sourceCellX/sourceCellY`) and by the NPC's
+active **skin** (which `talk` objectives match):
 
 ```mermaid
 graph LR
-    Quest["CyberiaQuest\nstep.objective:\n{ type: 'talk', itemId: 'wason' }"]
-    Action["CyberiaAction\nprovideItemId: 'wason'\ngrantQuestCode: 'wason-intro'\nquestDialogueCodes: ['wason-intro']"]
+    Quest["CyberiaQuest\nsource cell: (12,10)\nstep.objective: { type: 'talk', itemId: 'wason' }"]
+    Action["CyberiaAction\nsource cell: (12,10)\nquestDialogueCodes: ['default-wason']"]
     Progress["CyberiaQuestProgress\nstep.objectiveProgress[i].current++"]
 
-    Quest -->|matched by provideItemId| Action
+    Quest -->|same source cell| Action
     Action -->|player completes dialogue| Progress
 ```
 
 **Talk objective satisfaction flow:**
 
 1. Player taps NPC → interaction bubble shown.
-2. Player taps interaction bubble → Action is fetched by spatial coordinates.
-3. Client displays `dialogCode` dialogue sequence.
-4. On first tap, if `grantQuestCode` is set → server grants the quest.
-5. After viewing all `questDialogueCodes` dialogue lines → server increments the matching `talk` objective's `current` counter.
+2. Player taps interaction bubble → `modal_interact` opens; the offered quest is the one bound to the NPC's cell.
+3. Accepting is explicit: the **Take Quest** button sends `quest_accept` and the server grants the acceptable quest bound to that cell (prerequisites met, not active/completed).
+4. Talk objectives advance only after the player reads **all** `questDialogueCodes` lines (`dlg_complete`), validated server-side; never by a button.
 
 ---
 
@@ -157,9 +159,11 @@ sequenceDiagram
 ## Dialogue Interaction Protocol (talk / quest-talk)
 
 Tapping an interaction bubble opens the Raylib-native **`modal_interact`** modal
-first — the general-purpose entry point. Its `[Talk]` tab (shown only when the
-entity has dialogue) opens `modal_dialogue`; its `[Chat / Profile]` tab opens the
-JS overlay with no freeze.
+(top half of the screen). It has a tab strip — **stack** (active item slots),
+**stats** (six-stat stack totals), and **action** (mission interface, shown only
+for action-provider entities, ESI 8) — over a fixed bottom bar of right-aligned
+integration buttons (**Chat**, **Integration**) that open the JS overlay. The
+action tab's **Talk / Take mission** opens `modal_dialogue` (bottom half).
 
 The client is identical for `talk` and `quest-talk`; the **server** branches after
 `dlg_complete`. The client never declares the action type, quest code, or quest
@@ -187,11 +191,13 @@ simulation state.
 1. Validate `player.activeDialogueEntityID == msg.entityId`; drop otherwise.
 2. Clear the dialogue context and thaw the player (modal protection off).
 3. Resolve the action from `actionCache[entityId]`. `talk` → ack only.
-4. `quest-talk`: on first contact grant `grantQuestCode`; then for every active
-   quest whose **current step** has a `{ type: 'talk', itemId == provideItemId }`
-   objective, increment it — **only** when `msg.dialogCode` is in the action's
-   `questDialogueCodes`. On quest completion, deliver rewards (FCT) and unlock
-   successors.
+4. `quest-talk`: `dlg_complete` NEVER grants — it advances every active quest
+   whose **current step** has a `{ type: 'talk', itemId == bot active skin }`
+   objective, **only** when `msg.dialogCode` is in the action's
+   `questDialogueCodes`. Granting is a separate explicit `quest_accept`, which
+   grants the acceptable quest bound to the NPC's cell. On quest completion,
+   deliver rewards (FCT); successors are NOT auto-granted (the player accepts
+   each from its NPC).
 
 > **Dialogue-code contract.** The C client fetches dialogue groups at
 > `/api/cyberia-dialogue/code/default-<itemId>`, so the code it reports on
@@ -205,6 +211,22 @@ simulation state.
 | `modal_interact` open              | Active (no freeze)        |
 | `dlg_start` sent                   | Frozen — immune to damage |
 | `dlg_complete` / `dlg_cancel` sent | Unfrozen                  |
+
+---
+
+## Fallback World mission instantiation
+
+The default mission system is playable in the procedural **Fallback World**.
+`DefaultCyberiaActions` carry `sourceMapCode` / `sourceCellX` / `sourceCellY`
+(all on `fallback-map-0`), and the world generator's
+`generateActionProviderBots()` places one passive NPC bot per action at those
+exact cells (skin = `provideItemId`, zero spawn/aggro radius). The fallback map
+builder reserves those cells (dropping any overlapping obstacle) so the NPCs
+always stand on walkable ground. The Go server then binds each bot back to its
+action by `sourceMapCode + sourceCellX + sourceCellY` at instance init and keeps
+an **ephemeral** per-session `CyberiaQuestProgress` (no persistence) — matching
+the ROADMAP Road-to-Alpha-Open contract. `scp-2040` kill targets spawn from the
+random bot pool, so the intro quest's talk → collect → kill loop is reachable.
 
 ---
 
@@ -257,8 +279,6 @@ The C client fetches the full `code` group sorted by `order`, then renders lines
 ```javascript
 // CyberiaAction
 { code: 1 }           // unique
-{ provideItemId: 1 }
-{ grantQuestCode: 1 } // sparse
 { sourceMapCode: 1, sourceCellX: 1, sourceCellY: 1 }
 
 // CyberiaDialogue
@@ -278,10 +298,8 @@ The C client fetches the full `code` group sorted by `order`, then renders lines
   "sourceMapCode": "cyberia-village",
   "sourceCellX": 12,
   "sourceCellY": 8,
-  "provideItemId": "wason",
-  "grantQuestCode": "wason-intro",
-  "dialogCode": "wason-intro",
-  "questDialogueCodes": ["wason-intro"],
+  "dialogCode": "default-wason",
+  "questDialogueCodes": ["default-wason"],
   "shopItems": [],
   "craftRecipes": [],
   "storageSlots": 0

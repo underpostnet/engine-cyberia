@@ -18,6 +18,9 @@ import { loggerFactory } from '../../server/logger.js';
 import {
   CYBERIA_INSTANCE_CONF_DEFAULTS as FALLBACK_CONFIG_DEFAULTS,
   ENTITY_TYPE_DEFAULTS,
+  DefaultCyberiaActions,
+  DefaultCyberiaQuests,
+  DefaultCyberiaItems,
   // STATUS_ICONS deliberately not imported here — see toInstanceConfig.
   // Server simulation only cares about the numeric u8 IDs (which travel on
   // the AOI wire). Icon stems + border colours live in SharedDefaultsCyberia.
@@ -251,6 +254,46 @@ function toInstanceMsg(doc) {
   };
 }
 
+// CyberiaAction → CyberiaActionMessage (proto camelCase fields).
+function toActionMsg(a) {
+  return {
+    code: a.code || '',
+    label: a.label || '',
+    sourceMapCode: a.sourceMapCode || '',
+    sourceCellX: a.sourceCellX || 0,
+    sourceCellY: a.sourceCellY || 0,
+    dialogCode: a.dialogCode || '',
+    questDialogueCodes: (a.questDialogueCodes || []).map((qd) => ({
+      questCode: qd.questCode || '',
+      dialogCode: qd.dialogCode || '',
+    })),
+  };
+}
+
+// CyberiaQuest → CyberiaQuestMessage.
+function toQuestMsg(q) {
+  return {
+    code: q.code || '',
+    title: q.title || '',
+    description: q.description || '',
+    unlocksQuestCodes: q.unlocksQuestCodes || [],
+    prerequisiteCodes: q.prerequisiteCodes || [],
+    sourceMapCode: q.sourceMapCode || '',
+    sourceCellX: q.sourceCellX || 0,
+    sourceCellY: q.sourceCellY || 0,
+    steps: (q.steps || []).map((s) => ({
+      id: s.id || '',
+      description: s.description || '',
+      objectives: (s.objectives || []).map((o) => ({
+        type: o.type || '',
+        itemId: o.itemId || '',
+        quantity: o.quantity || 1,
+      })),
+    })),
+    rewards: (q.rewards || []).map((r) => ({ itemId: r.itemId || '', quantity: r.quantity || 1 })),
+  };
+}
+
 /**
  * Converts a CyberiaInstanceConf Mongoose document (or plain object) into
  * a complete InstanceConfig proto message.
@@ -445,6 +488,13 @@ function buildHandlers(dbKey) {
               if (ol.itemId) fallbackItemIds.add(ol.itemId);
             }
           }
+          // Include every canonical item so the Go server can resolve the type
+          // of anything a player may pick up or equip (quest rewards like
+          // hatchet, alt weapons, etc.) — required for the one-per-type
+          // equipment rule, which silently no-ops when item type is unknown.
+          for (const it of DefaultCyberiaItems || []) {
+            if (it?.item?.id) fallbackItemIds.add(it.item.id);
+          }
 
           const fallbackOlDocs = fallbackItemIds.size
             ? await models.ObjectLayer.find({ 'data.item.id': { $in: [...fallbackItemIds] } }).lean()
@@ -475,6 +525,10 @@ function buildHandlers(dbKey) {
             objectLayers: fallbackOlDocs.map(toObjectLayerMsg),
             config: toInstanceConfig(fallbackConf),
             version: 'fallback',
+            // Mission content for the procedural fallback comes straight from
+            // the canonical defaults — no DB, fully self-contained.
+            actions: DefaultCyberiaActions.map(toActionMsg),
+            quests: DefaultCyberiaQuests.map(toQuestMsg),
           });
           return;
         }
@@ -529,12 +583,23 @@ function buildHandlers(dbKey) {
         if (conf.updatedAt) versionParts.push(String(conf.updatedAt));
         const version = crypto.createHash('sha256').update(versionParts.join('|')).digest('hex');
 
+        // Mission content for this instance: actions bound to its maps, plus
+        // every quest they can grant/advance. Delivered with the world so the
+        // Go server never opens a separate REST channel.
+        const actionDocs =
+          mapCodes.length && models.CyberiaAction
+            ? await models.CyberiaAction.find({ sourceMapCode: { $in: mapCodes } }).lean()
+            : [];
+        const questDocs = models.CyberiaQuest ? await models.CyberiaQuest.find({}).lean() : [];
+
         callback(null, {
           instance: toInstanceMsg(inst),
           maps: mapDocs.map(toMapMsg),
           objectLayers: olDocs.map(toObjectLayerMsg),
           config: toInstanceConfig(conf),
           version,
+          actions: actionDocs.map(toActionMsg),
+          quests: questDocs.map(toQuestMsg),
         });
       } catch (err) {
         logger.error('getFullInstance:', err);

@@ -18,7 +18,7 @@
  *
  *   2. **Shared content vocabulary** — `ITEM_TYPES`, `ENTITY_TYPES`,
  *      `DefaultCyberiaItems` registry + lookups, type-to-item mapping,
- *      quest step / action type enums. The data shape both the
+ *      quest step objective enum. The data shape both the
  *      browser-side editor UI and the engine REST controllers need to
  *      understand; it is **not** simulation state.
  *
@@ -108,9 +108,6 @@ export const ENTITY_TYPE_TO_ITEM_TYPES = Object.freeze({
 /** Quest step objective types accepted by the quest-progress engine. */
 export const QUEST_STEPS_TYPES = Object.freeze(['collect', 'talk', 'kill']);
 
-/** Action categories accepted by the cyberia-action engine. */
-export const CYBERIA_ACTION_TYPES = Object.freeze(['craft', 'shop', 'storage', 'talk', 'quest-talk']);
-
 /**
  * Canonical (itemId → itemType) registry shipped with the engine. Used
  * by the import-default-items seed, the on-chain ObjectLayerToken bridge,
@@ -126,6 +123,7 @@ export const DefaultCyberiaItems = [
   { item: { id: 'tim-knife', type: ITEM_TYPES.weapon } },
   { item: { id: 'hatchet', type: ITEM_TYPES.weapon } },
   { item: { id: 'wason', type: ITEM_TYPES.skin } },
+  { item: { id: 'kishins', type: ITEM_TYPES.skin } },
   { item: { id: 'scp-2040', type: ITEM_TYPES.skin } },
   { item: { id: 'purple', type: ITEM_TYPES.skin } },
   { item: { id: 'punk', type: ITEM_TYPES.skin } },
@@ -267,7 +265,7 @@ export const STATUS_ICONS_PRESENTATION = Object.freeze([
   { id: 5, iconId: 'skull', bounce: false, borderColor: { r: 160, g: 130, b: 200, a: 200 } },
   { id: 6, iconId: 'arrow-down-gray', bounce: false, borderColor: { r: 100, g: 180, b: 80, a: 220 } },
   { id: 7, iconId: 'clock', bounce: false, borderColor: { r: 160, g: 130, b: 200, a: 200 } },
-  { id: 8, iconId: 'chat', bounce: true, borderColor: { r: 220, g: 190, b: 60, a: 240 } },
+  { id: 8, iconId: 'quest', bounce: true, borderColor: { r: 220, g: 190, b: 60, a: 240 } },
 ]);
 
 /**

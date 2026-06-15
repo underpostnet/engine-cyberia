@@ -19,8 +19,8 @@
  * the entire simulation defaults into the public JS payload.
  *
  * Shared content **vocabulary** (item/entity type enums, the
- * `DefaultCyberiaItems` registry, `ENTITY_TYPE_TO_ITEM_TYPES`, quest /
- * action enums) lives in `SharedDefaultsCyberia.js`. This file
+ * `DefaultCyberiaItems` registry, `ENTITY_TYPE_TO_ITEM_TYPES`, the quest
+ * step objective enum) lives in `SharedDefaultsCyberia.js`. This file
  * re-imports those so the browser editor never needs to reach into
  * server-defaults to learn the schema.
  *
@@ -45,7 +45,6 @@ export {
   ENTITY_TYPES,
   ENTITY_TYPE_TO_ITEM_TYPES,
   QUEST_STEPS_TYPES,
-  CYBERIA_ACTION_TYPES,
   DefaultCyberiaItems,
   getDefaultCyberiaItemById,
   getDefaultCyberiaItemsByItemType,
@@ -85,40 +84,247 @@ export const DefaultSkillConfig = [
  * Used by the seed/migration script to populate Mongo on first boot.
  */
 export const DefaultCyberiaDialogues = [
-  { code: 'default-coin', order: 0, speaker: 'Coin', text: 'A standard unit of exchange in the cyberia network.', mood: 'neutral' },
-  { code: 'default-atlas_pistol_mk2', order: 0, speaker: 'Atlas Pistol MK2', text: 'Military-grade sidearm. Fires energy projectiles.', mood: 'neutral' },
-  { code: 'default-atlas_pistol_mk2_bullet', order: 0, speaker: 'MK2 Bullet', text: 'High-velocity energy round. Dissipates on impact.', mood: 'neutral' },
-  { code: 'default-hatchet', order: 0, speaker: 'Hatchet', text: 'A crude but reliable melee tool. Good for close quarters.', mood: 'neutral' },
-  { code: 'default-wason', order: 0, speaker: 'Wason', text: 'They say I am just a wandering merchant... but I have seen things.', mood: 'neutral' },
-  { code: 'default-wason', order: 1, speaker: 'Wason', text: 'The network was not always like this. There was a time before the portals.', mood: 'sad' },
-  { code: 'default-scp-2040', order: 0, speaker: 'SCP-2040', text: 'CONTAINMENT PROTOCOL ACTIVE. Do not make direct eye contact.', mood: 'angry' },
-  { code: 'default-scp-2040', order: 1, speaker: 'SCP-2040', text: 'I remember everything. Every iteration. Every reset.', mood: 'sad' },
-  { code: 'default-purple', order: 0, speaker: 'Purple', text: 'The void between nodes is not empty — it is alive.', mood: 'neutral' },
-  { code: 'default-punk', order: 0, speaker: 'Punk', text: 'Rules are just code someone else wrote. I write my own.', mood: 'happy' },
-  { code: 'default-lain', order: 0, speaker: 'Lain', text: 'No matter where you go, everyone is connected.', mood: 'neutral' },
-  { code: 'default-lain', order: 1, speaker: 'Lain', text: 'If you are not remembered, then you never existed.', mood: 'sad' },
-  { code: 'default-lain', order: 2, speaker: 'Lain', text: 'The wired is not a separate world. It is layered over this one.', mood: 'neutral' },
-  { code: 'default-kaneki', order: 0, speaker: 'Kaneki', text: 'I am not the protagonist of a novel. I am just... me.', mood: 'sad' },
+  {
+    code: 'default-coin',
+    order: 0,
+    speaker: 'Coin',
+    text: 'A standard unit of exchange in the cyberia network.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-atlas_pistol_mk2',
+    order: 0,
+    speaker: 'Atlas Pistol MK2',
+    text: 'Military-grade sidearm. Fires energy projectiles.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-atlas_pistol_mk2_bullet',
+    order: 0,
+    speaker: 'MK2 Bullet',
+    text: 'High-velocity energy round. Dissipates on impact.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-hatchet',
+    order: 0,
+    speaker: 'Hatchet',
+    text: 'A crude but reliable melee tool. Good for close quarters.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-wason',
+    order: 0,
+    speaker: 'Wason',
+    text: 'They say I am just a wandering merchant... but I have seen things.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-wason',
+    order: 1,
+    speaker: 'Wason',
+    text: 'The network was not always like this. There was a time before the portals.',
+    mood: 'sad',
+  },
+  {
+    code: 'default-scp-2040',
+    order: 0,
+    speaker: 'SCP-2040',
+    text: 'CONTAINMENT PROTOCOL ACTIVE. Do not make direct eye contact.',
+    mood: 'angry',
+  },
+  {
+    code: 'default-scp-2040',
+    order: 1,
+    speaker: 'SCP-2040',
+    text: 'I remember everything. Every iteration. Every reset.',
+    mood: 'sad',
+  },
+  {
+    code: 'default-purple',
+    order: 0,
+    speaker: 'Purple',
+    text: 'The void between nodes is not empty — it is alive.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-punk',
+    order: 0,
+    speaker: 'Punk',
+    text: 'Rules are just code someone else wrote. I write my own.',
+    mood: 'happy',
+  },
+  {
+    code: 'default-lain',
+    order: 0,
+    speaker: 'Lain',
+    text: 'No matter where you go, everyone is connected.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-lain',
+    order: 1,
+    speaker: 'Lain',
+    text: 'If you are not remembered, then you never existed.',
+    mood: 'sad',
+  },
+  {
+    code: 'default-lain',
+    order: 2,
+    speaker: 'Lain',
+    text: 'The wired is not a separate world. It is layered over this one.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-kaneki',
+    order: 0,
+    speaker: 'Kaneki',
+    text: 'I am not the protagonist of a novel. I am just... me.',
+    mood: 'sad',
+  },
   { code: 'default-kaneki', order: 1, speaker: 'Kaneki', text: 'What is 1000 minus 7?', mood: 'angry' },
-  { code: 'default-junko', order: 0, speaker: 'Junko', text: 'Despair is the seed from which hope blooms!', mood: 'happy' },
-  { code: 'default-junko', order: 1, speaker: 'Junko', text: 'How boring... nothing ever surprises me anymore.', mood: 'sad' },
+  {
+    code: 'default-junko',
+    order: 0,
+    speaker: 'Junko',
+    text: 'Despair is the seed from which hope blooms!',
+    mood: 'happy',
+  },
+  {
+    code: 'default-junko',
+    order: 1,
+    speaker: 'Junko',
+    text: 'How boring... nothing ever surprises me anymore.',
+    mood: 'sad',
+  },
   { code: 'default-ghost', order: 0, speaker: 'Ghost', text: '...', mood: 'neutral' },
-  { code: 'default-eiri', order: 0, speaker: 'Eiri', text: 'I am the god of the wired. I designed the protocol.', mood: 'neutral' },
-  { code: 'default-eiri', order: 1, speaker: 'Eiri', text: 'Flesh is just hardware. Consciousness is the only software that matters.', mood: 'neutral' },
+  {
+    code: 'default-eiri',
+    order: 0,
+    speaker: 'Eiri',
+    text: 'I am the god of the wired. I designed the protocol.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-eiri',
+    order: 1,
+    speaker: 'Eiri',
+    text: 'Flesh is just hardware. Consciousness is the only software that matters.',
+    mood: 'neutral',
+  },
   { code: 'default-anon', order: 0, speaker: '???', text: 'You should not be here. Turn back.', mood: 'angry' },
-  { code: 'default-anon', order: 1, speaker: '???', text: 'Or stay. It does not matter. Nothing leaves this place.', mood: 'neutral' },
-  { code: 'default-alex', order: 0, speaker: 'Alex', text: 'I have been mapping the portal network. Something does not add up.', mood: 'neutral' },
-  { code: 'default-alex', order: 1, speaker: 'Alex', text: 'There are nodes that exist in the registry but have no physical anchor.', mood: 'neutral' },
-  { code: 'default-agent', order: 0, speaker: 'Agent', text: 'Civilian, this area is restricted. State your business.', mood: 'neutral' },
-  { code: 'default-agent', order: 1, speaker: 'Agent', text: 'Hmm. Proceed, but know that you are being watched.', mood: 'neutral' },
-  { code: 'default-grass', order: 0, speaker: 'Grass', text: 'A patch of synthetic grass. It sways gently despite no wind.', mood: 'neutral' },
-  { code: 'quest-talk-wason', order: 0, speaker: 'Wason', text: 'Wanderer! Glad you stopped by. I need a favor — nothing dangerous... mostly.', mood: 'happy' },
-  { code: 'quest-talk-wason', order: 1, speaker: 'Wason', text: "First, find Alex — she's been surveying the nodes east of here. Then gather a hatchet for me.", mood: 'neutral' },
-  { code: 'quest-talk-wason', order: 2, speaker: 'Wason', text: 'And one more thing: the SCP-2040 anomalies are overrunning my trade routes. Deal with two of them.', mood: 'sad' },
-  { code: 'quest-talk-alex', order: 0, speaker: 'Alex', text: "Wason sent you? Good. The portal anomalies are getting worse. I've logged what I can.", mood: 'neutral' },
-  { code: 'quest-talk-alex', order: 1, speaker: 'Alex', text: 'Tell Wason: the source is somewhere in the deeper nodes. The registry does not lie.', mood: 'neutral' },
-  { code: 'talk-lain', order: 0, speaker: 'Lain', text: 'Present day... present time. You are here, so you are real.', mood: 'neutral' },
-  { code: 'talk-lain', order: 1, speaker: 'Lain', text: 'There is nothing I can grant you. Only the wired remembers.', mood: 'neutral' },
+  {
+    code: 'default-anon',
+    order: 1,
+    speaker: '???',
+    text: 'Or stay. It does not matter. Nothing leaves this place.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-alex',
+    order: 0,
+    speaker: 'Alex',
+    text: 'I have been mapping the portal network. Something does not add up.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-alex',
+    order: 1,
+    speaker: 'Alex',
+    text: 'There are nodes that exist in the registry but have no physical anchor.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-agent',
+    order: 0,
+    speaker: 'Agent',
+    text: 'Civilian, this area is restricted. State your business.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-agent',
+    order: 1,
+    speaker: 'Agent',
+    text: 'Hmm. Proceed, but know that you are being watched.',
+    mood: 'neutral',
+  },
+  {
+    code: 'default-grass',
+    order: 0,
+    speaker: 'Grass',
+    text: 'A patch of synthetic grass. It sways gently despite no wind.',
+    mood: 'neutral',
+  },
+  {
+    code: 'quest-talk-wason',
+    order: 0,
+    speaker: 'Wason',
+    text: 'Wanderer! Glad you stopped by. I need a favor — nothing dangerous... mostly.',
+    mood: 'happy',
+  },
+  {
+    code: 'quest-talk-wason',
+    order: 1,
+    speaker: 'Wason',
+    text: "First, find Alex — she's been surveying the nodes east of here. Then gather a hatchet for me.",
+    mood: 'neutral',
+  },
+  {
+    code: 'quest-talk-wason',
+    order: 2,
+    speaker: 'Wason',
+    text: 'And one more thing: the SCP-2040 anomalies are overrunning my trade routes. Deal with two of them.',
+    mood: 'sad',
+  },
+  {
+    code: 'quest-talk-alex',
+    order: 0,
+    speaker: 'Alex',
+    text: "Wason sent you? Good. The portal anomalies are getting worse. I've logged what I can.",
+    mood: 'neutral',
+  },
+  {
+    code: 'quest-talk-alex',
+    order: 1,
+    speaker: 'Alex',
+    text: 'Tell Wason: the source is somewhere in the deeper nodes. The registry does not lie.',
+    mood: 'neutral',
+  },
+  {
+    code: 'talk-lain',
+    order: 0,
+    speaker: 'Lain',
+    text: 'Present day... present time. You are here, so you are real.',
+    mood: 'neutral',
+  },
+  {
+    code: 'talk-lain',
+    order: 1,
+    speaker: 'Lain',
+    text: 'There is nothing I can grant you. Only the wired remembers.',
+    mood: 'neutral',
+  },
+  {
+    code: 'quest-talk-wason-errand',
+    order: 0,
+    speaker: 'Wason',
+    text: 'A small thing, friend — the field is littered with loose coin. Gather a few and bring them here.',
+    mood: 'happy',
+  },
+  {
+    code: 'quest-talk-wason-errand',
+    order: 1,
+    speaker: 'Wason',
+    text: 'You have my thanks. A good hatchet for an honest errand.',
+    mood: 'neutral',
+  },
+  {
+    code: 'quest-talk-agent',
+    order: 0,
+    speaker: 'Agent',
+    text: 'Civilian. There is a bounty if you have the stomach for it. Eliminate the threat, collect the drop, report back.',
+    mood: 'neutral',
+  },
 ];
 
 /**
@@ -126,30 +332,52 @@ export const DefaultCyberiaDialogues = [
  * Each entry follows the `CyberiaAction` model schema.
  */
 export const DefaultCyberiaActions = [
+  // An action has no `type`: it declares the capabilities available at a cell.
+  // `code` is a generic location slug; `label` is the bot's overhead name (the
+  // client fetches it by code via REST). The NPC skin is derived from
+  // `dialogCode` (default-<skin>). `questDialogueCodes` maps each quest the NPC
+  // handles to the dialogue shown for it (offer + talk-objective validation).
+  // The quests an NPC OFFERS are those whose source cell matches the action's.
   {
-    code: 'wason-quest-intro', type: 'quest-talk', label: 'Quest',
-    provideItemId: 'wason', grantQuestCode: 'fallback-intro-quest',
-    dialogCode: 'quest-talk-wason', questDialogueCodes: ['quest-talk-wason'],
+    code: 'loc-fallback-map-0-12-10',
+    label: 'Wason',
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 12,
+    sourceCellY: 10,
+    dialogCode: 'default-wason',
+    questDialogueCodes: [
+      { questCode: 'fallback-intro-quest', dialogCode: 'quest-talk-wason' },
+      { questCode: 'wason-errand', dialogCode: 'quest-talk-wason-errand' },
+      // bounty's report-back talk happens here too (bounty is offered at the agent cell).
+      { questCode: 'bounty-quest-alpha', dialogCode: 'quest-talk-wason' },
+    ],
   },
   {
-    code: 'alex-quest-talk', type: 'quest-talk', label: 'Quest Talk',
-    provideItemId: 'alex', grantQuestCode: '',
-    dialogCode: 'quest-talk-alex', questDialogueCodes: ['quest-talk-alex'],
+    code: 'loc-fallback-map-0-18-10',
+    label: 'Alex',
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 18,
+    sourceCellY: 10,
+    dialogCode: 'default-alex',
+    questDialogueCodes: [{ questCode: 'fallback-intro-quest', dialogCode: 'quest-talk-alex' }],
   },
   {
-    code: 'agent-mission-brief', type: 'quest-talk', label: 'Mission Brief',
-    provideItemId: 'agent', grantQuestCode: 'bounty-quest-alpha',
-    dialogCode: 'default-agent', questDialogueCodes: ['default-agent'],
+    code: 'loc-fallback-map-0-12-16',
+    label: 'Agent',
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 12,
+    sourceCellY: 16,
+    dialogCode: 'default-agent',
+    questDialogueCodes: [{ questCode: 'bounty-quest-alpha', dialogCode: 'quest-talk-agent' }],
   },
   {
-    code: 'wason-bounty-brief', type: 'quest-talk', label: 'Bounty Brief',
-    provideItemId: 'wason', grantQuestCode: '',
-    dialogCode: 'quest-talk-wason', questDialogueCodes: ['quest-talk-wason'],
-  },
-  {
-    code: 'lain-talk', type: 'talk', label: 'Talk',
-    provideItemId: 'lain', grantQuestCode: '',
-    dialogCode: 'talk-lain', questDialogueCodes: ['talk-lain'],
+    code: 'loc-fallback-map-0-15-22',
+    label: 'Lain',
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 15,
+    sourceCellY: 22,
+    dialogCode: 'default-lain',
+    questDialogueCodes: [],
   },
 ];
 
@@ -162,31 +390,82 @@ export const DefaultCyberiaQuests = [
     code: 'fallback-intro-quest',
     title: "The Wanderer's Task",
     description: 'Help Wason restore order to the fractured nodes.',
+    // Spatial binding — must match the granting action `wason-quest-intro`.
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 12,
+    sourceCellY: 10,
     prerequisiteCodes: [],
     unlocksQuestCodes: ['bounty-quest-alpha'],
     steps: [
-      { id: 'step-talk-alex', description: 'Find Alex and hear her report on the portal anomalies.',
-        objectives: [{ type: 'talk', itemId: 'alex', quantity: 1 }] },
-      { id: 'step-collect-hatchet', description: 'Obtain a hatchet for Wason.',
-        objectives: [{ type: 'collect', itemId: 'hatchet', quantity: 1 }] },
-      { id: 'step-kill-scp', description: 'Eliminate SCP-2040 anomalies threatening the trade routes.',
-        objectives: [{ type: 'kill', itemId: 'scp-2040', quantity: 2 }] },
+      {
+        id: 'step-talk-alex',
+        description: 'Find Alex and hear her report on the portal anomalies.',
+        objectives: [{ type: 'talk', itemId: 'alex', quantity: 1 }],
+      },
+      {
+        id: 'step-collect-wood',
+        description: 'Obtain a wood for Wason.',
+        objectives: [{ type: 'collect', itemId: 'wood-drop-1', quantity: 1 }],
+      },
+      {
+        id: 'step-kill-kishins',
+        description: 'Eliminate Kishins anomalies threatening the trade routes.',
+        objectives: [{ type: 'kill', itemId: 'kishins', quantity: 2 }],
+      },
     ],
     rewards: [{ itemId: 'coin', quantity: 50 }],
+  },
+  {
+    // Parallel initial mission — same source cell as Wason (12,10), no
+    // prerequisites, so the player can accept it alongside the intro quest.
+    code: 'wason-errand',
+    title: "Wason's Errand",
+    description: 'Gather coins from the field and bring them back to Wason.',
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 12,
+    sourceCellY: 10,
+    prerequisiteCodes: [],
+    unlocksQuestCodes: [],
+    steps: [
+      {
+        id: 'step-collect-coins',
+        description: 'Collect 5 coins.',
+        objectives: [{ type: 'collect', itemId: 'coin', quantity: 5 }],
+      },
+      {
+        id: 'step-return-wason',
+        description: 'Return to Wason.',
+        objectives: [{ type: 'talk', itemId: 'wason', quantity: 1 }],
+      },
+    ],
+    rewards: [{ itemId: 'hatchet', quantity: 1 }],
   },
   {
     code: 'bounty-quest-alpha',
     title: 'Alpha Bounty',
     description: 'A field test: eliminate a threat, claim your reward, then report back.',
+    // Spatial binding — must match the granting action `agent-mission-brief`.
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 12,
+    sourceCellY: 16,
     prerequisiteCodes: ['fallback-intro-quest'],
     unlocksQuestCodes: [],
     steps: [
-      { id: 'step-kill-first', description: 'Eliminate the SCP-2040 threat.',
-        objectives: [{ type: 'kill', itemId: 'scp-2040', quantity: 1 }] },
-      { id: 'step-collect-reward', description: 'Collect the bounty coin drop.',
-        objectives: [{ type: 'collect', itemId: 'coin', quantity: 10 }] },
-      { id: 'step-report-wason', description: 'Report back to Wason.',
-        objectives: [{ type: 'talk', itemId: 'wason', quantity: 1 }] },
+      {
+        id: 'step-kill-first',
+        description: 'Eliminate the Kishins threat.',
+        objectives: [{ type: 'kill', itemId: 'kishins', quantity: 1 }],
+      },
+      {
+        id: 'step-collect-reward',
+        description: 'Collect the bounty coin drop.',
+        objectives: [{ type: 'collect', itemId: 'coin', quantity: 10 }],
+      },
+      {
+        id: 'step-report-wason',
+        description: 'Report back to Wason.',
+        objectives: [{ type: 'talk', itemId: 'wason', quantity: 1 }],
+      },
     ],
     rewards: [{ itemId: 'hatchet', quantity: 1 }],
   },
@@ -229,7 +508,12 @@ export const STATUS_ICONS = Object.freeze([
   { id: 5, name: 'dead', description: 'Entity is dead / respawning' },
   { id: 6, name: 'resource', description: 'Resource entity — static, exploitable (wood, minerals, etc.)' },
   { id: 7, name: 'resource-extracted', description: 'Resource entity extracted/depleted (dead state)' },
-  { id: 8, name: 'action-provider', description: 'Bot with available quest-talk/shop/storage/craft actions' },
+  {
+    id: 8,
+    name: 'action-provider',
+    description:
+      'Bot with an actionable quest-talk/shop/storage/craft action visible to players who can interact with it.',
+  },
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────

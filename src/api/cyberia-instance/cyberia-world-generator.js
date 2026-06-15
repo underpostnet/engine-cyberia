@@ -20,6 +20,7 @@ import {
   ENTITY_TYPE_DEFAULTS,
   RESOURCE_ENTITY_TYPE_DEFAULTS,
   DefaultCyberiaItems,
+  DefaultCyberiaActions,
   ITEM_TYPES,
 } from '../cyberia-server-defaults/cyberia-server-defaults.js';
 
@@ -435,7 +436,8 @@ function generateBots(mapDims, colors, opts = {}) {
       cellY = randInt(0, maxY);
     }
 
-    const skin = BOT_SKIN_POOL[Math.floor(Math.random() * BOT_SKIN_POOL.length)];
+    // const skin = BOT_SKIN_POOL[Math.floor(Math.random() * BOT_SKIN_POOL.length)];
+    const skin = 'kishins';
     const hasWeapon = Math.random() < BOT_WEAPON_CHANCE;
     const itemIds = hasWeapon ? [skin, 'atlas_pistol_mk2'] : [skin];
 
@@ -450,6 +452,67 @@ function generateBots(mapDims, colors, opts = {}) {
       spawnRadius,
       aggroRange,
       maxLife,
+      lifeRegen: 0,
+    });
+  }
+  return entities;
+}
+
+/**
+ * Action-provider NPC bots — the fixed-position entities that back the
+ * default mission system. One passive bot is placed per `CyberiaAction`
+ * whose `sourceMapCode` matches `mapCode`, at the action's
+ * (`sourceCellX`, `sourceCellY`). The Go server binds each bot back to its
+ * action by these coordinates, so the positions here are the single source
+ * of truth shared with `DefaultCyberiaActions`.
+ *
+ * The NPC skin is derived from the action's first `default-<skin>` dialogue
+ * code (e.g. `default-wason` → skin `wason`) — there is no separate
+ * provideItemId; the bot's own active skin is what 'talk' objectives match.
+ *
+ * @param {string} mapCode
+ * @param {Array<{ key: string, r: number, g: number, b: number, a: number }>} colors
+ * @param {object} [opts]
+ * @param {number} [opts.dim=2]
+ * @param {OccupancyGrid} [opts.grid]   Cells are reserved when provided.
+ * @returns {object[]}  Bot-shaped entities.
+ */
+function actionProviderSkin(action) {
+  // Skin derives from the action's greeting dialogCode (`default-<skin>`).
+  const code = action.dialogCode || '';
+  return code.startsWith('default-') ? code.slice('default-'.length) : '';
+}
+
+function generateActionProviderBots(mapCode, colors, opts = {}) {
+  const dim = opts.dim ?? 2;
+  const botColor = findColor(colors, 'BOT');
+  const rgba = botColor ? colorToRgba(botColor) : 'rgba(255, 128, 0, 1)';
+
+  const entities = [];
+  for (const action of DefaultCyberiaActions) {
+    if (action.sourceMapCode !== mapCode) continue;
+    if (typeof action.sourceCellX !== 'number' || typeof action.sourceCellY !== 'number') continue;
+    const skin = actionProviderSkin(action);
+    if (!skin) continue;
+    const cellX = action.sourceCellX;
+    const cellY = action.sourceCellY;
+
+    if (opts.grid) opts.grid.block(cellX, cellY, dim, dim);
+
+    // Passive quest-giver NPC: no aggro, and a small wander radius so it
+    // drifts near its source cell but stays easy to find. The Go server binds
+    // it by its spawn-centre (the initial cell), so the bind survives movement.
+    entities.push({
+      entityType: 'bot',
+      initCellX: cellX,
+      initCellY: cellY,
+      dimX: dim,
+      dimY: dim,
+      color: rgba,
+      objectLayerItemIds: [skin],
+      spawnRadius: 2,
+      aggroRange: 0,
+      maxLife: 100,
       lifeRegen: 0,
     });
   }
@@ -493,6 +556,7 @@ export {
   generatePortalEntity,
   generatePortalEntities,
   generateBots,
+  generateActionProviderBots,
   generateProceduralEntities,
   // Ranges
   OBSTACLE_RANGE,

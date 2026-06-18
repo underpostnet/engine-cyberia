@@ -177,6 +177,7 @@ const DefaultConf = /**/ {
           'ObjectLayerEngineModal',
           'ObjectLayerEngineViewer',
           'InstanceEngineCyberia',
+          'ActionEngineCyberia',
         ],
         core: [
           'CommonJs',
@@ -259,6 +260,7 @@ const DefaultConf = /**/ {
         { path: '/cyberia-map-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-instance-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/docs', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
+        { path: '/cyberia-action-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [
         {
@@ -680,7 +682,7 @@ const DefaultConf = /**/ {
       '/': {
         client: 'underpost',
         runtime: 'nodejs',
-        apis: ['user', 'file', 'test', 'document', 'cyberia-quest', 'cyberia-quest-progress', 'cyberia-action'],
+        apis: ['user', 'file', 'test', 'document'],
         apiBaseProxyPath: null,
         apiBaseHost: null,
         origins: [],

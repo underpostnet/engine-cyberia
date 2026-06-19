@@ -5,10 +5,6 @@
  * Provides commands for importing, viewing, and managing object layer assets,
  * render frames, and atlas sprite sheets from the command line.
  *
- * Delegates shared object layer creation logic to {@link ObjectLayerEngine} in
- * `src/server/object-layer.js` to keep a single source of truth shared with
- * the REST API service layer.
- *
  * @module bin/cyberia.js
  * @namespace CyberiaCLI
  */
@@ -19,7 +15,7 @@ import fs from 'fs-extra';
 import stringify from 'fast-json-stable-stringify';
 import { shellExec } from '../src/server/process.js';
 import { loggerFactory } from '../src/server/logger.js';
-import { generateBesuManifests, deployBesu, removeBesu } from '../src/server/besu-genesis-generator.js';
+import { generateBesuManifests, deployBesu, removeBesu } from '../src/projects/cyberia/besu-genesis-generator.js';
 import { DataBaseProviderService } from '../src/db/DataBaseProvider.js';
 import { loadConfServerJson } from '../src/server/conf.js';
 import {
@@ -28,12 +24,17 @@ import {
   pngDirectoryIteratorByObjectLayerType,
   getKeyFramesDirectionsFromNumberFolderDirection,
   buildImgFromTile,
-} from '../src/server/object-layer.js';
-import { AtlasSpriteSheetGenerator } from '../src/server/atlas-sprite-sheet-generator.js';
-import { generateMultiFrame, lookupSemantic, semanticRegistry } from '../src/server/semantic-layer-generator.js';
-import { IpfsClient } from '../src/server/ipfs-client.js';
+} from '../src/projects/cyberia/object-layer.js';
+import { AtlasSpriteSheetGenerator } from '../src/projects/cyberia/atlas-sprite-sheet-generator.js';
+import {
+  generateMultiFrame,
+  lookupSemantic,
+  semanticRegistry,
+} from '../src/projects/cyberia/semantic-layer-generator.js';
+import { IpfsClient } from '../src/projects/cyberia/ipfs-client.js';
 import { createPinRecord } from '../src/api/ipfs/ipfs.service.js';
 import { program as underpostProgram } from '../src/cli/index.js';
+import { generateSaga, importSaga } from '../src/projects/cyberia/generate-saga.js';
 import crypto from 'crypto';
 import nodePath from 'path';
 import Underpost from '../src/index.js';
@@ -744,7 +745,7 @@ try {
 
           /**
            * Accumulated object layer data keyed by objectLayerId.
-           * @type {Object<string, import('../src/server/object-layer.js').ObjectLayerData>}
+           * @type {Object<string, import('../src/projects/cyberia/object-layer.js').ObjectLayerData>}
            */
           const objectLayers = {};
 
@@ -3308,6 +3309,102 @@ try {
       } catch (err) {
         logger.error('client-hints command error:', err);
         process.exit(1);
+      }
+    });
+
+  // ── generate-saga: Top-Down PCG guided by LLMs (Semantic Reverse-Engineering) ──
+  program
+    .command('generate-saga')
+    .option('--prompt <theme>', 'High-level natural-language theme seed for the saga ecosystem')
+    .option('--import <file>', 'Load a previously generated payload file (the shape --out writes) into the database')
+    .option('--model <model>', 'Gemini model id (default: gemma-4-26b-a4b-it)')
+    .option('--timeout <ms>', 'Per-request timeout in ms (default: 300000)', (v) => parseInt(v, 10))
+    .option('--thinking-level <level>', 'Gemini thinking level: low | medium | high (default: high)')
+    .option('--out <file>', 'Optional path to dump the normalized payload JSON')
+    .option('--dry-run', 'Generate and normalize without writing to the database')
+    .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
+    .option('--mongo-host <mongo-host>', 'Mongo host override')
+    .option('--dev', 'Force development environment')
+    .description('Generate (via Google Gemini) or import the non-spatial textual layer of a CyberiaSaga ecosystem')
+    .action(async (options) => {
+      if (!options.prompt && !options.import) {
+        logger.error('generate-saga requires either --prompt <theme> or --import <file>');
+        process.exit(1);
+      }
+
+      if (!options.envPath) options.envPath = `./.env`;
+      if (fs.existsSync(options.envPath)) dotenv.config({ path: options.envPath, override: true });
+
+      if (options.dev && process.env.DEFAULT_DEPLOY_ID) {
+        const devEnvPath = `./engine-private/conf/${process.env.DEFAULT_DEPLOY_ID}/.env.development`;
+        if (fs.existsSync(devEnvPath)) dotenv.config({ path: devEnvPath, override: true });
+      }
+
+      let models = null;
+      let host;
+      let path;
+
+      if (!options.dryRun) {
+        const deployId = process.env.DEFAULT_DEPLOY_ID;
+        host = process.env.DEFAULT_DEPLOY_HOST;
+        path = process.env.DEFAULT_DEPLOY_PATH;
+
+        const confServerPath = `./engine-private/conf/${deployId}/conf.server.json`;
+        if (!fs.existsSync(confServerPath)) {
+          logger.error(`Server config not found: ${confServerPath}`);
+          process.exit(1);
+        }
+        const confServer = loadConfServerJson(confServerPath, { resolve: true });
+        const { db } = confServer[host][path];
+
+        db.host = options.mongoHost
+          ? options.mongoHost
+          : options.dev
+            ? db.host
+            : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
+
+        logger.info('generate-saga', { deployId, host, path, db });
+
+        await DataBaseProviderService.load({
+          apis: ['cyberia-saga', 'cyberia-quest', 'cyberia-dialogue', 'cyberia-action', 'object-layer'],
+          host,
+          path,
+          db,
+        });
+
+        models = {
+          CyberiaSaga: DataBaseProviderService.getModel('cyberia-saga', { host, path }),
+          CyberiaQuest: DataBaseProviderService.getModel('cyberia-quest', { host, path }),
+          CyberiaDialogue: DataBaseProviderService.getModel('cyberia-dialogue', { host, path }),
+          CyberiaAction: DataBaseProviderService.getModel('cyberia-action', { host, path }),
+          ObjectLayer: DataBaseProviderService.getModel('object-layer', { host, path }),
+        };
+      }
+
+      try {
+        if (options.import) {
+          await importSaga({
+            file: options.import,
+            models,
+            dryRun: !!options.dryRun,
+            out: options.out,
+          });
+        } else {
+          await generateSaga({
+            prompt: options.prompt,
+            models,
+            model: options.model,
+            timeout: options.timeout,
+            thinkingLevel: options.thinkingLevel,
+            dryRun: !!options.dryRun,
+            out: options.out,
+          });
+        }
+      } catch (err) {
+        logger.error('generate-saga command error:', err);
+        process.exitCode = 1;
+      } finally {
+        if (models) await DataBaseProviderService.getProvider({ host, path }, 'mongoose').close();
       }
     });
 

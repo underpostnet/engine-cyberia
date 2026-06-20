@@ -3315,23 +3315,36 @@ try {
   // ── generate-saga: Top-Down PCG guided by LLMs (Semantic Reverse-Engineering) ──
   program
     .command('generate-saga')
-    .option('--prompt <theme>', 'High-level natural-language theme seed for the saga ecosystem')
+    .option(
+      '--prompt <theme>',
+      'Theme seed for the saga. If omitted, a distinct theme is auto-generated from the Cyberia base lore',
+    )
     .option('--import <file>', 'Load a previously generated payload file (the shape --out writes) into the database')
     .option('--model <model>', 'Gemini model id (default: gemma-4-26b-a4b-it)')
     .option('--timeout <ms>', 'Per-request timeout in ms (default: 300000)', (v) => parseInt(v, 10))
     .option('--thinking-level <level>', 'Gemini thinking level: low | medium | high (default: high)')
-    .option('--out <file>', 'Optional path to dump the normalized payload JSON')
+    .option('--lore-path <path>', 'Override path to the base-lore doc (default: src/client/public/cyberia-docs/CYBERIA-LORE.md)')
+    .option(
+      '--space-context <context>',
+      'Force the auto-theme spatial layer: physical | mixed | hyperspace (default: random ~33% each)',
+    )
+    .option(
+      '--tone <tone>',
+      'Force the auto-theme narrative type: adventure | politics | tragic | comedy (default: random ~25% each)',
+    )
+    .option(
+      '--temperature <value>',
+      'Model sampling temperature, valid range 0.0 (deterministic) to 2.0 (most creative); ' +
+        'higher = more creative/divergent (default: 1.3 for theme synthesis)',
+      parseFloat,
+    )
+    .option('--out <file>', 'Path to dump the payload JSON (default: ./engine-private/cyberia-sagas/<saga-code>.json)')
     .option('--dry-run', 'Generate and normalize without writing to the database')
     .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
     .option('--mongo-host <mongo-host>', 'Mongo host override')
     .option('--dev', 'Force development environment')
     .description('Generate (via Google Gemini) or import the non-spatial textual layer of a CyberiaSaga ecosystem')
     .action(async (options) => {
-      if (!options.prompt && !options.import) {
-        logger.error('generate-saga requires either --prompt <theme> or --import <file>');
-        process.exit(1);
-      }
-
       if (!options.envPath) options.envPath = `./.env`;
       if (fs.existsSync(options.envPath)) dotenv.config({ path: options.envPath, override: true });
 
@@ -3366,7 +3379,7 @@ try {
         logger.info('generate-saga', { deployId, host, path, db });
 
         await DataBaseProviderService.load({
-          apis: ['cyberia-saga', 'cyberia-quest', 'cyberia-dialogue', 'cyberia-action', 'object-layer'],
+          apis: ['cyberia-saga', 'cyberia-map', 'cyberia-quest', 'cyberia-dialogue', 'cyberia-action', 'object-layer'],
           host,
           path,
           db,
@@ -3374,6 +3387,7 @@ try {
 
         models = {
           CyberiaSaga: DataBaseProviderService.getModel('cyberia-saga', { host, path }),
+          CyberiaMap: DataBaseProviderService.getModel('cyberia-map', { host, path }),
           CyberiaQuest: DataBaseProviderService.getModel('cyberia-quest', { host, path }),
           CyberiaDialogue: DataBaseProviderService.getModel('cyberia-dialogue', { host, path }),
           CyberiaAction: DataBaseProviderService.getModel('cyberia-action', { host, path }),
@@ -3396,6 +3410,10 @@ try {
             model: options.model,
             timeout: options.timeout,
             thinkingLevel: options.thinkingLevel,
+            lorePath: options.lorePath,
+            spaceContext: options.spaceContext,
+            tone: options.tone,
+            temperature: options.temperature,
             dryRun: !!options.dryRun,
             out: options.out,
           });

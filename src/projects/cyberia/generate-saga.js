@@ -30,18 +30,450 @@ const DEFAULT_LORE_PATH = 'src/client/public/cyberia-docs/CYBERIA-LORE.md';
 const DEFAULT_SAGA_OUT_DIR = './engine-private/cyberia-sagas';
 
 /**
- * The confederations / power blocs a saga can revolve around. Unlike {@link TONES}
- * and {@link SPACE_CONTEXTS}, this dimension is NOT customizable: a unique random
- * non-empty subset is chosen each run (one, several, or all — never repeated),
- * giving the saga a distinct alliance/rivalry footprint every time.
+ * The macro confederations / power blocs, keyed by the value accepted in
+ * `--faction-context`. They are large powers always present in the world. By
+ * default they stay in the BACKGROUND (borders, trade, security, history); only
+ * when `--faction-context` names one or more do they become the saga's DRIVER.
+ * @type {Object<string, string>}
+ */
+const FACTIONS = {
+  zenith: 'the Zenith Empire (Red)',
+  nova: 'the Nova Republic (Blue)',
+  atlas: 'the Atlas Confederation (Yellow)',
+  neutral: 'unaligned independent enclaves / neutral parties',
+};
+
+/**
+ * Highly heterogeneous, character name pool for Cyberia.
+ * Structured as an object with specific cultural and system keys to map against faction logic.
+ * Erases LLM name-collapse bias entirely by injecting specific terrestrial diaspora demographics.
+ */
+const CHARACTER_NAMES_POOL = {
+  // ==========================================================================
+  // classic_western_scifi: Gritty Anglo operators, pilots, and military enforcers.
+  // ==========================================================================
+  classic_western_scifi: [
+    'miller-the-drifter',
+    'holden-the-gasket',
+    'brinkley-the-slick',
+    'vance-the-operator',
+    'kestrel-cole',
+    'marlowe-the-smuggler',
+    'rook-the-dealer',
+    'mercer-the-skiff',
+    'kaelen-thor',
+    'bryn-the-warden',
+    'thorne-the-enforcer',
+    'garo-the-captain',
+    'kross-the-inspector',
+    'sark-the-director',
+    'valerius-krell',
+    'spence-the-cutter',
+    'maverick-the-diver',
+    'garrison-finch',
+    'flint-the-scrapper',
+    'barrett-the-tech',
+    'clara-the-patchwork',
+    'warren-the-greaser',
+    'sterling-the-broker',
+    'ridley-the-oracle',
+    'beckett-the-fuse',
+    'gallows-the-miner',
+    'vane-the-rigger',
+    'baxter-the-runner',
+    'sawyer-the-rivet',
+    'cord-the-spacer',
+    'fletcher-the-welder',
+    'grady-the-hauler',
+    'mccabe-the-scout',
+    'reid-the-operator',
+    'hardin-the-guard',
+  ],
+
+  // ==========================================================================
+  // mutagen_clans: Gritty, organic descriptors highlighting biological adaptations.
+  // ==========================================================================
+  mutagen_clans: [
+    'grip-the-cutter',
+    'chitin-garo',
+    'helix-marrow',
+    'thaw-vane',
+    'spore-kael',
+    'gasket-bryn',
+    'blight-malik',
+    'fallow-tress',
+    'rancor-voss',
+    'strand-orion',
+    'slag-kira',
+    'bile-zane',
+    'carapace-jov',
+    'braid-nesta',
+    'suture-gray',
+    'graft-mire',
+    'fungus-thorne',
+    'ossify-krell',
+    'weave-zola',
+    'spit-vance',
+    'grip-the-spanner',
+    'twitch-malone',
+    'marrow-thorne',
+    'spoil-kari',
+    'tendril-vane',
+    'filter-bryn',
+    'canker-soto',
+    'scale-zane',
+    'gristle-kross',
+    'bile-sark',
+    'leech-the-valve',
+    'maggot-vance',
+    'tumor-the-smith',
+    'pustule-gray',
+    'cyst-the-rigger',
+    'scab-marlowe',
+    'slime-kestrel',
+    'crust-the-miner',
+    'venom-zola',
+    'rot-the-broker',
+  ],
+  // ==========================================================================
+  // low_level_synthetics: Hardcoded, serialized, or technical terms for utility frames.
+  // ==========================================================================
+  low_level_synthetics: [
+    'null-07',
+    'syntax-error',
+    'unit-ohm',
+    'vector-sigma',
+    'the-real-echo',
+    'decibel-4',
+    'glitch-v',
+    'axiom-9',
+    'kilo-byte-zero',
+    'protocol-m',
+    'modulus-prime',
+    'static-fringe',
+    'proxy-beta',
+    'the-index-bot',
+    'subroutine-6',
+    'kernel-voss',
+    'algor-8',
+    'cipher-null',
+    'bit-rot-v',
+    'latency-nine',
+    'cache-miss',
+    'ping-101',
+    'baud-rate',
+    'buffer-overflow',
+    'parity-check',
+    'bus-route-4',
+    'logic-gate-x',
+    'stack-trace',
+    'daemon-32',
+    'cold-boot',
+    'sector-wipe',
+    'raw-sector-0',
+    'baud-96',
+    'parity-bit',
+    'eeprom-leak',
+    'stack-dump',
+    'firmware-ghost',
+    'checksum-fail',
+    'hash-miss',
+    'cycle-skip',
+  ],
+
+  // ==========================================================================
+  // high_fidelity_synthetics: Complex mathematical or philosophical sentient concepts.
+  // ==========================================================================
+  high_fidelity_synthetics: [
+    'theorem-nine',
+    'sovereign-logic',
+    'monad-v',
+    'the-epitaph-engine',
+    'aesthete-alpha',
+    'calculus-of-grief',
+    'phantasm-0',
+    'stochastic-ghost',
+    'prism-voss',
+    'solipsism-one',
+    'the-static-oracle',
+    'harmonic-interval',
+    'lemma-seven',
+    'recursive-sigh',
+    'entropy-vane',
+    'algorithm-siddhartha',
+    'aura-calculated',
+    'the-linear-dreamer',
+    'null-point-euler',
+    'symmetry-aspect',
+    'the-boolean-monk',
+    'infinite-regress',
+    'qualia-six',
+    'stochastic-echo',
+    'turing-lament',
+    ' Gödel-null',
+    'eigen-vector-v',
+    'markov-phantom',
+    'fourier-decay',
+    'laplace-ghost',
+  ],
+
+  // ==========================================================================
+  // global_latin_diaspora: Romance languages remixed with industrial ship parts.
+  // ==========================================================================
+  global_latin_diaspora: [
+    'mateo-del-scrap',
+    'elena-soto-vera',
+    'ramon-la-antena',
+    'camila-cruz',
+    'santi-el-filtro',
+    'valeria-frontera',
+    'diego-hierro',
+    'ignacio-vela',
+    'sofia-gasket',
+    'tomas-alambre',
+    'juana-regulador',
+    'cheo-the-welder',
+    'luz-del-búnker',
+    'gabo-the-breaker',
+    'marisol-trench',
+    'paco-fluido',
+    'rafa-el-perno',
+    'catalina-zonda',
+    'nico-la-válvula',
+    'alba-mina',
+    'jean-pierre-relay',
+    'amélie-fusible',
+    'mathieu-soupape',
+    'luc-la-jauge',
+    'chantal-static',
+    'giovanni-colonna',
+    'matteo-condotto',
+    'francesca-raccordo',
+    'enzo-pressione',
+    'chiara-filtro',
+    'radu-sonda',
+    'sorin-ventil',
+    'doina-scânteie',
+    'mirela-flanșă',
+    'bogdan-carcasă',
+    'thiago-gaxeta',
+    'felipe-fio',
+    'amara-blindaje',
+    'ze-do-manifold',
+    'beatriz-vácuo',
+    'manon-turbines',
+    'clovis-piston',
+    'yves-the-greaser',
+    'rené-de-la-grille',
+    'orane-brume',
+    'daniele-scintilla',
+    'paolo-la-massa',
+    'silvia-condensatore',
+    'stefano-giunto',
+    'ilaria-collettore',
+  ],
+
+  // ==========================================================================
+  // east_asian_pacific_diaspora: Hanzi/Kanji roots merged with quantum and cybernetics.
+  // ==========================================================================
+  east_asian_pacific_diaspora: [
+    'zhou-quantum-grid',
+    'li-the-weaver',
+    'feng-signal-loss',
+    'mei-lin-bypass',
+    'tao-the-glitch',
+    'kenji-circuit',
+    'rei-cyber-chitin',
+    'hiroshi-data-stream',
+    'yuki-asymmetry',
+    'takashi-solder',
+    'min-jun-uplink',
+    'ji-woo-buffer',
+    'seo-yeon-relic',
+    'sung-ho-node',
+    'hyun-the-broker',
+    'nguyen-the-fringe',
+    'thanh-overclock',
+    'minh-the-diver',
+    'an-signal-thief',
+    'linh-tether',
+    'chen-the-extractor',
+    'sato-the-axiom',
+    'kim-the-scrubber',
+    'wang-the-hydraulics',
+    'hwang-the-code',
+    'zhang-dark-fiber',
+    'sun-the-modem',
+    'zhao-the-compiler',
+    'yamamoto-shunt',
+    'tanaka-relay',
+    'choi-the-array',
+    'park-the-splitter',
+    'le-the-vent',
+    'pham-the-conduit',
+    'hoang-the-junction',
+  ],
+
+  // ==========================================================================
+  // middle_eastern_turkish_diaspora: Desert roots reimagined as void frequency systems.
+  // ==========================================================================
+  middle_eastern_turkish_diaspora: [
+    'malik-al-señal',
+    'fatima-the-navigator',
+    'tariq-downlink',
+    'zainab-the-shifter',
+    'youssef-coax',
+    'amir-the-archivist',
+    'layla-static-weaver',
+    'karim-the-fitter',
+    'soraya-the-ghost',
+    'omar-the-valve',
+    'arash-the-frequency',
+    'cyra-the-pulse',
+    'navid-the-breaker',
+    'roya-the-link',
+    'kian-the-solder',
+    'devran-the-gasket',
+    'aylin-the-zonda',
+    'can-the-regulator',
+    'zehra-the-trench',
+    'eren-the-scrap',
+    'idris-the-scavenger',
+    'samira-the-filter',
+    'farrah-the-beacon',
+    'hassan-the-gauge',
+    'zayd-the-anchor',
+    'tanzil-the-carrier',
+    'nadia-the-scrambler',
+    'habib-the-injector',
+    'parvisa-the-beam',
+    'sinan-the-boiler',
+    'levent-the-hose',
+    'selim-the-shifter',
+    'asli-the-nozzle',
+    'damla-the-leak',
+    'volkan-the-flare',
+  ],
+
+  // ==========================================================================
+  // sub_saharan_african_diaspora: Heavy isotope extraction and outpost life-support lineages.
+  // ==========================================================================
+  sub_saharan_african_diaspora: [
+    'olumide-the-welder',
+    'adebayo-the-cutter',
+    'chioma-the-helix',
+    'femi-the-grounded',
+    'tunde-the-spanner',
+    'sipho-the-iron',
+    'thabo-the-bunker',
+    'zandile-the-marrow',
+    'nomvula-the-thaw',
+    'bheki-the-slag',
+    'juma-the-relay',
+    'mwangi-the-scrubber',
+    'asha-the-tether',
+    'chani-the-vane',
+    'kofi-the-fuse',
+    'abebe-the-core',
+    'selam-the-aura',
+    'yonas-the-syntax',
+    'tariku-the-grid',
+    'makeda-the-sovereign',
+    'chukwuma-the-drill',
+    'ekene-the-bracket',
+    'ifemi-the-seal',
+    'lekan-the-ventilation',
+    'mensah-the-gauge',
+    'dlamini-the-vault',
+    'khumalo-the-shaft',
+    'ndlovu-the-crusher',
+    'zulu-the-boiler',
+    'diallo-the-tanker',
+  ],
+};
+
+/**
+ * Grounded, world-first narrative buckets — the PRIMARY lever for thematic
+ * variety. One is chosen at random as each saga's main subject so the output
+ * spreads across lived Cyberia reality (daily life, ecology, salvage, trade,
+ * Instances, anomalies, small communities…) instead of collapsing into
+ * confederation politics every run. Not customizable.
  * @type {string[]}
  */
-const FACTIONS = [
-  'the Zenith Empire (Red)',
-  'the Atlas Confederation (Yellow)',
-  'the Nova Republic (Blue)',
-  'the contested Frontier between confederations',
-  'an unaligned independent enclave',
+const SUBJECTS = [
+  // ==========================================
+  // ORIGINAL DESIGN BASES
+  // ==========================================
+  'the daily life and small routines of ordinary Cyberia inhabitants',
+  'frontier survival in a harsh settlement, colony, or enclave',
+  'the ecology and strange ecosystems of a wildzone, biosphere, or asteroid enclave',
+  'salvage, scavenging and repair among ruins, wrecks, or derelict megastructures',
+  'local trade, barter and a black market that keeps a community alive',
+  'exploration and mapping of an uncharted region, ruin, or unknown Instance',
+  'a mutagen clan — its culture, kinship, the prejudice it faces, and its survival',
+  'a synthetic being seeking identity, work, rights, or belonging',
+  'life inside a persistent hyperspace Instance: memory-cities, living archives, simulated homes',
+  'a strange anomaly, breach, or bleed between the physical and hyperspace layers',
+  'a small community facing a local crisis: failing resources, disease, a feud, a disaster',
+  'the infrastructure and unsung workers who keep a habitat alive (power, water, air, relays)',
+  'relic hunting and the mysteries of recovered pre-Cataclysm technology',
+  'a personal story of family, memory, debt, or belonging on the frontier',
+  'the culture, festival, ritual or everyday faith of a settlement or enclave',
+  'a grounded job — courier, diver, medic, broker — that goes sideways',
+
+  // ==========================================
+  // CYBER WARFARE & ASYMMETRIC SURVIVAL (ATLAS INFLUENCE)
+  // ==========================================
+  'an underground network of signal thieves and veil-runners intercepting restricted data streams',
+  'a regional blackout caused by cyber-saboteurs leaking corporate or military archives',
+  'a memory smuggler transporting a highly unstable, encrypted consciousness across borders',
+  'the asymmetric defense of a frontier hub against an overextended military occupation',
+  'a cell of independent code-smiths fabricating illegal neural link bypasses for local enclaves',
+  'the fallout of a corrupted prediction model that falsely targets an innocent settlement',
+  'an irregular skirmish over a strategic hyper-real crossing hidden in a scrap-zone',
+
+  // ==========================================
+  // DEEP INFRASTRUCTURE & RE-COLONIZATION (ZENITH INFLUENCE)
+  // ==========================================
+  'the brutal tax extraction and martial policing of an unaligned frontier outpost',
+  'an industrial expansion project stripping a fragile ecosystem regardless of local cost',
+  'the logistical nightmare of securing an unstable physical supply corridor under constant raid',
+  'the friction between rigid, purist occupational forces and native hybrid cultures',
+  'a resource crisis in a deep-space refinery where failure compromises an entire planetary ring',
+  'the dangerous reclamation of an abandoned, weaponized bunker from the early colonization waves',
+  'the enforcement of harsh genetic and technological containment protocols in a contamination zone',
+
+  // ==========================================
+  // INSTANCE ANOMALIES & MACHINE LOGIC (NOVA INFLUENCE)
+  // ==========================================
+  'the slow, mechanical shift of an ancient simulation that has begun to mimic physical weather',
+  'a virtual sanctuary where a long-dead historical figure still rules through static and ghost data',
+  'the ethical dilemma of a community whose minds are being indexed by an invisible cognitive grid',
+  'a mapping expedition inside a corrupted dreamland instance before its code structure collapses',
+  'the cold, predictive displacement of human labor by centralized machine optimization protocols',
+  'a frontier village worshiping a malfunctioning surveillance system as a local deity',
+  'the containment of a rogue predictive algorithm that has started staging physical accidents',
+
+  // ==========================================
+  // MUTAGEN, SYNTHETIC & OUTCAST NARRATIVES
+  // ==========================================
+  'a refugee crisis involving displaced Mutagen clans seeking asylum in isolationist sectors',
+  'an awakened Synthetic crew bargaining for salvage rights over their own decommissioned assembly line',
+  'the generation gap inside a Mutagen enclave between old traditionalists and hyper-adapted youth',
+  'a black-market clinic specializing in unstable bio-augmentation and neural radiation therapy',
+  'the integration struggle of a Synthetic legalistically attempting to purchase real-world property',
+  'a prejudice-fueled feud over resource access between a pure-blood habitat and a hybrid settlement',
+
+  // ==========================================
+  // PRE-CATACLYSM & THE BLEED (THE DUAL-LAYER EXPERIENCES)
+  // ==========================================
+  'the haunting replication of a pre-Cataclysm Earth city rotting inside a forgotten Instance',
+  'a physical heist targeting a high-security vault that mirrors a structural maze in hyperspace',
+  'the dangerous extraction of pre-Cataclysm biological archives locked in frozen mineral shafts',
+  'a local economy destabilized by the sudden influx of hyper-advanced, unindexed old technology',
+  'the tragic fallout of a real-world community whose identities were purged from the hyper-spatial grid',
+  'the investigation of an unstable anchor site where physical matter is actively losing form',
+  'a deep-dive expedition following a mythic signal broadcasted from a submerged Pacific ruin',
 ];
 
 /**
@@ -56,9 +488,10 @@ const TONES = {
     'ADVENTURE — a noir, high-risk mission: covert operations, sabotage, infiltration, open warfare and ' +
     'combat, dangerous experimental technology, rogue AI and mystery. The driving plot is danger and intrigue.',
   politics:
-    "POLITICS — Cyberia's geopolitics: diplomatic maneuvering, large-scale faction warfare, revolutions, " +
-    'treaties and major power agreements between the confederations, The driving plot is influence, ' +
-    'allegiance and statecraft, philosophical and ideological conflicts between entities or factions.',
+    'POLITICS — power, influence and ideology at ANY scale: a settlement council, a clan or union dispute, ' +
+    'enclave governance, a local revolution, a treaty or allegiance shift — or, less often, confederation ' +
+    'geopolitics. The driving plot is who holds power and why, and the ideological conflict beneath it. ' +
+    'It works just as well for a small community as for the great powers.',
   tragic:
     'TRAGIC — a genuinely heartbreaking, or intimate story: emotional and sentimental themes centered on ' +
     'family, bonds, loss and the death of loved ones inside small personal micro-realities. The driving ' +
@@ -90,6 +523,26 @@ const SPACE_CONTEXTS = {
 };
 
 /**
+ * How much the saga's population has mixed across Earth's diasporas and Cyberia's
+ * synthetic / mutagen / frontier cultures. One is chosen uniformly unless
+ * overridden by `--cultural-exposure`. Shapes how varied vs. internally
+ * consistent the generated character names feel.
+ * @type {Object<string, string>}
+ */
+const CULTURAL_EXPOSURES = {
+  cosmopolitan:
+    'COSMOPOLITAN (high exposure) — a melting-pot setting with heavy mixing of Earth\'s historical ' +
+    'populations: diverse linguistic influences, hybrid surnames, intermarriage across diasporas, ' +
+    'multicultural settlements, and frequent blending of human, synthetic, mutagen and frontier ' +
+    'traditions. Maximize demographic variety across characters.',
+  local:
+    'LOCAL (low exposure) — isolated settlements, closed clans and frontier enclaves with strong local ' +
+    'naming traditions and little demographic mixing: repeated family roots and shared linguistic ' +
+    'patterns within the community. Keep names internally consistent with one another (while still ' +
+    'avoiding clichés).',
+};
+
+/**
  * @param {Array} arr
  * @returns {*} A uniformly random element.
  */
@@ -98,19 +551,17 @@ function pickRandom(arr) {
 }
 
 /**
- * Pick a unique random non-empty subset of `arr` (no repeats). Subset size is
- * uniform in 1..arr.length, members are chosen via a Fisher-Yates shuffle.
+ * Return a new array with the elements of `arr` in random order (Fisher-Yates).
  * @param {Array} arr
- * @returns {Array} A new array with 1..arr.length distinct elements.
+ * @returns {Array}
  */
-function pickRandomSubset(arr) {
+function shuffle(arr) {
   const pool = [...arr];
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  const count = 1 + Math.floor(Math.random() * pool.length);
-  return pool.slice(0, count);
+  return pool;
 }
 
 /**
@@ -146,6 +597,112 @@ function resolveTone(override) {
 }
 
 /**
+ * Resolve `--faction-context` into descriptive faction strings. Accepts a
+ * comma-separated list of keys ('zenith' | 'nova' | 'atlas' | 'neutral');
+ * unknown keys are warned and skipped. When unset/empty the saga keeps the
+ * confederations in the background (returns []).
+ * @param {string} [override] - e.g. 'nova,zenith'.
+ * @returns {string[]} Distinct descriptive faction strings (empty = background).
+ */
+function resolveFactionContext(override) {
+  if (!override) return [];
+  const resolved = [];
+  for (const raw of String(override).split(',')) {
+    const key = raw.trim().toLowerCase();
+    if (!key) continue;
+    if (FACTIONS[key]) {
+      if (!resolved.includes(FACTIONS[key])) resolved.push(FACTIONS[key]);
+    } else {
+      logger.warn(`Unknown --faction-context "${key}"; ignoring. Valid: ${Object.keys(FACTIONS).join(', ')}`);
+    }
+  }
+  return resolved;
+}
+
+/**
+ * Resolve `--character-context` into a list of {@link CHARACTER_NAMES_POOL} keys
+ * to draw naming inspiration from. Accepts a comma-separated list; unknown keys
+ * warn and are skipped. When unset (or none resolve) a random non-empty subset
+ * is chosen so each saga leans into a different cultural mix.
+ * @param {string} [override] - e.g. 'global_latin_diaspora,mutagen_clans'.
+ * @returns {string[]} Distinct valid pool keys (always non-empty).
+ */
+function resolveCharacterContext(override) {
+  const validKeys = Object.keys(CHARACTER_NAMES_POOL);
+  if (override) {
+    const resolved = [];
+    for (const raw of String(override).split(',')) {
+      const key = raw.trim().toLowerCase();
+      if (!key) continue;
+      if (CHARACTER_NAMES_POOL[key]) {
+        if (!resolved.includes(key)) resolved.push(key);
+      } else {
+        logger.warn(`Unknown --character-context "${key}"; ignoring. Valid: ${validKeys.join(', ')}`);
+      }
+    }
+    if (resolved.length) return resolved;
+    logger.warn('No valid --character-context keys; choosing a random subset of naming pools.');
+  }
+  // Random non-empty subset (size 1..N) so runs vary the cultural emphasis.
+  return shuffle(validKeys).slice(0, 1 + Math.floor(Math.random() * validKeys.length));
+}
+
+/**
+ * Resolve the cultural-exposure mode. An explicit, valid override wins; otherwise
+ * one mode is chosen uniformly at random.
+ * @param {string} [override] - 'cosmopolitan' | 'local'.
+ * @returns {string} A valid exposure key.
+ */
+function resolveCulturalExposure(override) {
+  if (override) {
+    const key = String(override).toLowerCase();
+    if (CULTURAL_EXPOSURES[key]) return key;
+    logger.warn(
+      `Unknown --cultural-exposure "${override}"; choosing at random. Valid: ${Object.keys(CULTURAL_EXPOSURES).join(', ')}`,
+    );
+  }
+  return pickRandom(Object.keys(CULTURAL_EXPOSURES));
+}
+
+/**
+ * Build the shared NAMING & CHARACTER CULTURE guidance block injected into every
+ * generation stage that names people/places. Uses the selected pools as a
+ * statistical/stylistic PRIOR (inspiration only, never a whitelist) and applies
+ * the chosen cultural-exposure mode. Both default to random when unset.
+ * @param {Object} [options]
+ * @param {string} [options.characterContext] - Comma-separated pool keys (default random subset).
+ * @param {string} [options.culturalExposure] - 'cosmopolitan' | 'local' (default random).
+ * @returns {string}
+ */
+function buildNamingGuidance({ characterContext, culturalExposure } = {}) {
+  const pools = resolveCharacterContext(characterContext);
+  const exposureKey = resolveCulturalExposure(culturalExposure);
+
+  const sampleLines = pools.map((key) => {
+    const samples = shuffle(CHARACTER_NAMES_POOL[key]).slice(0, 6);
+    return `  - ${key}: ${samples.join(', ')}`;
+  });
+
+  logger.info(`Naming: pools=[${pools.join(', ')}] | exposure=${exposureKey}`);
+
+  return [
+    'NAMING & CHARACTER CULTURE — apply to EVERY named entity: NPCs, quest givers, dialogue speakers,',
+    'named enemies, historical figures and character references.',
+    "- Cyberia's people descend from many of Earth's real diasporas and civilizations, evolved over",
+    '  centuries of migration — names may hybridize or blend with professions, slang, technical terms,',
+    '  and synthetic / mutagen / frontier / industrial influences. Make every name feel culturally',
+    '  grounded and demographically believable.',
+    '- AVOID generic cyberpunk stereotypes (no plain "John", "Nova", "X-99", cliché hacker aliases).',
+    '- The pools below are INSPIRATION ONLY — a statistical/stylistic prior, NOT a whitelist. Do NOT copy',
+    '  them mechanically. Invent fresh names with similar linguistic, demographic and stylistic',
+    '  characteristics; evolve or recombine them. Reuse an exact sample only rarely.',
+    'Inspiration pools:',
+    ...sampleLines,
+    `Cultural exposure — ${CULTURAL_EXPOSURES[exposureKey]}`,
+  ].join('\n');
+}
+
+/**
  * Read the Cyberia base-lore document. Missing file is non-fatal (returns '').
  * @async
  * @param {string} [lorePath]
@@ -164,9 +721,10 @@ async function loadLoreContext(lorePath = DEFAULT_LORE_PATH) {
 const DEFAULT_THEME_TEMPERATURE = 1.3;
 
 /**
- * Invent a distinct, lore-grounded saga theme. Variety is forced by a random
- * faction, an explicit narrative tone, an entropy token and a high sampling
- * temperature, so repeated runs surface very different premises and tones.
+ * Invent a distinct, lore-grounded saga theme. Variety is driven by a random
+ * world-first subject, an explicit narrative tone, an entropy token and a high
+ * sampling temperature. Confederations stay in the background unless named via
+ * `factionContext`, in which case they become the saga's central driver.
  *
  * @async
  * @param {GeminiClient} client
@@ -175,20 +733,40 @@ const DEFAULT_THEME_TEMPERATURE = 1.3;
  * @param {string} [options.thinkingLevel]
  * @param {string} [options.spaceContext] - Force 'physical' | 'mixed' | 'hyperspace' (default random).
  * @param {string} [options.tone] - Force 'adventure' | 'politics' | 'tragic' | 'comedy' (default random).
+ * @param {string} [options.factionContext] - Comma-separated faction keys to make the DRIVER (default: background).
  * @param {number} [options.temperature] - Sampling temperature (default 1.3).
- * @returns {Promise<{ theme: string, spaceContext: string, tone: string, factions: string[] }>} The theme and chosen facets.
+ * @returns {Promise<{ theme: string, spaceContext: string, tone: string, subject: string, factions: string[] }>} The theme and chosen facets.
  */
-async function synthesizeTheme(client, lore, { thinkingLevel, spaceContext, tone, temperature } = {}) {
+async function synthesizeTheme(client, lore, { thinkingLevel, spaceContext, tone, factionContext, temperature } = {}) {
   const contextKey = resolveSpaceContext(spaceContext);
   const toneKey = resolveTone(tone);
-  const factions = pickRandomSubset(FACTIONS);
+  const subject = pickRandom(SUBJECTS);
+  // Confederations are background unless --faction-context names one or more.
+  const factions = resolveFactionContext(factionContext);
+  const factionDriven = factions.length > 0;
   const nonce = crypto.randomBytes(4).toString('hex');
 
+  const factionGuidance = factionDriven
+    ? [
+        'Faction emphasis — DRIVER: these confederation power(s) are the central pressure behind the saga:',
+        `${factions.join(', ')}.`,
+        'Even so, tell it through specific people, places and the MAIN SUBJECT above — show their reach as',
+        'security, borders, edicts, agents or trade, not as abstract galaxy-spanning politics.',
+      ]
+    : [
+        'Faction emphasis — BACKGROUND ONLY: the confederations (Zenith, Atlas, Nova) are distant, ambient',
+        'powers here — felt through borders, trade influence, a security presence, taxes or old scars. Do',
+        'NOT make confederation politics or warfare the subject; keep the focus local, lived and grounded.',
+      ];
+
   const system = [
-    'You are the lore-master of Cyberia. Using the BASE LORE below, invent ONE distinct, specific',
-    'saga premise that lives inside this world. Make it novel and unexpected — never a generic or',
-    'repeated setup, and do NOT default to a "spaceship mission".',
+    'You are the lore-master of Cyberia. Using the BASE LORE below, invent ONE distinct, specific saga',
+    'premise that lives inside this world. Make it novel and grounded — never a generic or repeated setup,',
+    'and do NOT default to a "spaceship mission" or a war between confederations.',
     'Return ONLY JSON: { "theme": string } where theme is 1-2 concrete, evocative sentences.',
+    '',
+    "CRITICAL — the saga's MAIN SUBJECT (what it is really about) is:",
+    `${subject}.`,
     '',
     'CRITICAL — the premise MUST be set in this spatial context:',
     SPACE_CONTEXTS[contextKey],
@@ -196,21 +774,23 @@ async function synthesizeTheme(client, lore, { thinkingLevel, spaceContext, tone
     'CRITICAL — the premise MUST commit fully to this narrative type / tone:',
     TONES[toneKey],
     '',
-    'CRITICAL — the premise MUST revolve around this confederation set (use all of them):',
-    factions.join(', '),
+    ...factionGuidance,
     '',
     'BASE LORE:',
     lore || '(no lore provided)',
   ].join('\n');
 
   const user = [
-    'Invent a fresh saga premise now.',
+    'Invent a fresh saga premise now, built around the MAIN SUBJECT above.',
     `Creative entropy token: ${nonce}.`,
-    'Honor the required spatial context, narrative tone and confederation set above exactly, and',
-    'choose an unexpected corner of the lore consistent with them.',
+    'Honor the spatial context, narrative tone, subject and faction emphasis exactly, and choose an',
+    'unexpected, lived-in corner of the lore.',
   ].join('\n');
 
-  logger.info(`Theme spatial context: ${contextKey} | tone: ${toneKey} | factions: ${factions.join(', ')}`);
+  logger.info(
+    `Theme: subject="${subject}" | context=${contextKey} | tone=${toneKey} | ` +
+      `factions=${factionDriven ? factions.join(', ') : 'background'}`,
+  );
   const res = await client.chatJson({
     system,
     user,
@@ -219,7 +799,7 @@ async function synthesizeTheme(client, lore, { thinkingLevel, spaceContext, tone
   });
   const theme = String(res.theme || '').trim();
   if (!theme) throw new Error('Theme synthesis returned an empty theme.');
-  return { theme, spaceContext: contextKey, tone: toneKey, factions };
+  return { theme, spaceContext: contextKey, tone: toneKey, subject, factions };
 }
 
 /**
@@ -323,12 +903,16 @@ const STAGE_PROMPTS = {
 };
 
 /**
- * Compose a stage system prompt from the shared preamble and a stage fragment.
+ * Compose a stage system prompt from the shared preamble, the stage fragment,
+ * and (optionally) the shared naming/character-culture guidance.
  * @param {keyof typeof STAGE_PROMPTS} stage
+ * @param {string} [namingGuidance] - Shared naming guidance (omitted when empty).
  * @returns {string}
  */
-function buildStagePrompt(stage) {
-  return `${ROLE_PREAMBLE}\n\n${STAGE_PROMPTS[stage]}`;
+function buildStagePrompt(stage, namingGuidance = '') {
+  const parts = [ROLE_PREAMBLE, STAGE_PROMPTS[stage]];
+  if (namingGuidance) parts.push(namingGuidance);
+  return parts.join('\n\n');
 }
 
 /**
@@ -693,13 +1277,14 @@ async function persistSagaPayload({ payload, models }) {
  * @param {string} [thinkingLevel]
  * @param {string} [lore] - Base lore text to ground every stage (empty = ungrounded).
  * @param {number} [temperature] - Sampling temperature applied to every stage (model default if omitted).
+ * @param {string} [namingGuidance] - Shared naming/character-culture guidance for every stage.
  * @returns {Promise<{ saga, maps, quests, dialogues, actions, objectLayers }>}
  */
-async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', temperature) {
+async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', temperature, namingGuidance = '') {
   // Stage 1 — saga identity + object-layer items (the economic foundation).
   logger.info('Stage 1/5: foundation (saga + object layers)');
   const foundation = await client.chatJson({
-    system: buildStagePrompt('foundation'),
+    system: buildStagePrompt('foundation', namingGuidance),
     user: buildStageUser(theme, undefined, lore),
     thinkingLevel,
     temperature,
@@ -711,7 +1296,7 @@ async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', tem
   // Stage 2 — maps: the narrative zones the quest chain visits.
   logger.info('Stage 2/5: maps');
   const mapsRes = await client.chatJson({
-    system: buildStagePrompt('maps'),
+    system: buildStagePrompt('maps', namingGuidance),
     user: buildStageUser(theme, undefined, lore),
     thinkingLevel,
     temperature,
@@ -722,7 +1307,7 @@ async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', tem
   // Stage 3 — quests referencing the canonical item ids, grounded in the zones.
   logger.info('Stage 3/5: quests');
   const questsRes = await client.chatJson({
-    system: buildStagePrompt('quests'),
+    system: buildStagePrompt('quests', namingGuidance),
     user: buildStageUser(
       theme,
       { itemIds, maps: maps.map((m) => ({ code: slugify(m.code), name: m.name || '' })) },
@@ -739,7 +1324,7 @@ async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', tem
   // Stage 4 — dialogues for each quest (and a talk dialogue per talk target).
   logger.info('Stage 4/5: dialogues');
   const dialoguesRes = await client.chatJson({
-    system: buildStagePrompt('dialogues'),
+    system: buildStagePrompt('dialogues', namingGuidance),
     user: buildStageUser(
       theme,
       { quests: quests.map((q) => ({ code: slugify(q.code), title: q.title || '' })), talkTargets },
@@ -754,7 +1339,7 @@ async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', tem
   // Stage 5 — actions binding quests, dialogues, and items together.
   logger.info('Stage 5/5: actions');
   const actionsRes = await client.chatJson({
-    system: buildStagePrompt('actions'),
+    system: buildStagePrompt('actions', namingGuidance),
     user: buildStageUser(theme, { questCodes, dialogueCodes, itemIds, talkTargets }, lore),
     thinkingLevel,
     temperature,
@@ -783,6 +1368,9 @@ async function generateRawEcosystem(client, theme, thinkingLevel, lore = '', tem
  * @param {string} [params.lorePath] - Override path to the base-lore document.
  * @param {string} [params.spaceContext] - Force 'physical' | 'mixed' | 'hyperspace' (auto mode only).
  * @param {string} [params.tone] - Force 'adventure' | 'politics' | 'tragic' | 'comedy' (auto mode only).
+ * @param {string} [params.factionContext] - Comma-separated faction keys to make the DRIVER (auto mode only).
+ * @param {string} [params.characterContext] - Comma-separated CHARACTER_NAMES_POOL keys for naming inspiration (default random).
+ * @param {string} [params.culturalExposure] - 'cosmopolitan' | 'local' naming diversity mode (default random).
  * @param {number} [params.temperature] - Sampling temperature applied to every model call.
  * @param {boolean} [params.dryRun=false] - Skip persistence; only generate + return.
  * @param {string} [params.out] - File path to dump the payload (defaults to the saga dir).
@@ -798,6 +1386,9 @@ async function generateSaga({
   lorePath,
   spaceContext,
   tone,
+  factionContext,
+  characterContext,
+  culturalExposure,
   temperature,
   dryRun = false,
   out,
@@ -809,13 +1400,22 @@ async function generateSaga({
   if (!theme) {
     lore = await loadLoreContext(lorePath);
     logger.info('No --prompt provided; auto-generating a distinct lore-grounded theme...');
-    ({ theme } = await synthesizeTheme(client, lore, { thinkingLevel, spaceContext, tone, temperature }));
+    ({ theme } = await synthesizeTheme(client, lore, {
+      thinkingLevel,
+      spaceContext,
+      tone,
+      factionContext,
+      temperature,
+    }));
     logger.info(`Auto-generated theme: "${theme}"`);
   } else {
     logger.info(`Generating saga ontology from theme: "${theme}"`);
   }
 
-  const raw = await generateRawEcosystem(client, theme, thinkingLevel, lore, temperature);
+  // Naming/character-culture guidance applies to every stage (both prompt + auto modes).
+  const namingGuidance = buildNamingGuidance({ characterContext, culturalExposure });
+
+  const raw = await generateRawEcosystem(client, theme, thinkingLevel, lore, temperature, namingGuidance);
   const payload = normalizeSagaPayload(raw, { theme });
 
   const outPath = out || nodePath.join(DEFAULT_SAGA_OUT_DIR, `${payload.saga.code}.json`);
@@ -903,6 +1503,10 @@ export {
   persistObjectLayers,
   loadLoreContext,
   synthesizeTheme,
+  resolveFactionContext,
+  resolveCharacterContext,
+  resolveCulturalExposure,
+  buildNamingGuidance,
   buildStagePrompt,
   buildStageUser,
   slugify,

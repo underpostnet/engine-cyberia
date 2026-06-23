@@ -3323,7 +3323,10 @@ try {
     .option('--model <model>', 'Gemini model id (default: gemma-4-26b-a4b-it)')
     .option('--timeout <ms>', 'Per-request timeout in ms (default: 300000)', (v) => parseInt(v, 10))
     .option('--thinking-level <level>', 'Gemini thinking level: low | medium | high (default: high)')
-    .option('--lore-path <path>', 'Override path to the base-lore doc (default: src/client/public/cyberia-docs/CYBERIA-LORE.md)')
+    .option(
+      '--lore-path <path>',
+      'Override path to the base-lore doc (default: src/client/public/cyberia-docs/CYBERIA-LORE.md)',
+    )
     .option(
       '--space-context <context>',
       'Force the auto-theme spatial layer: physical | mixed | hyperspace (default: random ~33% each)',
@@ -3333,9 +3336,26 @@ try {
       'Force the auto-theme narrative type: adventure | politics | tragic | comedy (default: random ~25% each)',
     )
     .option(
+      '--faction-context <keys>',
+      'Comma-separated factions that DRIVE the auto-theme: zenith | nova | atlas | neutral ' +
+        "(e.g. 'nova,zenith'). If unset, confederations stay background, not the main theme",
+    )
+    .option(
+      '--character-context <keys>',
+      'Comma-separated CHARACTER_NAMES_POOL keys to inspire NPC/character names: low_level_synthetics | ' +
+        'high_fidelity_synthetics | global_latin_diaspora | east_asian_pacific_diaspora | ' +
+        'middle_eastern_turkish_diaspora | sub_saharan_african_diaspora | classic_western_scifi | ' +
+        'mutagen_clans (inspiration only). If unset, a random subset is chosen',
+    )
+    .option(
+      '--cultural-exposure <mode>',
+      'Naming diversity mode: cosmopolitan (high mixing) | local (isolated, consistent). ' +
+        'If unset, chosen at random',
+    )
+    .option(
       '--temperature <value>',
       'Model sampling temperature, valid range 0.0 (deterministic) to 2.0 (most creative); ' +
-        'higher = more creative/divergent (default: 1.3 for theme synthesis)',
+        'higher = more creative/divergent (default: 2.0 for theme synthesis)',
       parseFloat,
     )
     .option('--out <file>', 'Path to dump the payload JSON (default: ./engine-private/cyberia-sagas/<saga-code>.json)')
@@ -3413,6 +3433,9 @@ try {
             lorePath: options.lorePath,
             spaceContext: options.spaceContext,
             tone: options.tone,
+            factionContext: options.factionContext,
+            characterContext: options.characterContext,
+            culturalExposure: options.culturalExposure,
             temperature: options.temperature,
             dryRun: !!options.dryRun,
             out: options.out,

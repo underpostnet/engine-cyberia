@@ -178,6 +178,7 @@ const DefaultConf = /**/ {
           'ObjectLayerEngineViewer',
           'InstanceEngineCyberia',
           'ActionEngineCyberia',
+          'EntityEngineCyberia',
         ],
         core: [
           'CommonJs',
@@ -261,6 +262,7 @@ const DefaultConf = /**/ {
         { path: '/cyberia-instance-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/docs', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-action-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
+        { path: '/cyberia-entity-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [
         {
@@ -327,6 +329,7 @@ const DefaultConf = /**/ {
         'cyberia-quest-progress',
         'cyberia-action',
         'cyberia-skill',
+        'cyberia-entity-type-default',
         'cyberia-client-hints',
       ],
     },
@@ -745,6 +748,7 @@ const DefaultConf = /**/ {
           'cyberia-quest-progress',
           'cyberia-action',
           'cyberia-skill',
+          'cyberia-entity-type-default',
           'cyberia-client-hints',
         ],
         ws: 'core',
@@ -828,6 +832,7 @@ const DefaultConf = /**/ {
           'cyberia-quest-progress',
           'cyberia-action',
           'cyberia-skill',
+          'cyberia-entity-type-default',
         ],
         origins: [],
         ws: 'core',
@@ -883,6 +888,7 @@ const DefaultConf = /**/ {
           'cyberia-quest-progress',
           'cyberia-action',
           'cyberia-skill',
+          'cyberia-entity-type-default',
         ],
         origins: [],
         ws: 'core',

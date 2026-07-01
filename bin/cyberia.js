@@ -44,6 +44,7 @@ import {
   DefaultCyberiaDialogues,
   DefaultCyberiaActions,
   DefaultCyberiaQuests,
+  ENTITY_TYPE_DEFAULTS,
 } from '../src/api/cyberia-server-defaults/cyberia-server-defaults.js';
 
 import {
@@ -1762,6 +1763,8 @@ try {
           'cyberia-quest',
           'cyberia-action',
           'cyberia-skill',
+          'cyberia-entity-type-default',
+          'cyberia-saga',
           'object-layer',
           'object-layer-render-frames',
           'atlas-sprite-sheet',
@@ -1780,6 +1783,8 @@ try {
       const CyberiaQuest = DataBaseProviderService.getModel('cyberia-quest', { host, path });
       const CyberiaAction = DataBaseProviderService.getModel('cyberia-action', { host, path });
       const CyberiaSkill = DataBaseProviderService.getModel('cyberia-skill', { host, path });
+      const CyberiaEntityTypeDefault = DataBaseProviderService.getModel('cyberia-entity-type-default', { host, path });
+      const CyberiaSaga = DataBaseProviderService.getModel('cyberia-saga', { host, path });
       const ObjectLayer = DataBaseProviderService.getModel('object-layer', { host, path });
       const ObjectLayerRenderFrames = DataBaseProviderService.getModel('object-layer-render-frames', { host, path });
       const AtlasSpriteSheet = DataBaseProviderService.getModel('atlas-sprite-sheet', { host, path });
@@ -2016,7 +2021,9 @@ try {
         if (quests.length > 0) {
           fs.ensureDirSync(`${backupDir}/cyberia-quests`);
           for (const quest of quests) {
-            fs.writeJsonSync(`${backupDir}/cyberia-quests/${encodeURIComponent(quest.code)}.json`, quest, { spaces: 2 });
+            fs.writeJsonSync(`${backupDir}/cyberia-quests/${encodeURIComponent(quest.code)}.json`, quest, {
+              spaces: 2,
+            });
           }
           logger.info(`Exported ${quests.length} CyberiaQuest document(s)`, { codes: quests.map((q) => q.code) });
         }
@@ -2083,11 +2090,9 @@ try {
           if (skills.length > 0) {
             fs.ensureDirSync(`${backupDir}/cyberia-skills`);
             for (const skill of skills) {
-              fs.writeJsonSync(
-                `${backupDir}/cyberia-skills/${encodeURIComponent(skill.triggerItemId)}.json`,
-                skill,
-                { spaces: 2 },
-              );
+              fs.writeJsonSync(`${backupDir}/cyberia-skills/${encodeURIComponent(skill.triggerItemId)}.json`, skill, {
+                spaces: 2,
+              });
               for (const def of skill.skills || []) {
                 if (def.summonedEntityItemId && !def.summonedEntityItemId.startsWith('$')) {
                   objectLayerItemIds.add(def.summonedEntityItemId);
@@ -2100,7 +2105,68 @@ try {
           }
         }
 
-        // 4e. Export dialogues for all relevant object-layer items (codes follow the
+        // 4d-bis. Export entity-type defaults whose item ids belong to this
+        //     instance (own model: CyberiaEntityTypeDefault). A default is related
+        //     when any of its live/dead/drop ids or default object-layer ids appears
+        //     in the instance's item set. Their referenced ids are folded back into
+        //     objectLayerItemIds so the matching atlases + dialogues export too.
+        if (objectLayerItemIds.size > 0) {
+          const idsForMatch = [...objectLayerItemIds];
+          const entityDefaults = await CyberiaEntityTypeDefault.find({
+            $or: [
+              { liveItemIds: { $in: idsForMatch } },
+              { deadItemIds: { $in: idsForMatch } },
+              { dropItemIds: { $in: idsForMatch } },
+              { 'defaultObjectLayers.itemId': { $in: idsForMatch } },
+            ],
+          }).lean();
+          if (entityDefaults.length > 0) {
+            fs.ensureDirSync(`${backupDir}/cyberia-entity-type-defaults`);
+            for (const ed of entityDefaults) {
+              fs.writeJsonSync(`${backupDir}/cyberia-entity-type-defaults/${ed._id}.json`, ed, { spaces: 2 });
+              for (const id of ed.liveItemIds || []) if (id) objectLayerItemIds.add(id);
+              for (const id of ed.deadItemIds || []) if (id) objectLayerItemIds.add(id);
+              for (const id of ed.dropItemIds || []) if (id) objectLayerItemIds.add(id);
+              for (const slot of ed.defaultObjectLayers || []) if (slot.itemId) objectLayerItemIds.add(slot.itemId);
+            }
+            logger.info(`Exported ${entityDefaults.length} CyberiaEntityTypeDefault document(s)`, {
+              entityTypes: entityDefaults.map((ed) => ed.entityType),
+            });
+          }
+        }
+
+        // 4e. Export sagas related to this instance. A saga is considered related
+        //     when its code matches the instance code (direct namespace match), or
+        //     when its mapCodes or itemIds overlap with the instance's data.
+        //     At this point objectLayerItemIds contains all map-entity, instance-level,
+        //     conf-default, and skill-summoned item IDs — giving the broadest possible
+        //     match surface for saga discovery.
+        const sagaCodeMatch = instanceCode ? await CyberiaSaga.find({ code: instanceCode }).lean() : [];
+        // Disabling overlaps queries for now because they can be very expensive and are not strictly necessary for a backup.
+        const sagaMapOverlap = true
+          ? []
+          : mapCodes.size > 0
+            ? await CyberiaSaga.find({ mapCodes: { $in: [...mapCodes] } }).lean()
+            : [];
+        const sagaItemOverlap = true
+          ? []
+          : objectLayerItemIds.size > 0
+            ? await CyberiaSaga.find({ itemIds: { $in: [...objectLayerItemIds] } }).lean()
+            : [];
+        const allSagas = [
+          ...new Map(
+            [...sagaCodeMatch, ...sagaMapOverlap, ...sagaItemOverlap].map((s) => [s._id.toString(), s]),
+          ).values(),
+        ];
+        if (allSagas.length > 0) {
+          fs.ensureDirSync(`${backupDir}/cyberia-sagas`);
+          for (const saga of allSagas) {
+            fs.writeJsonSync(`${backupDir}/cyberia-sagas/${encodeURIComponent(saga.code)}.json`, saga, { spaces: 2 });
+          }
+          logger.info(`Exported ${allSagas.length} CyberiaSaga document(s)`, { codes: allSagas.map((s) => s.code) });
+        }
+
+        // 4f. Export dialogues for all relevant object-layer items (codes follow the
         //     pattern "default-<itemId>") plus the dialogue codes the instance's
         //     actions reference. If an item has no dialogue docs yet but ships with
         //     DefaultCyberiaDialogues, seed those defaults into Mongo first.
@@ -2232,20 +2298,12 @@ try {
               }
             }
 
-            // Export AtlasSpriteSheet + its File using canonical payload bytes from the DB state.
-            if (ol.atlasSpriteSheetId) {
-              const atlas = await AtlasSpriteSheet.findById(ol.atlasSpriteSheetId).lean();
-              if (!atlas) {
-                ipfsPayloadFailures.push({
-                  itemKey,
-                  resourceType: 'atlas-sprite-sheet',
-                  mfsPath: itemPaths.atlasSpriteSheet,
-                  reason: 'AtlasSpriteSheet document not found in MongoDB',
-                });
-                continue;
-              }
-
+            const atlas =
+              (ol.atlasSpriteSheetId ? await AtlasSpriteSheet.findById(ol.atlasSpriteSheetId).lean() : null) ||
+              (await AtlasSpriteSheet.findOne({ 'metadata.itemKey': itemKey }).lean());
+            if (atlas) {
               const atlasExport = newInstance(atlas);
+              objectLayerExport.atlasSpriteSheetId = atlas._id;
               if (atlas.fileId) {
                 await exportFileDoc(atlas.fileId, `atlas-${itemKey}`);
               }
@@ -2963,6 +3021,29 @@ try {
           logger.info(`Imported ${skillCount} CyberiaSkill document(s)`);
         }
 
+        // 8d-bis. Import CyberiaEntityTypeDefault documents (own model, overwrite
+        //     by the natural (entityType, liveItemIds) key, then by _id).
+        const entityDefaultsDir = `${backupDir}/cyberia-entity-type-defaults`;
+        if (fs.existsSync(entityDefaultsDir)) {
+          const entityDefaultFiles = fs.readdirSync(entityDefaultsDir).filter((f) => f.endsWith('.json'));
+          let entityDefaultCount = 0;
+          for (const file of entityDefaultFiles) {
+            const edData = fs.readJsonSync(`${entityDefaultsDir}/${file}`);
+            if (!edData.entityType) {
+              logger.warn(`Skipping CyberiaEntityTypeDefault backup without entityType: ${file}`);
+              continue;
+            }
+            await CyberiaEntityTypeDefault.deleteMany({
+              entityType: edData.entityType,
+              liveItemIds: edData.liveItemIds || [],
+            });
+            if (edData._id) await CyberiaEntityTypeDefault.deleteOne({ _id: edData._id });
+            await CyberiaEntityTypeDefault.create(edData);
+            entityDefaultCount++;
+          }
+          logger.info(`Imported ${entityDefaultCount} CyberiaEntityTypeDefault document(s)`);
+        }
+
         // 8e. Backfill missing skills from the canonical DefaultSkillConfig. Old
         //     backups predate the CyberiaSkill model and ship no skills/ dir, so
         //     any instance item that has a canonical skill (e.g. atlas_pistol_mk2,
@@ -2982,6 +3063,25 @@ try {
         }
         if (backfilledSkillCount > 0) {
           logger.info(`Backfilled ${backfilledSkillCount} CyberiaSkill document(s) from DefaultSkillConfig`);
+        }
+
+        // 8f. Import CyberiaSaga documents (overwrite by code).
+        const sagasDir = `${backupDir}/cyberia-sagas`;
+        if (fs.existsSync(sagasDir)) {
+          const sagaFiles = fs.readdirSync(sagasDir).filter((f) => f.endsWith('.json'));
+          let sagaCount = 0;
+          for (const file of sagaFiles) {
+            const sagaData = fs.readJsonSync(`${sagasDir}/${file}`);
+            if (!sagaData.code) {
+              logger.warn(`Skipping CyberiaSaga backup without code: ${file}`);
+              continue;
+            }
+            await CyberiaSaga.deleteOne({ code: sagaData.code });
+            if (sagaData._id) await CyberiaSaga.deleteOne({ _id: sagaData._id });
+            await CyberiaSaga.create(sagaData);
+            sagaCount++;
+          }
+          logger.info(`Imported ${sagaCount} CyberiaSaga document(s)`);
         }
 
         // 9. Restore IPFS pin records and payloads
@@ -3014,10 +3114,6 @@ try {
           }
 
           const backupPinEntries = serialiseCanonicalPins(backupPins);
-          const backupCids = [...new Set(backupPinEntries.map((entry) => entry.cid).filter(Boolean))];
-          if (backupCids.length > 0) {
-            await Ipfs.deleteMany({ cid: { $in: backupCids } });
-          }
 
           const restoreAdditionalMfsPaths = async (cid, mfsPaths, primaryPath) => {
             let restoredCount = 0;
@@ -3029,78 +3125,99 @@ try {
             return restoredCount;
           };
 
-          const upsertImportedPin = async ({ cid, resourceType, mfsPath }) => {
-            if (!cid || !resourceType) return;
-            await Ipfs.deleteMany({ cid, resourceType });
-            await createPinRecord({ cid, resourceType, mfsPath: mfsPath || '', options: { host, path } });
-          };
-
           if (fs.existsSync(ipfsContentDir)) {
             let cidRewriteCount = 0;
             let extraMfsRestoreCount = 0;
+            let ipfsAlreadyPresent = 0;
 
             for (const [index, doc] of backupPinEntries.entries()) {
               const mfsPaths = collectMfsPaths(doc);
               const primaryPath = mfsPaths[0] || '';
               const payloadPath = `${ipfsContentDir}/${doc.cid}.bin`;
 
-              logger.info('IPFS raw payload restore start', {
-                index: index + 1,
-                total: backupPinEntries.length,
-                cid: doc.cid,
-                resourceType: doc.resourceType,
-                mfsPath: primaryPath || null,
-              });
+              try {
+                const existing = await Ipfs.findOne({ cid: doc.cid, resourceType: doc.resourceType })
+                  .select({ _id: 1 })
+                  .lean();
+                if (existing) {
+                  ipfsAlreadyPresent++;
+                  continue;
+                }
 
-              if (!fs.existsSync(payloadPath)) {
-                logger.warn('IPFS raw payload file missing from backup', {
+                logger.info('IPFS raw payload restore start', {
+                  index: index + 1,
+                  total: backupPinEntries.length,
                   cid: doc.cid,
                   resourceType: doc.resourceType,
                   mfsPath: primaryPath || null,
                 });
-                ipfsSkipped++;
-                continue;
-              }
 
-              const addResult = await IpfsClient.addToIpfs(
-                fs.readFileSync(payloadPath),
-                nodePath.basename(primaryPath || doc.cid),
-                primaryPath || undefined,
-              );
+                if (!fs.existsSync(payloadPath)) {
+                  logger.warn('IPFS raw payload file missing from backup', {
+                    cid: doc.cid,
+                    resourceType: doc.resourceType,
+                    mfsPath: primaryPath || null,
+                  });
+                  ipfsSkipped++;
+                  continue;
+                }
 
-              if (!addResult?.cid) {
-                logger.warn('IPFS raw payload restore failed', {
+                const addResult = await IpfsClient.addToIpfs(
+                  fs.readFileSync(payloadPath),
+                  nodePath.basename(primaryPath || doc.cid),
+                  primaryPath || undefined,
+                );
+
+                if (!addResult?.cid) {
+                  logger.warn('IPFS raw payload restore failed', {
+                    cid: doc.cid,
+                    resourceType: doc.resourceType,
+                    mfsPath: primaryPath || null,
+                  });
+                  ipfsSkipped++;
+                  continue;
+                }
+
+                const finalCid = addResult.cid;
+                if (doc.cid !== finalCid) {
+                  await rewriteImportedCidReferences({
+                    oldCid: doc.cid,
+                    newCid: finalCid,
+                    resourceType: doc.resourceType,
+                  });
+                  cidRewriteCount++;
+                  logger.warn('IPFS raw payload CID mismatch during import; rewriting imported references', {
+                    oldCid: doc.cid,
+                    newCid: finalCid,
+                    resourceType: doc.resourceType,
+                    mfsPath: primaryPath || null,
+                  });
+                }
+
+                extraMfsRestoreCount += await restoreAdditionalMfsPaths(finalCid, mfsPaths, primaryPath);
+                // createPinRecord is an idempotent upsert on (cid, resourceType).
+                await createPinRecord({
+                  cid: finalCid,
+                  resourceType: doc.resourceType,
+                  mfsPath: primaryPath || '',
+                  options: { host, path },
+                });
+                ipfsCount++;
+              } catch (entryError) {
+                logger.warn('IPFS pin restore failed for one entry — skipping it, the import continues', {
                   cid: doc.cid,
                   resourceType: doc.resourceType,
                   mfsPath: primaryPath || null,
+                  error: entryError?.message ?? String(entryError),
                 });
                 ipfsSkipped++;
-                continue;
               }
-
-              const finalCid = addResult.cid;
-              if (doc.cid !== finalCid) {
-                await rewriteImportedCidReferences({
-                  oldCid: doc.cid,
-                  newCid: finalCid,
-                  resourceType: doc.resourceType,
-                });
-                cidRewriteCount++;
-                logger.warn('IPFS raw payload CID mismatch during import; rewriting imported references', {
-                  oldCid: doc.cid,
-                  newCid: finalCid,
-                  resourceType: doc.resourceType,
-                  mfsPath: primaryPath || null,
-                });
-              }
-
-              extraMfsRestoreCount += await restoreAdditionalMfsPaths(finalCid, mfsPaths, primaryPath);
-              await upsertImportedPin({ cid: finalCid, resourceType: doc.resourceType, mfsPath: primaryPath });
-              ipfsCount++;
             }
 
             logger.info(
-              `Imported ${ipfsCount} Ipfs pin record(s) from exact backup payloads${ipfsSkipped ? `, skipped ${ipfsSkipped}` : ''}`,
+              `Imported ${ipfsCount} Ipfs pin record(s) from exact backup payloads` +
+                `${ipfsAlreadyPresent ? `, ${ipfsAlreadyPresent} already present (skipped)` : ''}` +
+                `${ipfsSkipped ? `, ${ipfsSkipped} skipped` : ''}`,
             );
             logger.info(
               `IPFS raw payload restore: ${ipfsCount}/${backupPinEntries.length} record(s) restored, ${extraMfsRestoreCount} additional MFS path(s) restored${cidRewriteCount ? `, ${cidRewriteCount} CID rewrite(s)` : ''}`,
@@ -4483,9 +4600,11 @@ try {
     .option('--dev', 'Force development environment (loads .env.development for IPFS localhost, etc.)')
     .option(
       '--mongo-host <mongo-host>',
-      'Mongo host override (forwarded to ol, seed-skills, seed-dialogues, seed-actions-quests, client-hints)',
+      'Mongo host override (forwarded to ol, seed-skills, seed-entities, seed-dialogues, seed-actions-quests, client-hints)',
     )
-    .description('Import default Object Layer items, skills, dialogues, actions/quests, and client-hints into MongoDB')
+    .description(
+      'Import default Object Layer items, skills, entity defaults, dialogues, actions/quests, and client-hints into MongoDB',
+    )
     .action(async (options) => {
       // Pre-flight: every item id referenced by the fallback world must
       // exist in DefaultCyberiaItems. Drift here causes silent missing
@@ -4506,6 +4625,7 @@ try {
       const instanceCode = process.env.INSTANCE_CODE || 'cyberia-main';
       shellExec(`node bin/cyberia ol ${DefaultCyberiaItems.map((e) => e.item.id)} --import${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-skills${devFlag}${mongoHostFlag}`);
+      shellExec(`node bin/cyberia run-workflow seed-entities${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-dialogues${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-actions-quests${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia client-hints ${instanceCode} --seed-defaults${devFlag}${mongoHostFlag}`);
@@ -4677,6 +4797,86 @@ try {
       logger.info(
         `seed-skills: ${upserted} skill records upserted`,
         DefaultSkillConfig.map((e) => `${e.triggerItemId} → [${(e.logicEventIds || []).join(', ')}]`),
+      );
+
+      await DataBaseProviderService.getProvider({ host, path }, 'mongoose').close();
+    });
+
+  runner
+    .command('seed-entities')
+    .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
+    .option('--mongo-host <mongo-host>', 'Mongo host override')
+    .option('--dev', 'Force development environment')
+    .description('Upsert ENTITY_TYPE_DEFAULTS into the cyberia-entity-type-default collection (idempotent)')
+    .action(async (options) => {
+      if (!options.envPath) options.envPath = `./.env`;
+      if (fs.existsSync(options.envPath)) dotenv.config({ path: options.envPath, override: true });
+
+      if (options.dev && process.env.DEFAULT_DEPLOY_ID) {
+        const devEnvPath = `./engine-private/conf/${process.env.DEFAULT_DEPLOY_ID}/.env.development`;
+        if (fs.existsSync(devEnvPath)) dotenv.config({ path: devEnvPath, override: true });
+      }
+
+      const deployId = process.env.DEFAULT_DEPLOY_ID;
+      const host = process.env.DEFAULT_DEPLOY_HOST;
+      const path = process.env.DEFAULT_DEPLOY_PATH;
+
+      const confServerPath = `./engine-private/conf/${deployId}/conf.server.json`;
+      if (!fs.existsSync(confServerPath)) {
+        logger.error(`Server config not found: ${confServerPath}`);
+        process.exit(1);
+      }
+      const confServer = loadConfServerJson(confServerPath, { resolve: true });
+      const { db } = confServer[host][path];
+
+      db.host = options.mongoHost
+        ? options.mongoHost
+        : options.dev
+          ? db.host
+          : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
+
+      logger.info('seed-entities', { deployId, host, path, db });
+
+      await DataBaseProviderService.load({ apis: ['cyberia-entity-type-default'], host, path, db });
+
+      const CyberiaEntityTypeDefault = DataBaseProviderService.getModel('cyberia-entity-type-default', { host, path });
+
+      // Reconcile DB indexes with the current schema. This drops the obsolete
+      // unique (entityType, liveItemIds) index from earlier builds so the same
+      // itemId may appear in multiple same-type defaults (subset matching), and
+      // (re)creates the non-unique liveItemIds lookup index.
+      try {
+        await CyberiaEntityTypeDefault.syncIndexes();
+      } catch (error) {
+        logger.warn(`seed-entities: syncIndexes skipped: ${error?.message || error}`);
+      }
+
+      // Resolution is by subset containment (most-specific match wins), so there
+      // is NO per-itemId uniqueness — the same itemId may appear in many entries
+      // (across entity types, or within one type at different specificity). Every
+      // entry is upserted, idempotently, by its exact (entityType, liveItemIds) key.
+      let upserted = 0;
+      for (const ed of ENTITY_TYPE_DEFAULTS) {
+        await CyberiaEntityTypeDefault.findOneAndUpdate(
+          { entityType: ed.entityType, liveItemIds: ed.liveItemIds || [] },
+          {
+            $set: {
+              entityType: ed.entityType,
+              liveItemIds: ed.liveItemIds || [],
+              deadItemIds: ed.deadItemIds || [],
+              dropItemIds: ed.dropItemIds || [],
+              defaultObjectLayers: ed.defaultObjectLayers || [],
+              behavior: ed.behavior || '',
+            },
+          },
+          { upsert: true },
+        );
+        upserted++;
+      }
+
+      logger.info(
+        `seed-entities: ${upserted} entity-type-default records upserted`,
+        ENTITY_TYPE_DEFAULTS.map((e) => `${e.entityType} → [${(e.liveItemIds || []).join(', ')}]`),
       );
 
       await DataBaseProviderService.getProvider({ host, path }, 'mongoose').close();

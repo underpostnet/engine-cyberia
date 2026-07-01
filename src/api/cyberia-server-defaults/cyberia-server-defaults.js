@@ -36,7 +36,12 @@
 // The canonical client-defaults module lives under src/client/ so the
 // browser bundler can resolve the URL inside the client tree. Engine-side
 // Node imports work from any path, so we reach into it from here.
-import { ITEM_TYPES, ENTITY_TYPES } from '../../client/components/cyberia/SharedDefaultsCyberia.js';
+import {
+  ITEM_TYPES,
+  ENTITY_TYPES,
+  SKILL_LOGIC_ID_VALUES,
+  isCanonicalSkillLogicId,
+} from '../../client/components/cyberia/SharedDefaultsCyberia.js';
 
 /**
  * Native-dependency pin list. Consumed by `bin/build.js` and `bin/deploy.js`
@@ -122,6 +127,20 @@ export const DefaultSkillConfig = [
     ],
   },
 ];
+
+// Fail fast on a non-canonical logicEventId: the canonical LogicId registry in
+// SharedDefaultsCyberia.js is the single source of truth, so a typo or a handler
+// the dispatcher does not know must surface at boot, not as a silent no-op skill.
+for (const cfg of DefaultSkillConfig) {
+  for (const logicEventId of [...(cfg.logicEventIds || []), ...(cfg.skills || []).map((sk) => sk.logicEventId)]) {
+    if (!isCanonicalSkillLogicId(logicEventId)) {
+      throw new Error(
+        `DefaultSkillConfig: unknown skill logicEventId "${logicEventId}" for trigger "${cfg.triggerItemId}". ` +
+          `Allowed (SharedDefaultsCyberia.SKILL_LOGIC_IDS): ${SKILL_LOGIC_ID_VALUES.join(', ')}`,
+      );
+    }
+  }
+}
 
 /**
  * Default dialogue seeds. Mirrors `CyberiaDialogue` model schema:
@@ -566,6 +585,18 @@ export const STATUS_ICONS = Object.freeze([
     description:
       'Capability: bot offers or advances a cyberia-quest for the viewing player (acceptable offer or active talk-target). Sent as a capability bit, not a presence state.',
   },
+  {
+    id: 10,
+    name: 'portal',
+    description:
+      'Presence: fixed-target portal / transport entity. The client renders the transport icon plus a "<targetMapCode> <x>,<y>" nameplate.',
+  },
+  {
+    id: 11,
+    name: 'portal-random',
+    description:
+      'Presence: random-target portal (inter-random / intra-random, targetCell -1,-1). The client renders the transport-random icon plus a "<targetMapCode>" nameplate (no cell, the destination is random).',
+  },
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -639,6 +670,14 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
       { itemId: 'coin', active: false, quantity: 0 },
     ],
   },
+  // Fallback-world mission/action givers. Resolved by their active skin (the
+  // liveItemIds key), these bots take the canonical `provider` behavior: they
+  // barely move from their spawn and are immortal. Lain only talks in place, so
+  // she is fully static. Authors can retarget any of these via EntityEngineCyberia.
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['wason'], deadItemIds: ['ghost'], behavior: 'provider' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['alex'], deadItemIds: ['ghost'], behavior: 'provider' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['agent'], deadItemIds: ['ghost'], behavior: 'provider' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['lain'], deadItemIds: ['ghost'], behavior: 'provider-static' },
   {
     entityType: ENTITY_TYPES.skill,
     liveItemIds: ['atlas_pistol_mk2_bullet'],
@@ -660,6 +699,27 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
   { entityType: ENTITY_TYPES.static, liveItemIds: [], deadItemIds: [], dropItemIds: [], defaultObjectLayers: [] },
   ...RESOURCE_ENTITY_TYPE_DEFAULTS,
 ]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Player spawn
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Canonical default player spawn policy. Mirrors PlayerSpawnSchema in
+ * cyberia-instance.model.js and the Go PlayerSpawnConfig: when `random` is false
+ * and `sourceMapCode` names a loaded map, new players spawn at
+ * (sourceCellX, sourceCellY) on it; otherwise (random, or no/unknown map) they
+ * spawn at a random walkable cell on a random map.
+ *
+ * The canonical default is a random spawn so a fresh or procedural world never
+ * piles every new player onto a single cell.
+ */
+export const DEFAULT_PLAYER_SPAWN = Object.freeze({
+  sourceMapCode: 'fallback-map-0',
+  sourceCellX: 3,
+  sourceCellY: 3,
+  random: false,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Instance-level simulation configuration

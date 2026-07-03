@@ -1867,36 +1867,6 @@ try {
           ...(entry.mfsPaths.length ? { mfsPaths: entry.mfsPaths } : {}),
         }));
 
-      const getDefaultDialoguesByItemId = (itemIds = []) => {
-        const requestedItemIds = new Set(itemIds.filter(Boolean));
-        const defaultsByItemId = new Map();
-
-        for (const dialogue of DefaultCyberiaDialogues) {
-          // Match by code prefix: "default-<itemId>" covers the common case;
-          // callers may also pass a full code directly.
-          const matchingIds = [...requestedItemIds].filter(
-            (id) => dialogue.code === `default-${id}` || dialogue.code === id,
-          );
-          if (!matchingIds.length) continue;
-          for (const id of matchingIds) {
-            if (!defaultsByItemId.has(id)) defaultsByItemId.set(id, []);
-            defaultsByItemId.get(id).push({
-              code: dialogue.code,
-              order: dialogue.order ?? 0,
-              speaker: dialogue.speaker ?? '',
-              text: dialogue.text,
-              mood: dialogue.mood ?? 'neutral',
-            });
-          }
-        }
-
-        for (const dialogues of defaultsByItemId.values()) {
-          dialogues.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-        }
-
-        return defaultsByItemId;
-      };
-
       const rewriteImportedCidReferences = async ({ oldCid, newCid, resourceType }) => {
         if (!oldCid || !newCid || oldCid === newCid) return;
 
@@ -2175,44 +2145,9 @@ try {
           const requestedCodes = [
             ...new Set([...requestedItemIds.map((id) => `default-${id}`), ...actionDialogueCodes]),
           ];
-          const defaultDialoguesByItemId = getDefaultDialoguesByItemId(requestedItemIds);
-          const existingDialogueDocs = await CyberiaDialogue.find({
-            code: { $in: requestedCodes },
-          })
-            .sort({ code: 1, order: 1 })
-            .lean();
-
-          const existingDialogueCodes = new Set(existingDialogueDocs.map((dialogue) => dialogue.code).filter(Boolean));
-          let seededDialogueCount = 0;
-
-          for (const [itemId, dialogues] of defaultDialoguesByItemId.entries()) {
-            const firstCode = dialogues[0]?.code;
-            if (firstCode && existingDialogueCodes.has(firstCode)) continue;
-
-            for (const dialogue of dialogues) {
-              await CyberiaDialogue.findOneAndUpdate(
-                { code: dialogue.code, order: dialogue.order },
-                {
-                  $set: {
-                    speaker: dialogue.speaker,
-                    text: dialogue.text,
-                    mood: dialogue.mood,
-                  },
-                },
-                { upsert: true },
-              );
-              seededDialogueCount++;
-            }
-          }
-
           const dialogueDocs = await CyberiaDialogue.find({ code: { $in: requestedCodes } })
             .sort({ code: 1, order: 1 })
             .lean();
-
-          if (seededDialogueCount > 0) {
-            logger.info(`Seeded ${seededDialogueCount} CyberiaDialogue default record(s) for export`);
-          }
-
           if (dialogueDocs.length > 0) {
             fs.ensureDirSync(`${backupDir}/cyberia-dialogues`);
             const dialoguesByCode = new Map();
@@ -4630,6 +4565,89 @@ try {
       shellExec(`node bin/cyberia run-workflow seed-actions-quests${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia client-hints ${instanceCode} --seed-defaults${devFlag}${mongoHostFlag}`);
     });
+
+  runner.command('sync-src').action(() => {
+    fs.copyFileSync('./cyberia-server/README.md', './src/client/public/cyberia-docs/CYBERIA-SERVER.md');
+    fs.copyFileSync('./cyberia-server/Dockerfile', './src/runtime/cyberia-server/Dockerfile');
+    fs.copyFileSync('./cyberia-client/README.md', './src/client/public/cyberia-docs/CYBERIA-CLIENT.md');
+    fs.copyFileSync('./cyberia-client/Dockerfile', './src/runtime/cyberia-client/Dockerfile');
+    fs.copyFileSync(
+      './engine-private/conf/dd-cyberia/docker-compose/cyberia/docker-compose.yml',
+      './src/runtime/engine-cyberia/docker-compose.yml',
+    );
+  });
+
+  const dockerImageIds = ['engine-cyberia', 'cyberia-server', 'cyberia-client'];
+  runner
+    .command('docker-image [id]')
+    .option('--load-tar', 'Load a pre-built image tar archive into the enabled target(s) without building.')
+    .action((id, options) => {
+      // no funca
+      if (options.loadTar) {
+        for (const imageId of dockerImageIds)
+          if (imageId === id || id === '.') shellExec(`docker load -i ./${imageId}-dev_v3.2.30.tar`);
+        return;
+      }
+      switch (id) {
+        case 'engine-cyberia':
+          shellExec(`clear
+node bin/build dd-cyberia --conf
+node bin/build dd-cyberia --update-private
+node bin image --path src/runtime/engine-cyberia \
+  --docker-compose --pull-base --build \
+  --dockerfile-name Dockerfile.dev \
+  --image-name engine-cyberia-dev:v3.2.30 \
+  --image-out-path .
+`);
+          break;
+
+        case 'cyberia-server':
+          shellExec(
+            `clear && node bin/cyberia run-workflow build-server-dashboard --output-path ./cyberia-server/public/index.html`,
+          );
+          shellExec(`
+cp -f src/runtime/cyberia-server/Dockerfile.dev cyberia-server/Dockerfile.dev
+node bin image --path cyberia-server \
+  --docker-compose --pull-base --build \
+  --dockerfile-name Dockerfile.dev \
+  --image-name cyberia-server-dev:v3.2.30 \
+  --image-out-path .
+`);
+          break;
+        case 'cyberia-client':
+          shellExec(`clear
+cp -f src/runtime/cyberia-client/Dockerfile.dev cyberia-client/Dockerfile.dev
+node bin image --path cyberia-client \
+  --docker-compose --pull-base --build \
+  --dockerfile-name Dockerfile.dev \
+  --image-name cyberia-client-dev:v3.2.30 \
+  --image-out-path .
+`);
+          break;
+      }
+    });
+
+  {
+    // docker compose lyfe cycle commands for the dd-cyberia deployment
+    const dockerComposeId = 'cyberia';
+    const deployId = 'dd-cyberia';
+    const commands = {
+      'docker:generate': `node bin docker-compose --generate --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:up': `node bin docker-compose --up --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:up:build': `node bin docker-compose --up --build --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:down': `node bin docker-compose --down --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:down:volumes': `node bin docker-compose --down --volumes --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:restart': `node bin docker-compose --restart --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:pull': `node bin docker-compose --pull --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:logs': `node bin docker-compose --logs --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:status': `node bin docker-compose --status --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+      'docker:reset': `node bin docker-compose --reset --deploy-id ${deployId} --docker-compose-id ${dockerComposeId}`,
+    };
+    for (const [cmd, action] of Object.entries(commands))
+      runner.command(cmd).action(() => {
+        shellExec(action);
+      });
+  }
 
   runner
     .command('seed-dialogues')

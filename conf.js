@@ -331,6 +331,7 @@ const DefaultConf = /**/ {
         'cyberia-skill',
         'cyberia-entity-type-default',
         'cyberia-client-hints',
+        'cyberia-saga',
       ],
     },
     cryptokoyn: {
@@ -696,7 +697,7 @@ const DefaultConf = /**/ {
         db: {
           provider: 'mongoose',
           host: 'env:DB_HOST',
-          name: 'env:DB_NAME_NEXODEV',
+          name: 'env:DB_NAME_CYBERIA',
           replicaSet: 'env:DB_REPLICA_SET:rs0',
           authSource: 'env:DB_AUTH_SOURCE:admin',
           user: 'env:DB_USER:',
@@ -750,6 +751,7 @@ const DefaultConf = /**/ {
           'cyberia-skill',
           'cyberia-entity-type-default',
           'cyberia-client-hints',
+          'cyberia-saga',
         ],
         ws: 'core',
         peer: true,

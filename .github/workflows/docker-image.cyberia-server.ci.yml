@@ -1,0 +1,94 @@
+name: CI | Docker Image cyberia-server
+
+# This workflow is the source-of-truth template that lives in the
+# engine repo. `node bin run instance-build-manifest dd-cyberia,mmo-server,./cyberia-server`
+# copies it into ./cyberia-server/.github/workflows/ so it ships in
+# underpostnet/cyberia-server and can be dispatched by
+# `node bin run docker-image cyberia-server` (which resolves the target
+# repo from conf.instances.json `metadata.repository`).
+
+on:
+  workflow_dispatch:
+
+# Single source of truth for the image version: the metadata tag (vX.Y.Z) and
+# the baked underpost CLI (ARG UNDERPOST_VERSION) always move together.
+env:
+  UNDERPOST_VERSION: '3.2.30'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # Primary checkout: the cyberia-server repo (the repo this workflow
+      # was dispatched on). Lands at the workspace root.
+      - uses: actions/checkout@v7
+
+      # Secondary checkout: the engine repo, into ./engine/. We need it
+      # for the underpost CLI sources that render the SSR dashboard into
+      # ./public/ before the docker build. The Go server hard-requires
+      # public/index.html on boot (cmd/cyberia-server/main.go calls
+      # log.Fatalf when findPublicDir returns empty).
+      - name: Checkout engine
+        uses: actions/checkout@v7
+        with:
+          repository: underpostnet/engine
+          path: engine
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+
+      - name: Install engine dependencies
+        working-directory: engine
+        run: npm ci --ignore-scripts
+
+      # Render the SSR dashboard from inside the engine checkout but
+      # write the output back to ../public/ (the cyberia-server repo
+      # root). The --output-path flag overrides the default
+      # ./cyberia-server/public/index.html target.
+      - name: Build cyberia-server SSR dashboard
+        working-directory: engine
+        run: |
+          node bin/deploy cyberia
+          node bin/cyberia run-workflow build-server-dashboard --output-path ../public/index.html
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: underpost/cyberia-server
+          tags: |
+            type=raw,value=v${{ env.UNDERPOST_VERSION }}
+            type=ref,event=branch
+            type=sha,prefix=sha-
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          # Build context is the project repo root. The Dockerfile here
+          # is a project-root variant (COPY . . rather than
+          # COPY cyberia-server/ .) synced from src/runtime/cyberia-server/
+          # in the engine repo by `instance-build-manifest`.
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Keep the underpost CLI installed in the image aligned with the
+          # image tag. The Dockerfile accepts ARG UNDERPOST_VERSION.
+          build-args: |
+            UNDERPOST_VERSION=${{ env.UNDERPOST_VERSION }}

@@ -4571,11 +4571,125 @@ try {
     fs.copyFileSync('./cyberia-server/Dockerfile', './src/runtime/cyberia-server/Dockerfile');
     fs.copyFileSync('./cyberia-client/README.md', './src/client/public/cyberia-docs/CYBERIA-CLIENT.md');
     fs.copyFileSync('./cyberia-client/Dockerfile', './src/runtime/cyberia-client/Dockerfile');
-    fs.copyFileSync(
-      './engine-private/conf/dd-cyberia/docker-compose/cyberia/docker-compose.yml',
-      './src/runtime/engine-cyberia/docker-compose.yml',
-    );
+    shellExec('cp -a ./engine-private/conf/dd-cyberia/docker-compose/cyberia/. ./src/runtime/engine-cyberia/');
   });
+
+  runner
+    .command('dev-env')
+    .option('--run', 'Run docker:reset, cluster --dev --reset, docker-image, and docker:up after updating compose.env')
+    .option(
+      '--clean',
+      'Restore repositories to canonical state (git checkout Dockerfile, etc.) before updating compose.env',
+    )
+    .action((options) => {
+      if (options.clean) {
+        shellExec(`node bin run clean`);
+        shellExec(`node bin run clean ./cyberia-server`);
+        shellExec(`node bin run clean ./cyberia-client`);
+        return;
+      }
+      const envPath = `./engine-private/conf/dd-cyberia/docker-compose/cyberia/compose.env`;
+      const canonicalDevDockerfile = './src/runtime/engine-cyberia/Dockerfile.dev';
+      fs.writeFileSync(
+        canonicalDevDockerfile,
+        fs
+          .readFileSync(canonicalDevDockerfile, 'utf8')
+          .replace('ENGINE_CYBERIA_REPO="engine-cyberia"', 'ENGINE_CYBERIA_REPO="engine-test-cyberia"'),
+        'utf8',
+      );
+      fs.writeFileSync(envPath, fs.readFileSync(envPath, 'utf8').replaceAll('underpost/', 'localhost/'), 'utf8');
+      shellExec('node bin/cyberia run-workflow sync-src');
+      shellExec(`git checkout './src/runtime/cyberia-server/Dockerfile'`);
+      shellExec(`git checkout './src/runtime/cyberia-client/Dockerfile'`);
+      shellExec('node bin/cyberia run-workflow build-manifest');
+      if (options.run) {
+        shellExec('node bin/cyberia run-workflow docker:reset');
+        shellExec('node bin cluster --dev --reset');
+        shellExec('node bin/cyberia run-workflow docker-image engine-cyberia');
+        shellExec('node bin/cyberia run-workflow docker-image cyberia-server');
+        shellExec('node bin/cyberia run-workflow docker-image cyberia-client');
+        shellExec('node bin/cyberia run-workflow docker:up');
+      }
+    });
+
+  runner
+    .command('drop-db')
+    .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
+    .option('--mongo-host <mongo-host>', 'Mongo host override')
+    .option('--dev', 'Force development environment')
+    .description('Drop all Cyberia collections and remove File documents referenced by instance/map thumbnails')
+    .action(async (options = {}) => {
+      if (!options.envPath) options.envPath = `./.env`;
+      if (fs.existsSync(options.envPath)) dotenv.config({ path: options.envPath, override: true });
+
+      if (options.dev && process.env.DEFAULT_DEPLOY_ID) {
+        const devEnvPath = `./engine-private/conf/${process.env.DEFAULT_DEPLOY_ID}/.env.development`;
+        if (fs.existsSync(devEnvPath)) dotenv.config({ path: devEnvPath, override: true });
+      }
+
+      const deployId = process.env.DEFAULT_DEPLOY_ID;
+      const host = process.env.DEFAULT_DEPLOY_HOST;
+      const path = process.env.DEFAULT_DEPLOY_PATH;
+
+      const confServerPath = `./engine-private/conf/${deployId}/conf.server.json`;
+      if (!fs.existsSync(confServerPath)) {
+        logger.error(`Server config not found: ${confServerPath}`);
+        process.exit(1);
+      }
+      const confServer = loadConfServerJson(confServerPath, { resolve: true });
+      const { db } = confServer[host][path];
+
+      db.host = options.mongoHost
+        ? options.mongoHost
+        : options.dev
+          ? db.host
+          : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
+
+      logger.info('drop-db', { deployId, host, path, db });
+
+      const cyberiaCollections = [
+        'cyberia-entity',
+        'cyberia-map',
+        'cyberia-instance',
+        'cyberia-instance-conf',
+        'cyberia-dialogue',
+        'cyberia-quest',
+        'cyberia-quest-progress',
+        'cyberia-action',
+        'cyberia-skill',
+        'cyberia-entity-type-default',
+        'cyberia-client-hints',
+        'cyberia-saga',
+      ];
+
+      await DataBaseProviderService.load({ apis: [...cyberiaCollections, 'file'], host, path, db });
+
+      const File = DataBaseProviderService.getModel('file', { host, path });
+
+      // Thumbnails on instances/maps are File _id references; collect them before
+      // dropping so the backing File documents don't leak as orphans.
+      const thumbnailFileIds = new Set();
+      for (const api of ['cyberia-instance', 'cyberia-map']) {
+        const Model = DataBaseProviderService.getModel(api, { host, path });
+        const docs = await Model.find({ thumbnail: { $ne: null } }, { thumbnail: 1 }).lean();
+        for (const doc of docs) {
+          if (doc.thumbnail) thumbnailFileIds.add(doc.thumbnail.toString());
+        }
+      }
+
+      if (thumbnailFileIds.size > 0) {
+        const result = await File.deleteMany({ _id: { $in: [...thumbnailFileIds] } });
+        logger.info(`Removed ${result.deletedCount} thumbnail File document(s)`);
+      }
+
+      for (const api of cyberiaCollections) {
+        const Model = DataBaseProviderService.getModel(api, { host, path });
+        const result = await Model.deleteMany();
+        logger.info(`Dropped ${result.deletedCount} ${api} document(s)`);
+      }
+
+      await DataBaseProviderService.getProvider({ host, path }, 'mongoose').close();
+    });
 
   const dockerImageIds = ['engine-cyberia', 'cyberia-server', 'cyberia-client'];
 

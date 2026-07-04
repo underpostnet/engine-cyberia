@@ -1,12 +1,24 @@
 # syntax=docker/dockerfile:1.7
 #
-# engine-cyberia — PRODUCTION image (underpost/engine-cyberia).
+# engine-cyberia — DEVELOPMENT image (underpost/engine-cyberia-dev).
 #
 # Secure multi-stage build. The dd-cyberia deploy is assembled from a PRIVATE
 # GitHub repository at build time, but the published image is PUBLIC, so no
 # credential, token, private-repo VCS metadata, cache, or temp artifact may
-# survive into the final stage. See Dockerfile.dev for the full security
-# rationale — this file is the production counterpart (NODE_ENV=production).
+# survive into the final stage.
+#
+# Security model:
+#   1. Secrets are injected with BuildKit/podman `--mount=type=secret`, never
+#      `ARG` (build args persist in `docker history`). Locally, `underpost image
+#      --build` forwards host GITHUB_TOKEN/GITHUB_USERNAME as `--secret`; in CI
+#      the workflow passes them via `secrets:`.
+#   2. `underpost clone` authenticates as `https://$GITHUB_TOKEN@github.com/...`,
+#      which git persists in each clone's `.git/config`. The build clones,
+#      builds, bakes non-secret env, and SCRUBS every VCS/credential artifact in
+#      ONE builder RUN — so the token never lands in a persisted layer.
+#   3. The private repository lives only in the builder stage.
+#   4. The final stage starts FROM a clean base and copies only the scrubbed
+#      runtime tree plus the pinned Node toolchain — no git, no caches.
 
 # ---------------------------------------------------------------------------
 # Stage 1 — builder: clone the private deploy, build it, then scrub secrets.
@@ -16,7 +28,7 @@ ARG UNDERPOST_VERSION=3.2.30
 # Pin Node to an exact patch: dnf's nodejs:24 module lags (24.14.1) while
 # underpost's dependencies require >=24.15.0, so install the official binary.
 ARG NODE_VERSION=24.15.0
-ENV NODE_ENV=production
+ENV NODE_ENV=development
 
 RUN set -eux; \
     # `sudo` is required because underpost's build steps shell out to
@@ -63,11 +75,12 @@ RUN --mount=type=secret,id=github_token \
     # provisioning steps inline (asset pulls, ffmpeg, hardhat deps, cyberia-server
     # clone). Pre-clone so privateEngineRepoFactory no-ops and --skip-pull-base
     # reuses the tree.
+    export ENGINE_CYBERIA_REPO="engine-cyberia"; \
     cd /home/dd; \
-    underpost clone "$GITHUB_USERNAME/engine-cyberia"; \
+    underpost clone "$GITHUB_USERNAME/$ENGINE_CYBERIA_REPO"; \
     mkdir -p /home/dd/engine; \
-    cp -a ./engine-cyberia/. /home/dd/engine/; \
-    rm -rf ./engine-cyberia; \
+    cp -a ./"$ENGINE_CYBERIA_REPO"/. /home/dd/engine/; \
+    rm -rf ./"$ENGINE_CYBERIA_REPO"; \
     cd /home/dd/engine; \
     rm -rf ./engine-private; \
     underpost clone "$GITHUB_USERNAME/engine-cyberia-private"; \
@@ -76,7 +89,7 @@ RUN --mount=type=secret,id=github_token \
     \
     # --- install deps + env, then replay build-safe itc provisioning ----------
     npm install; \
-    node bin env dd-cyberia production; \
+    node bin env dd-cyberia development; \
     node bin fs --pull --recursive --deploy-id dd-cyberia --storage-file-path './engine-private/conf/dd-cyberia/storage.engine-cyberia.json'; \
     ( cd /home/dd/engine/hardhat && npm install --include=dev ); \
     ( cd /home/dd/engine && underpost clone underpostnet/cyberia-server ); \
@@ -89,10 +102,19 @@ RUN --mount=type=secret,id=github_token \
     cp -a "$CONF/docker-compose/cyberia/compose.env" "$CONF/.env.development"; \
     cp -a "$CONF/docker-compose/cyberia/compose.env" "$CONF/.env.production"; \
     cp -a "$CONF/docker-compose/cyberia/compose.env" "$CONF/.env.test"; \
+    cp -a "$CONF/conf.server.dev.dev.json" "$CONF/conf.server.json"; \
     cp -a "$CONF/docker-compose/cyberia/compose.env" /home/dd/engine/.env; \
     \
     # --- drop build-only / non-runtime private material ----------------------
-    rm -rf /home/dd/engine/engine-private/itc-scripts "$CONF/build" "$CONF/instances"; \
+    rm -rf /home/dd/engine/engine-private/itc-scripts; \
+    rm -rf /home/dd/engine/engine-private/cyberia-instances/FOREST; \
+    rm -rf /home/dd/engine/engine-private/logs; \
+    rm -rf "$CONF/build" "$CONF/instances"; \
+    rm -rf "$CONF/conf.instances.json"; \
+    rm -rf "$CONF/conf.server.dev.underpost.json"; \
+    rm -rf "$CONF/storage.bundle.json"; \
+    rm -rf "$CONF/storage.json"; \
+    rm -rf "$CONF/storage.underpost.json"; \
     \
     # --- CREDENTIAL SCRUB (defense in depth, while secrets are still in scope) -
     # 1) Redact every real secret value from any file it may have reached.
@@ -114,6 +136,12 @@ RUN --mount=type=secret,id=github_token \
     #    build/CLI tooling (used only to build the coverage docs above); the
     #    runtime server never imports it, so its dev node_modules is pure bloat.
     npm cache clean --force 2>/dev/null || true; \
+    rm -rf /home/dd/engine/src/client/public/itemledger \
+    rm -rf /home/dd/engine/src/client/public/cryptokoyn \
+    rm -rf /home/dd/engine/src/client/components/cryptokoyn \
+    rm -rf /home/dd/engine/src/client/components/itemledger \
+    rm -rf /home/dd/engine/src/client/Itemledger.index.js \
+    rm -rf /home/dd/engine/src/client/Cryptokoyn.index.js \
     rm -rf /home/dd/engine/hardhat/node_modules \
            /home/dd/engine/.npm /tmp/* /var/tmp/* /var/cache/dnf
 
@@ -121,7 +149,7 @@ RUN --mount=type=secret,id=github_token \
 # Stage 2 — runtime: clean base + pinned Node toolchain + scrubbed app tree.
 # ---------------------------------------------------------------------------
 FROM rockylinux/rockylinux:9 AS runtime
-ENV NODE_ENV=production
+ENV NODE_ENV=development
 
 # Node + npm + the underpost CLI (exact pinned version) from the builder — no
 # re-download, no git/build toolchain. libstdc++ is the only runtime lib the
@@ -142,7 +170,7 @@ RUN chmod +x /home/dd/engine/scripts/rpmfusion-ffmpeg-setup.sh && \
 USER dd
 WORKDIR /home/dd/engine
 
-EXPOSE 3005
+EXPOSE 4005
 EXPOSE 50051
 
-CMD ["/bin/sh", "-c", "underpost start --run dd-cyberia production"]
+CMD ["/bin/sh", "-c", "underpost start --run dd-cyberia development"]

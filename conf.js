@@ -697,7 +697,7 @@ const DefaultConf = /**/ {
         db: {
           provider: 'mongoose',
           host: 'env:DB_HOST',
-          name: 'env:DB_NAME_CYBERIA',
+          name: 'env:DB_NAME_NEXODEV',
           replicaSet: 'env:DB_REPLICA_SET:rs0',
           authSource: 'env:DB_AUTH_SOURCE:admin',
           user: 'env:DB_USER:',

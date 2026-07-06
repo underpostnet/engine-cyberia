@@ -45,6 +45,7 @@ import {
   DefaultCyberiaActions,
   DefaultCyberiaQuests,
   ENTITY_TYPE_DEFAULTS,
+  fillInstanceConfDefaults,
 } from '../src/api/cyberia-server-defaults/cyberia-server-defaults.js';
 
 import {
@@ -1716,11 +1717,14 @@ try {
     .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
     .option('--mongo-host <mongo-host>', 'Mongo host override')
     .option('--dev', 'Force development environment')
+    .option('--publish-build', 'Build instance backup directory with all related maps, entities and object layers')
+    .option('--publish-remove', 'Remove published instance from underpostnet/cyberia-instances repository')
+    .option('--publish', 'Publish instance in underpostnet/cyberia-instances repository')
     .description('Export/import a Cyberia instance with all related maps, entities and object layers')
     .action(async (instanceCode, options = {}) => {
       if (!instanceCode) {
-        logger.error('instance-code argument is required');
-        process.exit(1);
+        instanceCode = 'amethyst-strata-expansion';
+        logger.warn(`No instance code provided, defaulting to: ${instanceCode}`);
       }
 
       if (!options.envPath) options.envPath = `./.env`;
@@ -1742,6 +1746,107 @@ try {
         logger.error(`Server config not found: ${confServerPath}`);
         process.exit(1);
       }
+
+      if (options.publish || options.publishBuild || options.publishRemove) {
+        if (options.publishBuild) {
+          if (!fs.existsSync('/home/dd/cyberia-instances')) {
+            shellExec('cd /home/dd && underpost clone underpostnet/cyberia-instances');
+          } else {
+            shellExec(`underpost run clean /home/dd/cyberia-instances`);
+            shellExec(`cd /home/dd/cyberia-instances && underpost pull . underpostnet/cyberia-instances`, {
+              silentOnError: true,
+            });
+          }
+
+          fs.mkdirpSync(`/home/dd/cyberia-instances/conf/dd-cyberia`);
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/conf.server.dev.dev.json`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/conf.server.json`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/conf.client.json`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/conf.client.json`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/conf.cron.json`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/conf.cron.json`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/conf.ssr.json`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/conf.ssr.json`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/conf.volume.json`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/conf.volume.json`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/package.json`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/package.json`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/docker-compose/cyberia/compose.env`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/.env.production`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/docker-compose/cyberia/compose.env`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/.env.development`,
+          );
+          fs.copyFileSync(
+            `./engine-private/conf/dd-cyberia/docker-compose/cyberia/compose.env`,
+            `/home/dd/cyberia-instances/conf/dd-cyberia/.env.test`,
+          );
+
+          fs.mkdirpSync(`/home/dd/cyberia-instances/deployments`);
+          fs.copySync(`./src/runtime/engine-cyberia`, `/home/dd/cyberia-instances/deployments/engine-cyberia`);
+          fs.copySync(
+            `./manifests/deployment/dd-cyberia-development/.`,
+            `/home/dd/cyberia-instances/deployments/engine-cyberia/.`,
+          );
+          fs.copySync(`./src/runtime/cyberia-client`, `/home/dd/cyberia-instances/deployments/cyberia-client`);
+          fs.copySync(
+            `./engine-private/conf/dd-cyberia/instances/mmo-client/build/development/.`,
+            `/home/dd/cyberia-instances/deployments/cyberia-client/.`,
+          );
+          fs.copySync(`./src/runtime/cyberia-server`, `/home/dd/cyberia-instances/deployments/cyberia-server`);
+          fs.copySync(
+            `./engine-private/conf/dd-cyberia/instances/mmo-server/build/development/.`,
+            `/home/dd/cyberia-instances/deployments/cyberia-server/.`,
+          );
+          fs.removeSync(`/home/dd/cyberia-instances/public/cyberia`);
+          fs.mkdirpSync(`/home/dd/cyberia-instances/public/cyberia`);
+          for (const assetPath of Object.keys(
+            JSON.parse(fs.readFileSync(`./engine-private/conf/dd-cyberia/storage.engine-cyberia.json`, 'utf-8')),
+          )) {
+            const relativePath = assetPath.replace(/^src\/client\/public\/cyberia\//, '');
+            const targetPath = `/home/dd/cyberia-instances/public/cyberia/${relativePath}`;
+            fs.mkdirpSync(nodePath.dirname(targetPath));
+            logger.info(`Copying asset: ${assetPath} → ${targetPath}`);
+            fs.copySync(`./${assetPath}`, targetPath);
+          }
+
+          fs.mkdirpSync(`/home/dd/cyberia-instances/instances`);
+          fs.copySync(
+            `./engine-private/cyberia-instances/${instanceCode}`,
+            `/home/dd/cyberia-instances/instances/${instanceCode}`,
+          );
+          fs.mkdirpSync(`/home/dd/cyberia-instances/sagas`);
+          fs.copyFileSync(
+            `./engine-private/cyberia-sagas/${instanceCode}.json`,
+            `/home/dd/cyberia-instances/sagas/${instanceCode}.json`,
+          );
+          return;
+        } else if (options.publishRemove) {
+          shellExec(`rm -rf /home/dd/cyberia-instances/instances/${instanceCode}`);
+          shellExec(`rm -rf /home/dd/cyberia-instances/sagas/${instanceCode}.json`);
+          return;
+        }
+        shellExec(`cd /home/dd/cyberia-instances \
+          && git add . \
+          && git commit -m "Update instance ${instanceCode}" \
+          && underpost push . underpostnet/cyberia-instances`);
+        return;
+      }
+
       const confServer = loadConfServerJson(confServerPath, { resolve: true });
       const { db } = confServer[host][path];
 
@@ -1950,6 +2055,10 @@ try {
           instanceConf = created?.toObject ? created.toObject() : created;
         }
         if (instanceConf) {
+          // `.lean()` skips Mongoose schema defaults and older docs may predate
+          // some fields, so backfill every CyberiaInstanceConfSchema field from
+          // the canonical defaults before writing the backup.
+          instanceConf = fillInstanceConfDefaults(instanceConf);
           fs.writeJsonSync(`${backupDir}/cyberia-instance-conf.json`, instanceConf, { spaces: 2 });
           logger.info('Exported CyberiaInstanceConf', { instanceCode });
         } else {
@@ -2029,6 +2138,8 @@ try {
           if (id) objectLayerItemIds.add(id);
         }
 
+        const contentItemIds = new Set(objectLayerItemIds);
+
         // 4c. Add all itemIds referenced by CyberiaInstanceConf (entityDefaults + skillConfig).
         //     This ensures liveItemIds, deadItemIds, dropItemIds, defaultObjectLayers and
         //     skill trigger items are included even if no map entity currently uses them.
@@ -2076,12 +2187,15 @@ try {
         }
 
         // 4d-bis. Export entity-type defaults whose item ids belong to this
-        //     instance (own model: CyberiaEntityTypeDefault). A default is related
-        //     when any of its live/dead/drop ids or default object-layer ids appears
-        //     in the instance's item set. Their referenced ids are folded back into
-        //     objectLayerItemIds so the matching atlases + dialogues export too.
-        if (objectLayerItemIds.size > 0) {
-          const idsForMatch = [...objectLayerItemIds];
+        //     instance's real content (own model: CyberiaEntityTypeDefault). A
+        //     default is related when any of its live/dead/drop ids or default
+        //     object-layer ids appears in contentItemIds — map/instance content
+        //     only, NOT the canonical conf defaults every instance shares (which
+        //     would spuriously drag in the global seed entity-type-defaults).
+        //     Matched ids are folded back into objectLayerItemIds so the related
+        //     atlases + dialogues export too.
+        if (contentItemIds.size > 0) {
+          const idsForMatch = [...contentItemIds];
           const entityDefaults = await CyberiaEntityTypeDefault.find({
             $or: [
               { liveItemIds: { $in: idsForMatch } },
@@ -2663,7 +2777,9 @@ try {
           const confImportPath = `${backupDir}/cyberia-instance-conf.json`;
           let importedConf = null;
           if (fs.existsSync(confImportPath)) {
-            const confData = fs.readJsonSync(confImportPath);
+            // Backfill any missing schema fields so older backups import a
+            // complete, playable config into the DB.
+            const confData = fillInstanceConfDefaults(fs.readJsonSync(confImportPath));
             if (confData._id) await CyberiaInstanceConf.deleteOne({ _id: confData._id });
             await CyberiaInstanceConf.deleteOne({ instanceCode: confData.instanceCode });
             // Always bump updatedAt so the Go server's version hash changes and
@@ -2842,7 +2958,9 @@ try {
         // 6. Import CyberiaInstanceConf (skillRules, equipmentRules, entityDefaults, etc.)
         const confImportPath = `${backupDir}/cyberia-instance-conf.json`;
         if (fs.existsSync(confImportPath)) {
-          const confData = fs.readJsonSync(confImportPath);
+          // Backfill any missing schema fields so older backups import a
+          // complete, playable config into the DB.
+          const confData = fillInstanceConfDefaults(fs.readJsonSync(confImportPath));
           if (confData._id) await CyberiaInstanceConf.deleteOne({ _id: confData._id });
           await CyberiaInstanceConf.deleteOne({ instanceCode: confData.instanceCode });
           await CyberiaInstanceConf.create(confData);
@@ -4594,7 +4712,30 @@ try {
         canonicalDevDockerfile,
         fs
           .readFileSync(canonicalDevDockerfile, 'utf8')
-          .replace('ENGINE_CYBERIA_REPO="engine-cyberia"', 'ENGINE_CYBERIA_REPO="engine-test-cyberia"'),
+          .replace('ENGINE_CYBERIA_REPO="engine-cyberia"', 'ENGINE_CYBERIA_REPO="engine-test-cyberia"')
+          .replace(`    # --mount=type=secret,id=github_token`, `    --mount=type=secret,id=github_token`)
+          .replace(
+            `    # export GITHUB_TOKEN="$(cat /run/secrets/github_token)";`,
+            `    export GITHUB_TOKEN="$(cat /run/secrets/github_token)";`,
+          )
+          .replace(`    for _secret in "$GITHUB_USERNAME"; do`, `    # for _secret in "$GITHUB_USERNAME"; do`)
+          .replace(`    unset GITHUB_USERNAME;`, `    # unset GITHUB_USERNAME;`)
+          .replace(
+            `    # for _secret in "$GITHUB_USERNAME" "$GITHUB_TOKEN"; do`,
+            `    for _secret in "$GITHUB_USERNAME" "$GITHUB_TOKEN"; do`,
+          )
+          .replace(`    # unset GITHUB_TOKEN GITHUB_USERNAME;`, `    unset GITHUB_TOKEN GITHUB_USERNAME;`),
+
+        'utf8',
+      );
+      fs.writeFileSync(
+        './src/cli/image.js',
+        fs
+          .readFileSync('./src/cli/image.js', 'utf8')
+          .replace(
+            `      // addBuildSecret('github_token', process.env.GITHUB_TOKEN);`,
+            `      addBuildSecret('github_token', process.env.GITHUB_TOKEN);`,
+          ),
         'utf8',
       );
       fs.writeFileSync(envPath, fs.readFileSync(envPath, 'utf8').replaceAll('underpost/', 'localhost/'), 'utf8');

@@ -71,7 +71,7 @@ jobs:
             set -e
             set -o pipefail
             echo "Starting remote sync and deploy"
-            TARGET_NODE=hp-envy-iso-ram-rocky9
+            TARGET_NODE=localhost.localdomain
             cd /home/dd/engine
             sudo -n -- /bin/bash -lc "node bin run pull"
             sudo -n -- /bin/bash -lc "npm install"

@@ -152,6 +152,10 @@ COPY --from=builder --chown=dd:dd /home/dd/engine /home/dd/engine
 RUN chmod +x /home/dd/engine/scripts/rpmfusion-ffmpeg-setup.sh && \
     /home/dd/engine/scripts/rpmfusion-ffmpeg-setup.sh
 
+# Explicit re-chown: PVC-backed mounts under src/client/public land here at
+# pod start and may override the COPY --chown above with root ownership.
+RUN chown -R dd:dd /home/dd/engine/src/client/public
+
 USER dd
 WORKDIR /home/dd/engine
 

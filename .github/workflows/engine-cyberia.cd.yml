@@ -77,7 +77,7 @@ jobs:
             sudo -n -- /bin/bash -lc "npm install"
             sudo -n -- /bin/bash -lc "node bin run secret"
             sudo -n -- /bin/bash -lc "npm run test"
-            sudo -n -- /bin/bash -lc "node bin run sync 'dd-cyberia,1,,underpost/engine-cyberia:v3.2.30' \
+            sudo -n -- /bin/bash -lc "node bin run sync 'dd-cyberia,1,,underpost/engine-cyberia:v3.2.70' \
               --kubeadm \
               --deploy-id-cron-jobs none \
               --timeout-response 300000ms \
@@ -99,13 +99,13 @@ jobs:
                 cp -a ./engine-cyberia/src/client/Cryptokoyn.index.js /home/dd/engine/src/client/Cryptokoyn.index.js, \
                 rm -rf ./engine-cyberia, \
                 sudo rm -rf ./engine-private/, \
-                underpost clone underpostnet/engine-cyberia-private, \
+                node bin clone underpostnet/engine-cyberia-private, \
                 sudo mv ./engine-cyberia-private ./engine-private, \
                 node bin env dd-cyberia production, \
                 node ./engine-private/itc-scripts/dd-cyberia-0.js, \
                 node bin env dd-cyberia production, \
                 node bin client dd-cyberia, \
-                underpost start dd-cyberia production --run'"
+                node bin start dd-cyberia production --run'"
   init:
     if: github.event.inputs.job == 'init'
     name: Remote SSH init deployment

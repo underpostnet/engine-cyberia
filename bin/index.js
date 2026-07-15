@@ -3649,10 +3649,10 @@ try {
           for (const code of codes) {
             await CyberiaClientHints.findOneAndUpdate(
               { code },
-              { $setOnInsert: { code, ...CYBERIA_CLIENT_HINTS_DEFAULTS } },
+              { $setOnInsert: { code } },
               { upsert: true, returnDocument: 'after' },
             );
-            logger.info(`client-hints --seed-defaults: seeded defaults for code="${code}"`);
+            logger.info(`client-hints --seed-defaults: seeded overrides shell for code="${code}"`);
           }
         }
 
@@ -4686,12 +4686,14 @@ try {
       const devFlag = options.dev ? ' --dev' : '';
       const mongoHostFlag = options.mongoHost ? ` --mongo-host ${options.mongoHost}` : '';
       const instanceCode = process.env.INSTANCE_CODE || 'cyberia-main';
+      shellExec(`node bin run clean src/client/public/cyberia`);
       shellExec(`node bin/cyberia ol ${DefaultCyberiaItems.map((e) => e.item.id)} --import${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-skills${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-entities${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-dialogues${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia run-workflow seed-actions-quests${devFlag}${mongoHostFlag}`);
       shellExec(`node bin/cyberia client-hints ${instanceCode} --seed-defaults${devFlag}${mongoHostFlag}`);
+      shellExec(`node bin/cyberia instance FOREST --import --dev`);
     });
 
   runner.command('sync-src').action(() => {

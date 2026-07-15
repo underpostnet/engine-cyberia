@@ -262,7 +262,7 @@ export const DefaultCyberiaDialogues = [
     text: 'How boring... nothing ever surprises me anymore.',
     mood: 'sad',
   },
-  { code: 'default-ghost', order: 0, speaker: 'Ghost', text: '...', mood: 'neutral' },
+  { code: 'default-ghost', order: 0, speaker: 'fragmentation', text: '...', mood: 'neutral' },
   {
     code: 'default-eiri',
     order: 0,
@@ -534,6 +534,120 @@ export const DefaultCyberiaQuests = [
     ],
     rewards: [{ itemId: 'hatchet', quantity: 1 }],
   },
+  // ── Demo quests (testing only) ─────────────────────────────────────────────
+  // Offered by Lain (15,22): a batch of simple no-prerequisite quests so the
+  // Quest Journal can exercise pagination with 4+ concurrently active quests.
+  ...[
+    {
+      suffix: 'coin-cache',
+      title: 'Coin Cache',
+      description: 'Lain is short on change. Round up some loose coins.',
+      steps: [
+        {
+          id: 'step-collect-coins',
+          description: 'Collect 3 coins from field drops.',
+          objectives: [{ type: 'collect', itemId: 'coin', quantity: 3 }],
+        },
+      ],
+      rewards: [{ itemId: 'coin', quantity: 10 }],
+    },
+    {
+      suffix: 'timber-run',
+      title: 'Timber Run',
+      description: 'The camp stockpile is low. Bring back fresh wood.',
+      steps: [
+        {
+          id: 'step-collect-wood',
+          description: 'Gather 2 pieces of wood.',
+          objectives: [{ type: 'collect', itemId: 'wood-drop-1', quantity: 2 }],
+        },
+        {
+          id: 'step-return-lain',
+          description: 'Deliver the wood to Lain.',
+          objectives: [{ type: 'talk', itemId: 'lain', quantity: 1 }],
+        },
+      ],
+      rewards: [{ itemId: 'coin', quantity: 15 }],
+    },
+    {
+      suffix: 'pest-control',
+      title: 'Pest Control',
+      description: 'Kishins keep raiding the perimeter. Thin them out.',
+      steps: [
+        {
+          id: 'step-kill-kishins',
+          description: 'Defeat 3 Kishins.',
+          objectives: [{ type: 'kill', itemId: 'kishins', quantity: 3 }],
+        },
+      ],
+      rewards: [{ itemId: 'coin', quantity: 20 }],
+    },
+    {
+      suffix: 'field-sweep',
+      title: 'Field Sweep',
+      description: 'A mixed patrol order: clear hostiles, then salvage the field.',
+      steps: [
+        {
+          id: 'step-kill-one',
+          description: 'Defeat 1 Kishin scout.',
+          objectives: [{ type: 'kill', itemId: 'kishins', quantity: 1 }],
+        },
+        {
+          id: 'step-salvage',
+          description: 'Salvage 5 coins from the aftermath.',
+          objectives: [{ type: 'collect', itemId: 'coin', quantity: 5 }],
+        },
+        {
+          id: 'step-debrief-lain',
+          description: 'Debrief with Lain.',
+          objectives: [{ type: 'talk', itemId: 'lain', quantity: 1 }],
+        },
+      ],
+      rewards: [{ itemId: 'coin', quantity: 25 }],
+    },
+    {
+      suffix: 'lumber-reserve',
+      title: 'Lumber Reserve',
+      description: 'Stock the winter reserve before the next cycle.',
+      steps: [
+        {
+          id: 'step-collect-wood',
+          description: 'Gather 4 pieces of wood.',
+          objectives: [{ type: 'collect', itemId: 'wood-drop-1', quantity: 4 }],
+        },
+      ],
+      rewards: [{ itemId: 'coin', quantity: 30 }],
+    },
+    {
+      suffix: 'proof-of-valor',
+      title: 'Proof of Valor',
+      description: 'Show Lain you can hold the line on your own.',
+      steps: [
+        {
+          id: 'step-kill-kishins',
+          description: 'Defeat 5 Kishins.',
+          objectives: [{ type: 'kill', itemId: 'kishins', quantity: 5 }],
+        },
+        {
+          id: 'step-report-lain',
+          description: 'Report your feat to Lain.',
+          objectives: [{ type: 'talk', itemId: 'lain', quantity: 1 }],
+        },
+      ],
+      rewards: [{ itemId: 'hatchet', quantity: 1 }],
+    },
+  ].map((q) => ({
+    code: `lain-demo-${q.suffix}`,
+    title: q.title,
+    description: q.description,
+    sourceMapCode: 'fallback-map-0',
+    sourceCellX: 15,
+    sourceCellY: 22,
+    prerequisiteCodes: [],
+    unlocksQuestCodes: [],
+    steps: q.steps,
+    rewards: q.rewards,
+  })),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -543,7 +657,9 @@ export const DefaultCyberiaQuests = [
 /**
  * Governs which ObjectLayer item types may be simultaneously active on an
  * entity and enforces the one-per-type constraint.  The server validates
- * every item_activation request against these rules.
+ * every item_activation request against these rules, scoped to the item set
+ * of the entity's current state: liveItemIds while alive, deadItemIds while
+ * in the Fragmented State (see DEFAULT_DEAD_ITEM_ID).
  */
 export const EQUIPMENT_RULES_DEFAULTS = Object.freeze({
   activeItemTypes: [ITEM_TYPES.skin, ITEM_TYPES.breastplate, ITEM_TYPES.weapon],
@@ -628,6 +744,19 @@ export const RESOURCE_ENTITY_TYPE_DEFAULTS = Object.freeze([
 export const RESOURCE_ENTITY_TYPE_DEFAULT = RESOURCE_ENTITY_TYPE_DEFAULTS[0];
 
 /**
+ * Canonical dead-state visual (Fragmentation): applied by cyberia-server when
+ * an entity-type default declares no deadItemIds. Dead-state items — this
+ * default and any deadItemIds configured via MongoDB — form the Fragmented
+ * State's aesthetic loadout: equippable only while the entity is dead, under
+ * EQUIPMENT_RULES_DEFAULTS scoped to the dead-item set, and remembered across
+ * deaths. Only this default id is excluded from the player inventory wire;
+ * the rest appear (lock-badged while alive). No defaultObjectLayers row is
+ * needed — the death handler appends missing dead items on demand.
+ * Mirrored by `defaultDeadItemID` in cyberia-server/game/dead_items.go.
+ */
+export const DEFAULT_DEAD_ITEM_ID = 'fragmentation';
+
+/**
  * Per-entity-type defaults consumed by the Go server (live / dead / drop
  * item IDs and the seed inventory for newly spawned entities).
  *
@@ -642,29 +771,28 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
   {
     entityType: ENTITY_TYPES.player,
     liveItemIds: ['anon', 'atlas_pistol_mk2'],
-    deadItemIds: ['ghost'],
+    deadItemIds: [DEFAULT_DEAD_ITEM_ID],
     defaultObjectLayers: [
       { itemId: 'anon', active: true, quantity: 1 },
       { itemId: 'atlas_pistol_mk2', active: true, quantity: 1 },
-      { itemId: 'ghost', active: false, quantity: 1 },
       { itemId: 'coin', active: false, quantity: 0 },
+      { itemId: 'eiri', active: false, quantity: 1 },
     ],
   },
   {
     entityType: ENTITY_TYPES.other_player,
     liveItemIds: ['anon', 'atlas_pistol_mk2'],
-    deadItemIds: ['ghost'],
+    deadItemIds: [DEFAULT_DEAD_ITEM_ID],
     defaultObjectLayers: [
       { itemId: 'anon', active: true, quantity: 1 },
       { itemId: 'atlas_pistol_mk2', active: true, quantity: 1 },
-      { itemId: 'ghost', active: false, quantity: 1 },
       { itemId: 'coin', active: false, quantity: 0 },
     ],
   },
   {
     entityType: ENTITY_TYPES.bot,
     liveItemIds: ['purple'],
-    deadItemIds: ['ghost'],
+    deadItemIds: [DEFAULT_DEAD_ITEM_ID],
     defaultObjectLayers: [
       { itemId: 'purple', active: true, quantity: 1 },
       { itemId: 'coin', active: false, quantity: 0 },
@@ -674,10 +802,10 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
   // liveItemIds key), these bots take the canonical `provider` behavior: they
   // barely move from their spawn and are immortal. Lain only talks in place, so
   // she is fully static. Authors can retarget any of these via EntityEngineCyberia.
-  { entityType: ENTITY_TYPES.bot, liveItemIds: ['wason'], deadItemIds: ['ghost'], behavior: 'provider' },
-  { entityType: ENTITY_TYPES.bot, liveItemIds: ['alex'], deadItemIds: ['ghost'], behavior: 'provider' },
-  { entityType: ENTITY_TYPES.bot, liveItemIds: ['agent'], deadItemIds: ['ghost'], behavior: 'provider' },
-  { entityType: ENTITY_TYPES.bot, liveItemIds: ['lain'], deadItemIds: ['ghost'], behavior: 'provider-static' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['wason'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['alex'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['agent'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider' },
+  { entityType: ENTITY_TYPES.bot, liveItemIds: ['lain'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider-static' },
   {
     entityType: ENTITY_TYPES.skill,
     liveItemIds: ['atlas_pistol_mk2_bullet'],

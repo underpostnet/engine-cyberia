@@ -1838,22 +1838,44 @@ try {
             `./engine-private/cyberia-sagas/${instanceCode}.json`,
             `/home/dd/cyberia-instances/sagas/${instanceCode}.json`,
           );
+          const fromN = parseInt(options.fromNCommit) > 0 ? parseInt(options.fromNCommit) : 1;
+          const publishMessage =
+            shellExec(`node bin cmt --changelog-msg --from-n-commit ${fromN} --changelog-no-hash`, {
+              stdout: true,
+              silent: true,
+            }).trim() || `Update instance ${instanceCode}`;
+          const instanceMessage = `Update build and deployment manifests`;
+          shellExec(
+            `cd /home/dd/cyberia-instances \
+          && git add . \
+          && git commit -m "${publishMessage.replace(/"/g, '\\"')}"`,
+            {
+              silentOnError: true,
+            },
+          );
+          shellExec(
+            `cd /home/dd/engine/cyberia-server \
+          && git add . \
+          && git commit -m "${instanceMessage}"`,
+            {
+              silentOnError: true,
+            },
+          );
+          shellExec(
+            `cd /home/dd/engine/cyberia-client \
+          && git add . \
+          && git commit -m "${instanceMessage}"`,
+            {
+              silentOnError: true,
+            },
+          );
           return;
         } else if (options.publishRemove) {
           shellExec(`rm -rf /home/dd/cyberia-instances/instances/${instanceCode}`);
           shellExec(`rm -rf /home/dd/cyberia-instances/sagas/${instanceCode}.json`);
           return;
         }
-        const fromN = parseInt(options.fromNCommit) > 0 ? parseInt(options.fromNCommit) : 1;
-        const publishMessage =
-          shellExec(`node bin cmt --changelog-msg --from-n-commit ${fromN} --changelog-no-hash`, {
-            stdout: true,
-            silent: true,
-          }).trim() || `Update instance ${instanceCode}`;
-        shellExec(`cd /home/dd/cyberia-instances \
-          && git add . \
-          && git commit -m "${publishMessage.replace(/"/g, '\\"')}" \
-          && underpost push . underpostnet/cyberia-instances`);
+        shellExec(`cd /home/dd/cyberia-instances && underpost push . underpostnet/cyberia-instances`);
         return;
       }
 
@@ -2622,7 +2644,7 @@ try {
               const dropMaps = await CyberiaMap.find({ code: { $in: [...dropMapCodes] } }).lean();
               for (const map of dropMaps) {
                 if (map.thumbnail) thumbFileIds.push(map.thumbnail);
-              if (map.preview) thumbFileIds.push(map.preview);
+                if (map.preview) thumbFileIds.push(map.preview);
                 if (map.preview) thumbFileIds.push(map.preview);
                 for (const entity of map.entities || []) {
                   for (const itemId of entity.objectLayerItemIds || []) {
@@ -4711,7 +4733,6 @@ try {
     fs.copyFileSync('./cyberia-server/Dockerfile', './src/runtime/cyberia-server/Dockerfile');
     fs.copyFileSync('./cyberia-client/README.md', './src/client/public/cyberia-docs/CYBERIA-CLIENT.md');
     fs.copyFileSync('./cyberia-client/Dockerfile', './src/runtime/cyberia-client/Dockerfile');
-    shellExec('cp -a ./engine-private/conf/dd-cyberia/docker-compose/cyberia/. ./src/runtime/engine-cyberia/');
   });
 
   runner
@@ -5281,7 +5302,34 @@ node bin image --path cyberia-client \
         './.github/workflows/cyberia-server.cd.yml',
         './cyberia-server/.github/workflows/cyberia-server.cd.yml',
       );
+      shellExec('cp -a ./engine-private/conf/dd-cyberia/docker-compose/cyberia/. ./src/runtime/engine-cyberia/');
+      shellExec('node bin/cyberia.js instance --publish-build');
       logger.info(`run-workflow build-manifest complete (${isDev ? 'dev' : 'prod'})`);
+    });
+
+  runner
+    .command('publish')
+    .option('--dry-run', 'Dry run: show commands without executing them')
+    .action((options) => {
+      if (options.dryRun) {
+        shellExec('node bin cmt --log --unpush cyberia-server');
+        shellExec('node bin cmt --log --unpush cyberia-client');
+        shellExec('node bin cmt --log --unpush');
+        shellExec('node bin cmt --log --unpush ../cyberia-instances');
+      } else {
+        shellExec('node bin/cyberia.js instance --publish', {
+          silentOnError: true,
+        });
+        shellExec('node bin push cyberia-server underpostnet/cyberia-server', {
+          silentOnError: true,
+        });
+        shellExec('node bin push cyberia-client underpostnet/cyberia-client', {
+          silentOnError: true,
+        });
+        shellExec('node bin run template-deploy', {
+          silentOnError: true,
+        });
+      }
     });
 
   runner

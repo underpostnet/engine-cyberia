@@ -2,7 +2,7 @@
     "type": "module",
     "main": "src/index.js",
     "name": "cyberia",
-    "version": "3.2.70",
+    "version": "3.2.80",
     "description": "Cyberia CLI — toolchain for the Cyberia MMO data layer, content pipeline, persistence, gRPC services, and ERC-1155 lifecycle on Hyperledger Besu.",
     "scripts": {
         "start": "node --max-old-space-size=8192 src/server",
@@ -72,7 +72,7 @@
     },
     "homepage": "https://github.com/underpostnet/engine-cyberia#readme",
     "dependencies": {
-        "underpost": "^3.2.70",
+        "underpost": "^3.2.80",
         "adm-zip": "^0.6.0",
         "maxrects-packer": "^2.7.3",
         "pngjs": "^7.0.0",

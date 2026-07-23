@@ -179,6 +179,7 @@ const DefaultConf = /**/ {
           'InstanceEngineCyberia',
           'ActionEngineCyberia',
           'EntityEngineCyberia',
+          'InstanceSelectionView',
         ],
         core: [
           'CommonJs',
@@ -263,6 +264,7 @@ const DefaultConf = /**/ {
         { path: '/docs', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-action-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-entity-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
+        { path: '/instance-selection', title: 'Select World', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [
         {
@@ -631,6 +633,7 @@ const DefaultConf = /**/ {
           maintenanceDefault: true,
         },
         { path: '/test', title: 'Test', client: 'Test', head: [], body: [] },
+        { path: '/404', title: '404 Instance Not Found', client: 'Cyberia404', head: [], body: [] },
       ],
     },
     Cryptokoyn: {

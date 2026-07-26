@@ -219,7 +219,6 @@ try {
           deployId,
           host,
           path,
-          db,
         });
 
         await DataBaseProviderService.load({
@@ -1954,7 +1953,7 @@ try {
           ? db.host
           : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-      logger.info('instance env', { env: options.envPath, deployId, host, path, db });
+      logger.info('instance env', { env: options.envPath, deployId, host, path });
 
       await DataBaseProviderService.load({
         apis: [
@@ -3892,7 +3891,7 @@ try {
             ? db.host
             : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-        logger.info('generate-saga', { deployId, host, path, db });
+        logger.info('generate-saga', { deployId, host, path });
 
         await DataBaseProviderService.load({
           apis: [
@@ -4930,7 +4929,7 @@ try {
           ? db.host
           : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-      logger.info('drop-db', { deployId, host, path, db });
+      logger.info('drop-db', { deployId, host, path });
 
       const cyberiaCollections = [
         'cyberia-entity',
@@ -5074,7 +5073,7 @@ node bin image --path cyberia-client \
           ? db.host
           : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-      logger.info('seed-dialogues', { deployId, host, path, db });
+      logger.info('seed-dialogues', { deployId, host, path });
 
       await DataBaseProviderService.load({ apis: ['cyberia-dialogue'], host, path, db });
 
@@ -5129,7 +5128,7 @@ node bin image --path cyberia-client \
           ? db.host
           : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-      logger.info('seed-actions-quests', { deployId, host, path, db });
+      logger.info('seed-actions-quests', { deployId, host, path });
 
       await DataBaseProviderService.load({ apis: ['cyberia-action', 'cyberia-quest'], host, path, db });
 
@@ -5185,7 +5184,7 @@ node bin image --path cyberia-client \
           ? db.host
           : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-      logger.info('seed-skills', { deployId, host, path, db });
+      logger.info('seed-skills', { deployId, host, path });
 
       await DataBaseProviderService.load({ apis: ['cyberia-skill'], host, path, db });
 
@@ -5245,7 +5244,7 @@ node bin image --path cyberia-client \
           ? db.host
           : db.host.replace('127.0.0.1', 'mongodb-0.mongodb-service');
 
-      logger.info('seed-entities', { deployId, host, path, db });
+      logger.info('seed-entities', { deployId, host, path });
 
       await DataBaseProviderService.load({ apis: ['cyberia-entity-type-default'], host, path, db });
 
@@ -5474,6 +5473,45 @@ node bin image --path cyberia-client \
         logger.warn(`[build-manifest] Could not update ${catalogPath}: ${err.message}`);
       }
 
+      // ── Build configured custom status pages before their manifests ───────
+      // Status-page paths are data, not application routes. Every entry is
+      // built into the owning runtime's configured hostPath, then run.js reads
+      // that file into the Envoy ConfigMap manifest.
+      const statusPageBuilds = new Map();
+      try {
+        const confInstances = JSON.parse(fs.readFileSync(confInstancesPath, 'utf8'));
+        for (const instance of confInstances) {
+          if (!instance.runtime) continue;
+          const pages = Array.isArray(instance.customStatusPages)
+            ? instance.customStatusPages
+            : instance.page404
+              ? [{ status: '404', hostPath: typeof instance.page404 === 'string' ? instance.page404 : './public/404/index.html' }]
+              : [];
+          for (const page of pages) {
+            if (!page?.hostPath || !/^[1-5][0-9]{2}$/.test(String(page.status || ''))) {
+              throw new Error('invalid customStatusPages entry for ' + instance.id);
+            }
+            const projectRoot = nodePath.resolve('./' + instance.runtime);
+            const outputPath = nodePath.resolve(projectRoot, page.hostPath);
+            if (!outputPath.startsWith(projectRoot + nodePath.sep))
+              throw new Error('custom status page escapes runtime root for ' + instance.id);
+            statusPageBuilds.set(outputPath, page.status);
+          }
+        }
+      } catch (err) {
+        throw new Error('[build-manifest] Could not resolve custom status pages: ' + err.message);
+      }
+      for (const [outputPath, status] of statusPageBuilds) {
+        shellExec(
+          'node bin/cyberia run-workflow build-cyberia-404 --status ' +
+            status +
+            ' --output-path ' +
+            JSON.stringify(outputPath) +
+            (isDev ? ' --dev' : ''),
+        );
+      }
+      shellExec('node bin/cyberia run-workflow build-server-dashboard --output-path ./cyberia-server/public/index.html');
+
       // ── Build dev manifests (always --kind --dev) ────────────────────────
       {
         const flags = `--kind --dev${nodeFlag}`;
@@ -5486,16 +5524,6 @@ node bin image --path cyberia-client \
         shellExec(`node bin run instance-build-manifest 'dd-cyberia,mmo-client,./cyberia-client' ${flags}`);
         shellExec(`node bin run instance-build-manifest 'dd-cyberia,mmo-server,./cyberia-server' ${flags}`);
       }
-
-      // ── Build SSR views ──────────────────────────────────────────────────
-      const env404 = isDev ? ' --dev' : '';
-      shellExec(
-        `node bin/cyberia run-workflow build-cyberia-404 --output-path ./cyberia-server/public/404.html${env404}`,
-      );
-      shellExec(`node bin/cyberia run-workflow build-cyberia-404 --output-path ./cyberia-client/bin/404.html${env404}`);
-      shellExec(
-        `node bin/cyberia run-workflow build-server-dashboard --output-path ./cyberia-server/public/index.html`,
-      );
 
       // Copy canonical doc sources into the generated project READMEs.
       // Edit the canonical sources; never hand-edit these generated outputs.
@@ -5568,21 +5596,23 @@ node bin image --path cyberia-client \
   runner
     .command('build-cyberia-404')
     .option('--dev', 'Build a development variant of the 404 page.')
+    .option('--status <code>', 'HTTP status represented by this static status page.', '404')
     .option(
       '--output-path <path>',
-      'Output path for the rendered 404.html (default: ./cyberia-server/public/404.html). ' +
-        'The same page is served, sub-path aware, by every instance variant of both the ' +
-        'cyberia-server (Go static server) and cyberia-client (docker-driver).',
+      'Output path for the rendered static status page (default: ./cyberia-server/public/404.html). ' +
+        'The file is consumed by Envoy, never served by the cyberia applications.',
     )
-    .description('Build the cyberpunk pixel-art "sector not found" (404) page shared by the Cyberia server + client.')
+    .description('Build the static Cyberia status-page asset consumed by Envoy.')
     .action((options) => {
+      if (!/^[1-5][0-9]{2}$/.test(String(options.status)))
+        throw new Error('--status must be a three-digit HTTP status');
       const outputPath = options.outputPath || './cyberia-server/public/404.html';
       shellExec(
         `node bin static --page ./src/client/ssr/views/Cyberia404.js` +
           ` --output-path ${outputPath}` +
-          ` --title 'Cyberia — Sector Not Found'` +
+          ` --title 'Cyberia — Status ${options.status}'` +
           ` --favicon /favicon.ico` +
-          ` --description 'Cyberia Online 404 — the requested sector is not on the grid.'` +
+          ` --description 'Cyberia Online status ${options.status} page served by Envoy Proxy.'` +
           ` --lang en` +
           ` --env ${options.dev ? 'development' : 'production'}`,
       );

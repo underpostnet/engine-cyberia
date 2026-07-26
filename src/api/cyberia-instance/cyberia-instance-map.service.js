@@ -430,37 +430,18 @@ const resolveInstanceWorld = async (instanceCode, options) => {
   const instance = await CyberiaInstance.findOne({ code: instanceCode }).lean();
 
   if (!instance) {
-    // Fallback world: generateFallbackWorld is deterministically seeded, so
-    // this layout is identical to the one the gRPC path loads into the live
-    // simulation AND to the one the /preview renderer draws — POIs, portals,
-    // and resource cells all line up with the node preview image.
     const world = generateFallbackWorld();
     const mapCodes = new Set(world.instance.cyberiaMapCodes);
 
-    // Build synthetic object-layer metadata for EVERY item id that appears on
-    // any entity in the generated fallback world.  The canonical defaults
-    // (wood-1, wood-2, kishins, atlas_pistol_mk2, …) are not persisted to
-    // MongoDB in the fallback path, so we compute a consistent stats sum from
-    // the canonical stat block shape (6 stats, each 0-10 → average ~30) and
-    // resolve the item type from the DefaultCyberiaItems registry.
-    //
-    // This ensures:
-    //   - resource entities carry a correct stats-sum readout
-    //   - bot weapon items are recognised as type 'weapon' so
-    //     entityPresenceStatus can classify weapon-carrying bots as 'hostile'
-    //   - every item's statsSum is consistent between the world generator
-    //     and the map-instance-modal payload
-    const allItemIds = [
+    const fallbackItemIds = [
       ...new Set(world.maps.flatMap((m) => (m.entities || []).flatMap((e) => e.objectLayerItemIds || []))),
     ];
     const itemTypeById = Object.fromEntries(DefaultCyberiaItems.map((entry) => [entry.item.id, entry.item.type]));
-    // Deterministic stats sum: 6 stats × average 5 per stat = 30.
-    // This matches the canonical stat block shape (STAT_TYPES length = 6,
-    // each stat 0-10) and is the same value used by the persisted path
-    // when ObjectLayer documents have no explicit stats.
-    const FALLBACK_STATS_SUM = 30;
+    const resolved = await resolveObjectLayerMetadata(fallbackItemIds, options);
     const objectLayerMetadata = Object.fromEntries(
-      allItemIds.map((itemId) => [itemId, { statsSum: FALLBACK_STATS_SUM, type: itemTypeById[itemId] || 'resource' }]),
+      Object.entries(resolved).map(([itemId, meta]) => {
+        return [itemId, { statsSum: meta.statsSum, type: meta.type }];
+      }),
     );
 
     return {

@@ -2,7 +2,9 @@ name: CI | Coverall Cyberia
 
 on:
   push:
-    branches: ['master']
+    branches: ['master', 'main']
+  pull_request:
+    branches: ['master', 'main']
 
 jobs:
   test:

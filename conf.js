@@ -80,6 +80,7 @@ const DefaultConf = /**/ {
           'SocketIoHandler',
           'EventBus',
           'ClientEvents',
+          'Repository',
         ],
         underpost: [
           'AppShellUnderpost',
@@ -232,6 +233,7 @@ const DefaultConf = /**/ {
           'ColorPaletteElement',
           'EventBus',
           'ClientEvents',
+          'Repository',
         ],
         'cyberia-portal': [
           'AppShellCyberiaPortal',
@@ -305,6 +307,10 @@ const DefaultConf = /**/ {
           import_name_build: '/dist/vanilla-jsoneditor/standalone.js',
           styles: './node_modules/vanilla-jsoneditor/themes',
           public_styles_folder: '/styles/vanilla-jsoneditor',
+        },
+        {
+          folder: './node_modules/vanilla-jsoneditor/standalone.js.map',
+          public_folder: '/dist/vanilla-jsoneditor/standalone.js.map',
         },
         {
           folder: './node_modules/dexie/dist',
@@ -400,6 +406,7 @@ const DefaultConf = /**/ {
           'SocketIoHandler',
           'EventBus',
           'ClientEvents',
+          'Repository',
         ],
         cryptokoyn: [
           'AppShellCryptokoyn',
@@ -524,6 +531,7 @@ const DefaultConf = /**/ {
           'SocketIoHandler',
           'EventBus',
           'ClientEvents',
+          'Repository',
         ],
         itemledger: [
           'AppShellItemledger',

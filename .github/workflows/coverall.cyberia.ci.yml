@@ -9,10 +9,12 @@ on:
 jobs:
   test:
     name: Coverall Cyberia Test
+    # Deliberately not the engine repository: two coverage workflows on one commit
+    # are two Coveralls builds, and the badge then shows whichever landed last
+    # rather than the tree's coverage. The engine is served by coverall.ci.yml.
     if: |
       github.actor != 'dependabot[bot]' &&
-      (github.repository == 'underpostnet/engine' ||
-       github.repository == 'underpostnet/engine-cyberia' ||
+      (github.repository == 'underpostnet/engine-cyberia' ||
        github.repository == 'underpostnet/engine-ghpkg-cyberia')
     runs-on: ubuntu-latest
     container:
@@ -34,8 +36,14 @@ jobs:
       - name: Install project dependencies
         run: npm install
 
-      - name: Run tests and generate coverage
-        run: node bin test app,cyberia
+      # Every lcov-producing tier in one run: the report Coveralls receives is the
+      # whole measured tree, and the threshold is checked against that same number.
+      # Set the COVERAGE_MIN repository variable to gate below the shipped default
+      # while the suite is catching up to it.
+      - name: Run tests and enforce coverage threshold
+        run: npm run test:coverage
+        env:
+          COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
 
       - name: Store coverage report
         uses: actions/upload-artifact@v7
@@ -49,8 +57,7 @@ jobs:
     needs: test
     if: |
       github.actor != 'dependabot[bot]' &&
-      (github.repository == 'underpostnet/engine' ||
-       github.repository == 'underpostnet/engine-cyberia' ||
+      (github.repository == 'underpostnet/engine-cyberia' ||
        github.repository == 'underpostnet/engine-ghpkg-cyberia')
     runs-on: ubuntu-latest
     steps:
@@ -63,25 +70,12 @@ jobs:
           name: coverall-cyberia-lcov
           path: ./coverage
 
+      # One report per commit, so the build is complete on arrival: no parallel
+      # flags to reconcile and no finish webhook to leave a build half-reported.
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: ./coverage/lcov.info
-          flag-name: cyberia
-          parallel: true
-
-  finish:
-    needs: upload
-    if: |
-      github.actor != 'dependabot[bot]' &&
-      (github.repository == 'underpostnet/engine' ||
-       github.repository == 'underpostnet/engine-cyberia' ||
-       github.repository == 'underpostnet/engine-ghpkg-cyberia')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify Coveralls Finished
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          parallel-finished: true
+          format: lcov
+          fail-on-error: true

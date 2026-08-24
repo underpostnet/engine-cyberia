@@ -14,8 +14,10 @@ jobs:
     # rather than the tree's coverage. The engine is served by coverall.ci.yml.
     if: |
       github.actor != 'dependabot[bot]' &&
-      (github.repository == 'underpostnet/engine-cyberia' ||
-       github.repository == 'underpostnet/engine-ghpkg-cyberia')
+      (github.repository == 'underpostnet/engine' ||
+       github.repository == 'underpostnet/engine-cyberia' ||
+       github.repository == 'underpostnet/engine-ghpkg-cyberia' ||
+       github.repository == 'underpostnet/engine-test-cyberia')
     runs-on: ubuntu-latest
     container:
       image: quay.io/rockylinux/rockylinux:9
@@ -36,16 +38,17 @@ jobs:
       - name: Install project dependencies
         run: npm install
 
-      # Every lcov-producing tier in one run: the report Coveralls receives is the
-      # whole measured tree, and the threshold is checked against that same number.
-      # Set the COVERAGE_MIN repository variable to gate below the shipped default
-      # while the suite is catching up to it.
+      # Set the COVERAGE_MIN repository variable to gate below the shipped
+      # default while the suite is catching up to it.
       - name: Run tests and enforce coverage threshold
-        run: npm run test:coverage
+        run: COVERAGE_ENFORCE=1 node bin test unit,infra,app,cyberia
         env:
           COVERAGE_MIN: ${{ vars.COVERAGE_MIN }}
 
+      # Stored even when the threshold step failed — that step still fails the
+      # job, but without the report the badge freezes at the last passing build.
       - name: Store coverage report
+        if: '!cancelled()'
         uses: actions/upload-artifact@v7
         with:
           name: coverall-cyberia-lcov
@@ -55,12 +58,19 @@ jobs:
   upload:
     name: Upload Cyberia Coverage to Coveralls
     needs: test
+    # Host runner, not the Rocky container the suite runs in: every step of the
+    # Coveralls action declares `shell: bash`, which the runner execs inside the
+    # job container and cannot resolve there.
     if: |
+      !cancelled() &&
       github.actor != 'dependabot[bot]' &&
-      (github.repository == 'underpostnet/engine-cyberia' ||
-       github.repository == 'underpostnet/engine-ghpkg-cyberia')
+      (github.repository == 'underpostnet/engine' ||
+       github.repository == 'underpostnet/engine-cyberia' ||
+       github.repository == 'underpostnet/engine-ghpkg-cyberia' ||
+       github.repository == 'underpostnet/engine-test-cyberia')
     runs-on: ubuntu-latest
     steps:
+      # Coveralls reads the commit and branch metadata from the checkout.
       - name: Clone repository
         uses: actions/checkout@v7
 
@@ -70,12 +80,31 @@ jobs:
           name: coverall-cyberia-lcov
           path: ./coverage
 
-      # One report per commit, so the build is complete on arrival: no parallel
-      # flags to reconcile and no finish webhook to leave a build half-reported.
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: ./coverage/lcov.info
           format: lcov
+          parallel: true
           fail-on-error: true
+
+  finish:
+    name: Finish Cyberia Coveralls build
+    needs: upload
+    # The build stays open until this webhook lands, so it runs on any upload
+    # outcome rather than leaving a half-reported build behind.
+    if: |
+      !cancelled() &&
+      github.actor != 'dependabot[bot]' &&
+      (github.repository == 'underpostnet/engine' ||
+       github.repository == 'underpostnet/engine-cyberia' ||
+       github.repository == 'underpostnet/engine-ghpkg-cyberia' ||
+       github.repository == 'underpostnet/engine-test-cyberia')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Coveralls Finished
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true

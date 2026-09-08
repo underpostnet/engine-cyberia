@@ -1,10 +1,9 @@
 /**
  * gRPC transport for the Cyberia Engine data pipeline.
  *
- * Runs alongside Express on a separate port (default 50051).
- * Thin adapter over src/projects/cyberia/instance-data.js — the shared
- * world-load/boot assembly also served by the REST fallback at
- * /api/cyberia-instance/boot/* — so both transports stay equivalent.
+ * Runs beside Express on its own port (default 50051). Thin adapter over
+ * src/projects/cyberia/instance-data.js, the same assembly the REST fallback
+ * at /api/cyberia-instance/boot/* serves, so both transports stay equivalent.
  *
  * @module src/grpc/cyberia/grpc-server.js
  */
@@ -16,7 +15,6 @@ import { fileURLToPath } from 'url';
 import { loggerFactory } from '../../server/ops/logger.js';
 import {
   buildFallbackConfig,
-  buildFallbackInstanceConfig,
   fetchFullInstance,
   fetchMapData,
   fetchObjectLayer,
@@ -131,7 +129,7 @@ class GrpcServer {
 
     server.addService(proto.CyberiaDataService.service, buildHandlers(dbKey));
 
-    // gRPC runs over Kubernetes internal network (ClusterIP) — always insecure
+    // gRPC stays on the cluster-internal network, so credentials are insecure.
     const creds = grpc.ServerCredentials.createInsecure();
 
     return new Promise((resolve, reject) => {
@@ -159,4 +157,4 @@ class GrpcServer {
   }
 }
 
-export { GrpcServer, buildFallbackConfig, buildFallbackInstanceConfig };
+export { GrpcServer, buildFallbackConfig };

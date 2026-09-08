@@ -16,6 +16,12 @@
  *     reads from code defaults INSTEAD of Mongo; a persisted instance reads
  *     them from Mongo, so they must exist there for the capture to serve the
  *     same world (see instance-data.js#fetchFullInstance).
+ *   - CyberiaMapAudioConf — one per captured map. The client asks for audio by
+ *     map code, so a namespaced capture would otherwise play nothing.
+ *
+ * CyberiaAudio assets are NOT captured: an asset is global, identified by its
+ * code, and imported once by `cyberia audio --import`. The capture reports the
+ * codes it bound that no asset carries yet.
  *
  * ObjectLayer/atlas assets are NOT generated here — they come from the asset
  * pipeline (`bin/cyberia ol <ids> --import`). The capture reports the missing
@@ -31,6 +37,8 @@
 
 import { loggerFactory } from '../../server/ops/logger.js';
 import { collectReferencedItemIds } from './cyberia-fallback-world.js';
+import { collectInstanceItemIds } from './cyberia-instance-items.js';
+import { fallbackAudioConfig } from '../../projects/cyberia/seed-audio.js';
 import {
   DefaultCyberiaActions,
   DefaultCyberiaQuests,
@@ -189,7 +197,6 @@ function planFallbackCapture({
       ...(spawn.sourceMapCode ? { sourceMapCode: mapCodes.get(spawn.sourceMapCode) || spawn.sourceMapCode } : {}),
     },
     topologyMode: 'procedural',
-    itemIds: (world.instance.itemIds || []).map((entry) => ({ ...entry })),
   };
 
   const conf = { ...fillInstanceConfDefaults(world.config || {}), instanceCode };
@@ -219,57 +226,24 @@ function planFallbackCapture({
     codeMaps,
     skippedActionCodes,
     skippedQuestCodes,
-    itemIds: collectCaptureItemIds({ instance, conf, maps, actions: capturedActions, quests: capturedQuests }),
+    itemIds: collectCaptureItemIds({ maps, actions: capturedActions, quests: capturedQuests }),
   };
 }
 
 /**
- * Every ObjectLayer item id the captured instance needs an atlas for: what the
- * maps place, what the instance and conf declare, what the seeded skills and
- * entity-type defaults reference, and what the vendor/assembler/quest catalogs
- * draw icons for.
+ * Every ObjectLayer item id the captured instance needs an atlas for: the canonical world's
+ * own ids, plus what this instance names — its maps, its entity-type defaults, and the
+ * vendor/assembler/quest catalogs the interact modal draws icons for.
  *
  * @returns {string[]} Sorted, de-duplicated item ids.
  */
-function collectCaptureItemIds({ instance, conf, maps, actions, quests }) {
+function collectCaptureItemIds({ maps, actions, quests, entityDefaults = [] }) {
+  // The canonical world's own ids — every fallback default, including the skill triggers and
+  // summoned entities DefaultSkillConfig names. What the captured instance adds on top follows
+  // the same rule the export and the boot payload use.
   const ids = collectReferencedItemIds();
-  const push = (id) => {
-    if (typeof id === 'string' && id.length > 0 && !id.startsWith('$')) ids.add(id);
-  };
-
-  for (const map of maps || []) {
-    for (const entity of map.entities || []) (entity.objectLayerItemIds || []).forEach(push);
-  }
-  for (const entry of instance?.itemIds || []) push(typeof entry === 'string' ? entry : entry?.id);
-
-  for (const entityDefault of conf?.entityDefaults || []) {
-    (entityDefault.liveItemIds || []).forEach(push);
-    (entityDefault.deadItemIds || []).forEach(push);
-    (entityDefault.dropItemIds || []).forEach(push);
-    for (const slot of entityDefault.defaultObjectLayers || []) push(slot.itemId);
-  }
-  for (const skillConfig of conf?.skillConfig || []) {
-    push(skillConfig.triggerItemId);
-    for (const skill of skillConfig.skills || []) push(skill.summonedEntityItemId);
-  }
-
-  for (const action of actions || []) {
-    for (const shopItem of action.shopItems || []) {
-      push(shopItem.itemId);
-      push(shopItem.priceItemId);
-    }
-    for (const recipe of action.craftRecipes || []) {
-      (recipe.ingredients || []).forEach((ingredient) => push(ingredient.itemId));
-      (recipe.outputItems || []).forEach((output) => push(output.itemId));
-    }
-  }
-  for (const quest of quests || []) {
-    for (const step of quest.steps || []) {
-      for (const objective of step.objectives || []) push(objective.itemId);
-    }
-    for (const reward of quest.rewards || []) push(reward.itemId);
-  }
-
+  // The conf references its entity-type defaults by _id, so the documents arrive resolved.
+  for (const itemId of collectInstanceItemIds({ maps, entityDefaults, actions, quests })) ids.add(itemId);
   return [...ids].sort();
 }
 
@@ -309,7 +283,8 @@ async function seedMissingContentDefaults({ CyberiaSkill, CyberiaEntityTypeDefau
         liveItemIds: entityDefault.liveItemIds || [],
         deadItemIds: entityDefault.deadItemIds || [],
         dropItemIds: entityDefault.dropItemIds || [],
-        defaultObjectLayers: entityDefault.defaultObjectLayers || [],
+        inventoryItemsIds: entityDefault.inventoryItemsIds || [],
+        overrideItemsIdsState: entityDefault.overrideItemsIdsState || [],
         behavior: entityDefault.behavior || '',
       },
       'entityTypeDefaults',
@@ -329,10 +304,59 @@ async function seedMissingContentDefaults({ CyberiaSkill, CyberiaEntityTypeDefau
 }
 
 /**
- * Remove documents left over in this capture's own namespace by a previous,
- * larger capture (e.g. a world that used to have more maps). Only ever touches
- * codes prefixed with the instance code, and never runs in `keepFallbackCodes`
- * mode where the codes are the globally shared canonical ones.
+ * Write the audio configuration of the captured maps.
+ *
+ * Audio reaches the client per map code, so a world captured under namespaced codes needs its
+ * bindings rewritten under those codes — the same reason the actions and quests are re-coded.
+ * Only codes an imported asset actually carries are bound: a binding to an absent asset would be
+ * a dangling name, and the caller is told which ones are missing instead.
+ *
+ * @param {object} params
+ * @param {object} params.models - `{ CyberiaMapAudioConf, CyberiaAudio }`.
+ * @param {object} params.plan - Result of `planFallbackCapture()`.
+ * @returns {Promise<{audioConfs: number, missingAudioCodes: string[]}>}
+ */
+async function captureAudioConfig({ models, plan }) {
+  const { CyberiaMapAudioConf, CyberiaAudio } = models;
+  if (!CyberiaMapAudioConf) return { audioConfs: 0, missingAudioCodes: [] };
+
+  const config = fallbackAudioConfig();
+  const bound = new Set(
+    [...config.events.map(({ audioCode }) => audioCode), ...config.maps.map(({ defaultMusic }) => defaultMusic)].filter(
+      Boolean,
+    ),
+  );
+  const present = new Set(
+    CyberiaAudio
+      ? (await CyberiaAudio.find({ code: { $in: [...bound] } }, { code: 1 }).lean()).map((doc) => doc.code)
+      : [],
+  );
+  const events = config.events.filter(({ audioCode }) => present.has(audioCode));
+
+  let audioConfs = 0;
+  for (const map of config.maps) {
+    const mapCode = plan.codeMaps.mapCodes.get(map.mapCode);
+    if (!mapCode) continue;
+    await CyberiaMapAudioConf.findOneAndUpdate(
+      { mapCode },
+      {
+        $set: {
+          defaultMusic: present.has(map.defaultMusic) ? map.defaultMusic : '',
+          settings: config.settings,
+          events,
+        },
+      },
+      { upsert: true },
+    );
+    audioConfs++;
+  }
+  return { audioConfs, missingAudioCodes: [...bound].filter((code) => !present.has(code)).sort() };
+}
+
+/**
+ * Remove documents that a larger previous capture left in this capture's own
+ * namespace. Touches only codes prefixed with the instance code, and never runs
+ * in `keepFallbackCodes` mode, where the codes are the shared canonical ones.
  */
 async function pruneStaleCaptureDocs({ models, instanceCode, plan }) {
   const namespace = new RegExp(`^${escapeRegExp(instanceCode)}-`);
@@ -373,7 +397,8 @@ async function pruneStaleCaptureDocs({ models, instanceCode, plan }) {
  * @param {object} params
  * @param {object} params.models       `{ CyberiaInstance, CyberiaInstanceConf, CyberiaMap, CyberiaAction,
  *                                        CyberiaQuest, CyberiaSkill, CyberiaEntityTypeDefault,
- *                                        CyberiaDialogue, ObjectLayer }`
+ *                                        CyberiaDialogue, CyberiaMapAudioConf, CyberiaAudio,
+ *                                        ObjectLayer }`
  * @param {object} params.world        Result of `generateFallbackWorld()`.
  * @param {string} params.instanceCode
  * @param {boolean} [params.keepFallbackCodes=false]
@@ -437,6 +462,16 @@ async function captureFallbackWorld({ models, world, instanceCode, keepFallbackC
   const inserted = await seedMissingContentDefaults(models);
   logger.info('Seeded missing content defaults', inserted);
 
+  const audio = await captureAudioConfig({ models, plan });
+  logger.info(`Captured ${audio.audioConfs} CyberiaMapAudioConf document(s)`);
+  if (audio.missingAudioCodes.length > 0) {
+    logger.warn(
+      'Audio codes with no imported CyberiaAudio document were left unbound — ' +
+        'run `node bin/cyberia run-workflow seed-audio` to record and import them',
+      { codes: audio.missingAudioCodes },
+    );
+  }
+
   // `keepFallbackCodes` reuses the globally shared canonical codes, so nothing
   // in that namespace belongs exclusively to this capture.
   const pruned = keepFallbackCodes
@@ -452,11 +487,12 @@ async function captureFallbackWorld({ models, world, instanceCode, keepFallbackC
   );
   const missingObjectLayerItemIds = plan.itemIds.filter((id) => !presentItemIds.has(id));
 
-  return { plan, inserted, pruned, missingObjectLayerItemIds };
+  return { plan, inserted, pruned, audio, missingObjectLayerItemIds };
 }
 
 export {
   planFallbackCapture,
+  captureAudioConfig,
   captureFallbackWorld,
   collectCaptureItemIds,
   captureMapCode,

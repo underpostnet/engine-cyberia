@@ -180,7 +180,6 @@ const DefaultConf = /**/ {
           'InstanceEngineCyberia',
           'ActionEngineCyberia',
           'EntityEngineCyberia',
-          'FallbackWorldEngineCyberia',
           'InstanceSelectionView',
         ],
         core: [
@@ -765,6 +764,8 @@ const DefaultConf = /**/ {
           'cyberia-entity-type-default',
           'cyberia-client-hints',
           'cyberia-saga',
+          'cyberia-audio',
+          'cyberia-map-audio-conf',
         ],
         ws: 'core',
         peer: true,

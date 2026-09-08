@@ -53,16 +53,16 @@ import {
 const DEFAULT_MAP_COUNT = 4;
 const DEFAULT_GRID_SIZE = 64;
 
+const getFallbackMapCodes = (mapCount = DEFAULT_MAP_COUNT) =>
+  Array.from({ length: mapCount }, (_, index) => `fallback-map-${index}`);
+
 // ── Asset-id integrity ──────────────────────────────────────────────────────
 //
-// Every item id that the fallback world can place on a map must also be
-// present in DefaultCyberiaItems, otherwise the `import-default-items` seed
-// will not create an ObjectLayer for it and the runtime client will fall
-// back to a solid-colour rectangle instead of the intended sprite.
+// Every item id the fallback world can place must also be in
+// DefaultCyberiaItems. Otherwise the `import-default-items` seed creates no
+// ObjectLayer for it and the client draws a solid-colour rectangle.
 //
-// auditFallbackItemIds() returns the set of unknown ids encountered in the
-// canonical defaults so callers (CLI, test harness, gRPC fallback path)
-// can surface drift immediately. Returns an empty array when in sync.
+// auditFallbackItemIds() returns the unknown ids, empty when in sync.
 
 const KNOWN_DEFAULT_ITEM_IDS = new Set(DefaultCyberiaItems.map((e) => e.item.id));
 
@@ -83,7 +83,7 @@ function collectReferencedItemIds() {
     (e.liveItemIds || []).forEach(push);
     (e.deadItemIds || []).forEach(push);
     (e.dropItemIds || []).forEach(push);
-    (e.defaultObjectLayers || []).forEach((ol) => push(ol.itemId));
+    (e.inventoryItemsIds || []).forEach(push);
   }
   for (const r of RESOURCE_ENTITY_TYPE_DEFAULTS) {
     (r.liveItemIds || []).forEach(push);
@@ -239,11 +239,6 @@ function generateFallbackMap(mapCode, colors, opts = {}) {
  * @param {number} [opts.resourceCount]        Resources per map (random if omitted).
  * @param {number} [opts.staticCount]          Static decorators per map (random if omitted).
  * @param {Array}  [opts.colors]              Override palette.
- * @param {Array<{id: string, defaultPlayerInventory: boolean}>} [opts.itemIds=[]]
- *   Instance-level default items, mirroring `CyberiaInstance.itemIds`. Entries
- *   flagged `defaultPlayerInventory` are merged into the player entity default
- *   by `applyInstanceDefaultPlayerInventory`; every id is also resolved to an
- *   atlas at boot. Layout is unaffected, so this stays outside the world seed.
  * @returns {{
  *   instance: object,
  *   maps: object[],
@@ -262,18 +257,13 @@ function generateFallbackWorld(opts = {}) {
     botCount,
     resourceCount,
     staticCount,
-    // Palette lives in SharedDefaultsCyberia (presentation-owned). The
-    // world generator only uses it to stamp a cosmetic rgba(...) string on
-    // entities so the browser editor / preview can render a coloured
-    // fallback before atlases load. The C client resolves real colours
-    // through domain/presentation_runtime — it does not read this value.
+    // Palette from SharedDefaultsCyberia. The generator only stamps a cosmetic
+    // rgba(...) string on entities, for previews drawn before atlases load. The
+    // game client resolves its own colours and ignores this value.
     colors = PALETTE,
-    itemIds = [],
   } = opts;
 
-  // Surface item-id drift loudly on the very first build, so a missing
-  // `bin/cyberia run-workflow import-default-items` run shows up at startup
-  // instead of as silent grey rectangles later.
+  // Report item-id drift at the first build, not as grey rectangles later.
   const missing = auditFallbackItemIds();
   if (missing.length > 0) {
     // eslint-disable-next-line no-console
@@ -284,18 +274,12 @@ function generateFallbackWorld(opts = {}) {
     );
   }
 
-  // Generate map codes.
-  const mapCodes = [];
-  for (let i = 0; i < mapCount; i++) {
-    mapCodes.push(`fallback-map-${i}`);
-  }
+  const mapCodes = getFallbackMapCodes(mapCount);
 
-  // Deterministic layout: seed the shared random source so every call
-  // reproduces the SAME world. The instance-map `/static` POIs and the
-  // `/preview` node image are built by independent requests (and survive
-  // restarts) — they must agree on where every entity sits, so a resource POI
-  // lands exactly where the preview draws that resource. The seed folds in the
-  // layout-affecting options so a custom count set stays internally consistent.
+  // Deterministic layout: the seeded random source makes every call reproduce
+  // the same world. The `/static` POIs and the `/preview` image come from
+  // independent requests and must agree on where each entity sits. The seed
+  // folds in the layout options, so a custom count set stays consistent.
   const seed = `cyberia-fallback-world-v1:${mapCount}:${gridSize ?? ''}:${obstacleCount ?? ''}:${
     foregroundCount ?? ''
   }:${botCount ?? ''}:${resourceCount ?? ''}:${staticCount ?? ''}`;
@@ -327,7 +311,6 @@ function generateFallbackWorld(opts = {}) {
     portals,
     topologyMode: 'procedural',
     playerSpawn: { ...DEFAULT_PLAYER_SPAWN },
-    itemIds: itemIds.map((entry) => ({ ...entry })),
   };
 
   return {
@@ -343,12 +326,9 @@ function generateFallbackWorld(opts = {}) {
 
 // ── Selection-view fallback instance ─────────────────────────────────────────
 //
-// A dummy, never-persisted instance surfaced in the world/instance selection
-// list so it is never empty: it points at the always-on TEST variant (a real
-// deployed world in the mmo-server multiInstance block). Shaped like a
-// CyberiaInstance list row — only the fields InstanceSelectionView reads
-// (code/name/description/tags/status/thumbnail). Injected into the instance list
-// return by CyberiaInstanceService.get when the caller opts in (?fallback=true).
+// A never-persisted instance row that keeps the selection list non-empty. It
+// points at the always-on TEST variant and carries only the fields the
+// selection view reads. CyberiaInstanceService.get injects it on ?fallback=true.
 
 const DEFAULT_FALLBACK_INSTANCE_CODE = 'TEST';
 
@@ -370,6 +350,7 @@ function fallbackListInstance() {
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export {
+  getFallbackMapCodes,
   generateFallbackWorld,
   generateFallbackMap,
   auditFallbackItemIds,

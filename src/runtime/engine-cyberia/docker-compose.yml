@@ -195,9 +195,11 @@ services:
     environment:
       INSTANCE_CODE: amethyst-strata-expansion
       CYBERIA_BASE_PATH: /
-      ENGINE_API_BASE_URL: ${ENGINE_API_BASE_URL:-http://engine-cyberia}
+      CYBERIA_PUBLIC_URL: ${CYBERIA_SERVER_PUBLIC_ORIGIN:-http://localhost:8081}
+      CYBERIA_SERVER_API_KEY: ${CYBERIA_SERVER_API_KEY:-}
+      CYBERIA_DATA_SERVER_URL: ${CYBERIA_DATA_SERVER_URL:-http://engine-cyberia}
       ENGINE_PUBLIC_URL: ${ENGINE_PUBLIC_URL:-http://localhost:4005}
-      ENGINE_GRPC_ADDRESS: ${ENGINE_GRPC_ADDRESS:-engine-cyberia-runtime:50051}
+      CYBERIA_DATA_SERVER_GRPC: ${CYBERIA_DATA_SERVER_GRPC:-engine-cyberia-runtime:50051}
       ENGINE_GRPC_RELOAD_INTERVAL_SEC: ${ENGINE_GRPC_RELOAD_INTERVAL_SEC:-300}
       STATIC_DIR: ${CYBERIA_SERVER_STATIC_DIR:-/home/dd/engine/cyberia-server/public}
       APP_ENV: ${CYBERIA_SERVER_APP_ENV:-development}
@@ -231,9 +233,11 @@ services:
     environment:
       INSTANCE_CODE: FOREST
       CYBERIA_BASE_PATH: /FOREST
-      ENGINE_API_BASE_URL: ${ENGINE_API_BASE_URL:-http://engine-cyberia}
+      CYBERIA_PUBLIC_URL: ${CYBERIA_SERVER_PUBLIC_ORIGIN:-http://localhost:8081}/FOREST
+      CYBERIA_SERVER_API_KEY: ${CYBERIA_SERVER_API_KEY:-}
+      CYBERIA_DATA_SERVER_URL: ${CYBERIA_DATA_SERVER_URL:-http://engine-cyberia}
       ENGINE_PUBLIC_URL: ${ENGINE_PUBLIC_URL:-http://localhost:4005}
-      ENGINE_GRPC_ADDRESS: ${ENGINE_GRPC_ADDRESS:-engine-cyberia-runtime:50051}
+      CYBERIA_DATA_SERVER_GRPC: ${CYBERIA_DATA_SERVER_GRPC:-engine-cyberia-runtime:50051}
       ENGINE_GRPC_RELOAD_INTERVAL_SEC: ${ENGINE_GRPC_RELOAD_INTERVAL_SEC:-300}
       STATIC_DIR: ${CYBERIA_SERVER_STATIC_DIR:-/home/dd/engine/cyberia-server/public}
       APP_ENV: ${CYBERIA_SERVER_APP_ENV:-development}
@@ -267,9 +271,11 @@ services:
     environment:
       INSTANCE_CODE: TEST
       CYBERIA_BASE_PATH: /TEST
-      ENGINE_API_BASE_URL: ${ENGINE_API_BASE_URL:-http://engine-cyberia}
+      CYBERIA_PUBLIC_URL: ${CYBERIA_SERVER_PUBLIC_ORIGIN:-http://localhost:8081}/TEST
+      CYBERIA_SERVER_API_KEY: ${CYBERIA_SERVER_API_KEY:-}
+      CYBERIA_DATA_SERVER_URL: ${CYBERIA_DATA_SERVER_URL:-http://engine-cyberia}
       ENGINE_PUBLIC_URL: ${ENGINE_PUBLIC_URL:-http://localhost:4005}
-      ENGINE_GRPC_ADDRESS: ${ENGINE_GRPC_ADDRESS:-engine-cyberia-runtime:50051}
+      CYBERIA_DATA_SERVER_GRPC: ${CYBERIA_DATA_SERVER_GRPC:-engine-cyberia-runtime:50051}
       ENGINE_GRPC_RELOAD_INTERVAL_SEC: ${ENGINE_GRPC_RELOAD_INTERVAL_SEC:-300}
       STATIC_DIR: ${CYBERIA_SERVER_STATIC_DIR:-/home/dd/engine/cyberia-server/public}
       APP_ENV: ${CYBERIA_SERVER_APP_ENV:-development}
@@ -299,7 +305,7 @@ services:
 
   # === Tier 4: presentation, one per variant ===============================
   # One WASM bundle serves every variant; the instance is resolved from the URL
-  # sub-path (docker-driver injects CYBERIA_BASE_PATH / _WS_ORIGIN /
+  # sub-path (wasm-driver injects CYBERIA_BASE_PATH / _WS_ORIGIN /
   # _ENGINE_API_ORIGIN / _DEFAULT_INSTANCE). Each client waits ONLY for its own
   # server, so the three
   # server->client pipelines advance independently (in parallel) once the shared
@@ -317,7 +323,7 @@ services:
       CYBERIA_BASE_PATH: /
       CYBERIA_DEFAULT_INSTANCE: ${CYBERIA_DEFAULT_INSTANCE:-amethyst-strata-expansion}
       CYBERIA_WS_ORIGIN: ${CYBERIA_WS_ORIGIN:-ws://localhost:8081}
-      CYBERIA_ENGINE_API_ORIGIN: ${CYBERIA_ENGINE_API_ORIGIN:-http://localhost}
+      CYBERIA_DATA_SERVER_URL: ${CYBERIA_CLIENT_DATA_SERVER_URL:-http://localhost}
     networks:
       - dd-cyberia-internal
     expose:
@@ -342,7 +348,7 @@ services:
       CYBERIA_BASE_PATH: /FOREST
       CYBERIA_DEFAULT_INSTANCE: ${CYBERIA_DEFAULT_INSTANCE:-amethyst-strata-expansion}
       CYBERIA_WS_ORIGIN: ${CYBERIA_WS_ORIGIN:-ws://localhost:8081}
-      CYBERIA_ENGINE_API_ORIGIN: ${CYBERIA_ENGINE_API_ORIGIN:-http://localhost}
+      CYBERIA_DATA_SERVER_URL: ${CYBERIA_CLIENT_DATA_SERVER_URL:-http://localhost}
     networks:
       - dd-cyberia-internal
     expose:
@@ -367,7 +373,7 @@ services:
       CYBERIA_BASE_PATH: /TEST
       CYBERIA_DEFAULT_INSTANCE: ${CYBERIA_DEFAULT_INSTANCE:-amethyst-strata-expansion}
       CYBERIA_WS_ORIGIN: ${CYBERIA_WS_ORIGIN:-ws://localhost:8081}
-      CYBERIA_ENGINE_API_ORIGIN: ${CYBERIA_ENGINE_API_ORIGIN:-http://localhost}
+      CYBERIA_DATA_SERVER_URL: ${CYBERIA_CLIENT_DATA_SERVER_URL:-http://localhost}
     networks:
       - dd-cyberia-internal
     expose:

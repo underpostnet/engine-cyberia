@@ -10,7 +10,7 @@ import { CyberiaInstanceMapService } from './cyberia-instance-map.service.js';
 import { CyberiaInstanceBootService } from './cyberia-instance-boot.service.js';
 
 const CyberiaInstanceController = buildCrudController(CyberiaInstanceService, {
-  // The C client fetches the instance map cross-origin (same as quest metadata).
+  // The game client fetches the instance map cross-origin, as it does quests.
   instanceMapStatic: serviceHandler(CyberiaInstanceMapService.getStatic, { crossOrigin: true, errorStatus: 404 }),
   instanceMapDynamic: serviceHandler(CyberiaInstanceMapService.getDynamic, { crossOrigin: true, errorStatus: 404 }),
   // Node background of a fallback-world map, rendered + cached server-side.
@@ -30,9 +30,6 @@ const CyberiaInstanceController = buildCrudController(CyberiaInstanceService, {
   portalConnect: serviceHandler(CyberiaInstanceService.portalConnect),
   // Moderator/admin-triggered world reload on a running cyberia-server.
   hotReload: serviceHandler(CyberiaInstanceService.hotReload, { errorStatus: 502 }),
-  // Fallback-world default items (volatile) + its own reload trigger.
-  fallbackDefaultItems: serviceHandler(CyberiaInstanceService.fallbackDefaultItems),
-  fallbackHotReload: serviceHandler(CyberiaInstanceService.fallbackHotReload, { errorStatus: 502 }),
   // Boot transport (REST fallback of the gRPC CyberiaDataService).
   bootPing: serviceHandler(CyberiaInstanceBootService.ping),
   bootObjectLayerBatch: serviceHandler(CyberiaInstanceBootService.objectLayerBatch, { errorStatus: 500 }),

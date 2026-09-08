@@ -1,46 +1,32 @@
 /**
- * Canonical server-owned defaults for the Cyberia runtime.
+ * Canonical simulation defaults for the Cyberia runtime: per-entity-type item
+ * sets, simulation / AOI / combat / economy / skill rules, equipment rules,
+ * status-icon numeric IDs, and the seed content (dialogues, actions, quests)
+ * the CLI writes to Mongo.
  *
- * Single source of truth for everything the **authoritative simulation
- * server** (cyberia-server, Go) needs to build and run a world:
+ * STRICT BOUNDARY: never import this from `src/client/`. The browser bundler
+ * resolves imports recursively, so one browser-side import ships the whole
+ * simulation defaults in the public JS payload.
  *
- *   - per-entity-type live / dead / drop item configuration
- *   - simulation, AOI, combat, economy, and skill rules
- *   - equipment rules
- *   - status-icon **numeric IDs** (visuals live in client defaults)
- *   - seed content (dialogues, actions, quests) consumed by the
- *     persistence/CLI tooling that bootstraps the world
- *   - native-dependency pin list for chain-bridge tooling
- *
- * STRICT BOUNDARY
- * ---------------
- * NEVER imported from any file under `src/client/`. The browser bundler
- * resolves imports recursively, so a single browser-side import would drag
- * the entire simulation defaults into the public JS payload.
- *
- * Shared content **vocabulary** (item/entity type enums, the
- * `DefaultCyberiaItems` registry, `ENTITY_TYPE_TO_ITEM_TYPES`, the quest
- * step objective enum) lives in `SharedDefaultsCyberia.js`. This file
- * re-imports those so the browser editor never needs to reach into
- * server-defaults to learn the schema.
- *
- * Consumers:
- *   - cyberia-instance-conf model + grpc-server (gameplay config)
- *   - cyberia-world-generator / cyberia-fallback-world (world build)
- *   - cyberia-quest / cyberia-action / Mongo seed scripts (content)
- *   - bin/cyberia + bin/build + bin/deploy (CLI + chain bridge)
+ * Shared content vocabulary (item / entity type enums, `DefaultCyberiaItems`,
+ * `ENTITY_TYPE_TO_ITEM_TYPES`, quest step objectives) lives in
+ * `SharedDefaultsCyberia.js`.
  *
  * @module src/api/cyberia-server-defaults/cyberia-server-defaults.js
  */
 
-// The canonical client-defaults module lives under src/client/ so the
-// browser bundler can resolve the URL inside the client tree. Engine-side
-// Node imports work from any path, so we reach into it from here.
+// Shared vocabulary lives under src/client/ so the browser bundler resolves it.
 import {
   ITEM_TYPES,
   ENTITY_TYPES,
   SKILL_LOGIC_ID_VALUES,
   isCanonicalSkillLogicId,
+  AUDIO_BUSES,
+  AUDIO_BUS_MUSIC,
+  AUDIO_BUS_SFX,
+  AUDIO_LOGIC_ID_BUSES,
+  AUDIO_LOGIC_ID_VALUES,
+  isCanonicalAudioLogicId,
 } from '../../client/components/cyberia/SharedDefaultsCyberia.js';
 
 export const DOCKER_COMPOSE_ID = 'cyberia';
@@ -60,10 +46,9 @@ export const DEPLOY_ID = 'dd-cyberia';
  *   - `skills`         (expanded metadata with name, description, summoned entity)
  *
  * Consumers:
- *   - `CYBERIA_INSTANCE_CONF_DEFAULTS.skillConfig` (gRPC fallback defaults)
- *   - `bin/cyberia.js seed-skills` (upsert into the cyberia-skill collection —
- *     the authoritative CyberiaSkill model keeps the full record, including the
- *     `skills` metadata the instance-conf skillConfig schema drops)
+ *   - `bin/cyberia.js seed-skills` (upsert into the cyberia-skill collection, which is the
+ *     authoritative store — an instance then runs the subset its own content triggers)
+ *   - the fallback world, which has no collection to read
  */
 export const DefaultSkillConfig = [
   {
@@ -92,18 +77,6 @@ export const DefaultSkillConfig = [
       },
     ],
   },
-  // {
-  //   triggerItemId: 'anon',
-  //   logicEventIds: ['doppelganger'],
-  //   skills: [
-  //     {
-  //       logicEventId: 'doppelganger',
-  //       name: 'Doppelganger',
-  //       description: 'Summons a passive clone of yourself that wanders nearby. Spawn chance scales with Intelligence.',
-  //       summonedEntityItemId: '$active_skin',
-  //     },
-  //   ],
-  // },
   {
     triggerItemId: 'hatchet',
     logicEventIds: ['projectile'],
@@ -119,9 +92,7 @@ export const DefaultSkillConfig = [
   },
 ];
 
-// Fail fast on a non-canonical logicEventId: the canonical LogicId registry in
-// SharedDefaultsCyberia.js is the single source of truth, so a typo or a handler
-// the dispatcher does not know must surface at boot, not as a silent no-op skill.
+// A logicEventId absent from the SharedDefaultsCyberia registry fails at boot.
 for (const cfg of DefaultSkillConfig) {
   for (const logicEventId of [...(cfg.logicEventIds || []), ...(cfg.skills || []).map((sk) => sk.logicEventId)]) {
     if (!isCanonicalSkillLogicId(logicEventId)) {
@@ -137,18 +108,11 @@ for (const cfg of DefaultSkillConfig) {
 // Lain demo quests (testing only) — single source of truth
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Offered by Lain (15,22): a batch of simple no-prerequisite quests so the
-// Quest Journal can exercise pagination with 4+ concurrently active quests.
+// No-prerequisite quests offered by Lain (15,22). These specs derive the quest
+// definitions, their quest-talk dialogues, and Lain's questDialogueCodes map.
 //
-// These specs drive THREE derived structures so they can never drift apart:
-//   - DefaultCyberiaQuests      — the quest definitions
-//   - DefaultCyberiaDialogues   — one quest-talk dialogue per talk objective
-//   - DefaultCyberiaActions     — Lain's questDialogueCodes mapping
-//
-// Every `talk` objective MUST have its own quest-talk dialogue mapped on the
-// provider's action: the server validates a talk objective only when the
-// completed dialogue matches that mapping, so a quest without one could be
-// satisfied by reading the NPC's default greeting.
+// Each `talk` objective needs its own quest-talk dialogue on the provider's
+// action. The server validates a talk only against that mapping.
 
 const LAIN_DEMO_QUEST_SPECS = [
   {
@@ -262,12 +226,7 @@ const LAIN_DEMO_TALK_SPECS = LAIN_DEMO_QUEST_SPECS.filter((q) =>
   (q.steps || []).some((s) => (s.objectives || []).some((o) => o.type === 'talk' && o.itemId === 'lain')),
 );
 
-/**
- * Default dialogue seeds. Mirrors `CyberiaDialogue` model schema:
- *   { code, order, speaker, text, mood }
- *
- * Used by the seed/migration script to populate Mongo on first boot.
- */
+/** Dialogue seeds ({ code, order, speaker, text, mood }) the CLI writes to Mongo. */
 export const DefaultCyberiaDialogues = [
   {
     code: 'default-coin',
@@ -527,12 +486,10 @@ export const DefaultCyberiaDialogues = [
  * Each entry follows the `CyberiaAction` model schema.
  */
 export const DefaultCyberiaActions = [
-  // An action has no `type`: it declares the capabilities available at a cell.
-  // `code` is a generic location slug; `label` is the bot's overhead name (the
-  // client fetches it by code via REST). The NPC skin is derived from
-  // `dialogCode` (default-<skin>). `questDialogueCodes` maps each quest the NPC
-  // handles to the dialogue shown for it (offer + talk-objective validation).
-  // The quests an NPC OFFERS are those whose source cell matches the action's.
+  // An action declares the capabilities available at a cell. `code` is a
+  // location slug, `label` the bot's overhead name, and the NPC skin comes from
+  // `dialogCode` (default-<skin>). `questDialogueCodes` maps a quest to its
+  // dialogue. An NPC offers the quests whose source cell matches the action's.
   {
     code: 'loc-fallback-map-0-12-10',
     label: 'Wason',
@@ -566,9 +523,8 @@ export const DefaultCyberiaActions = [
     questDialogueCodes: [{ questCode: 'bounty-quest-alpha', dialogCode: 'quest-talk-agent' }],
   },
   {
-    // Shop capability: an action carrying shopItems is a vendor. The client
-    // surfaces a Shop tab for it and the simulation validates every purchase
-    // against this catalog (price item + quantity).
+    // Shop capability: an action with shopItems is a vendor. The simulation
+    // validates every purchase against this catalog (price item + quantity).
     code: 'loc-fallback-map-0-18-16',
     label: 'Punk',
     sourceMapCode: 'fallback-map-0',
@@ -578,12 +534,9 @@ export const DefaultCyberiaActions = [
     shopItems: [{ itemId: 'tim-knife', priceItemId: 'coin', priceQty: 10 }],
   },
   {
-    // Assembler capability: an action carrying craftRecipes is a fabrication
-    // terminal. The client surfaces an Assembly tab for it and the simulation
-    // validates every synthesis against these recipes (ingredients → outputs).
-    // Every id here is obtainable inside the fallback world — wood from the
-    // resource nodes, coin from field drops — so the loop is playable on a
-    // fresh spawn with no seeding.
+    // Assembler capability: an action with craftRecipes is a fabrication
+    // terminal. The simulation validates every synthesis against these recipes.
+    // Every id here is obtainable in the fallback world with no seeding.
     code: 'loc-fallback-map-0-15-16',
     label: 'Eiri',
     sourceMapCode: 'fallback-map-0',
@@ -609,10 +562,7 @@ export const DefaultCyberiaActions = [
         craftTimeMs: 5000,
       },
       {
-        // Multi-output: one blade breaks down into three component stacks, so
-        // the assembly UI and the arrival flights are exercised with more than
-        // a single result slot. Closes the loop with Punk's shop — buy a knife,
-        // salvage it back into parts.
+        // Multi-output salvage recipe: one blade breaks down into three stacks.
         outputItems: [
           { itemId: 'wood-drop-1', qty: 2 },
           { itemId: 'wood-drop-2', qty: 1 },
@@ -624,9 +574,8 @@ export const DefaultCyberiaActions = [
     ],
   },
   {
-    // Storage capability: an action carrying storageSlots is a personal vault.
-    // The client surfaces a Storage tab whose square grid is sized from the
-    // capacity (25 → 5x5) and the simulation owns the contents.
+    // Storage capability: an action with storageSlots is a personal vault. The
+    // simulation owns the contents; the slot count sizes the grid (25 → 5x5).
     code: 'loc-fallback-map-0-12-22',
     label: 'Kaneki',
     sourceMapCode: 'fallback-map-0',
@@ -642,9 +591,7 @@ export const DefaultCyberiaActions = [
     sourceCellX: 15,
     sourceCellY: 22,
     dialogCode: 'default-lain',
-    // Every demo quest with a `talk` objective gets its own quest-talk
-    // dialogue here — without the mapping the server would accept the
-    // default greeting as the talk, and no quest-talk button would show.
+    // One quest-talk dialogue per demo quest that carries a `talk` objective.
     questDialogueCodes: LAIN_DEMO_TALK_SPECS.map((q) => ({
       questCode: lainDemoQuestCode(q.suffix),
       dialogCode: lainDemoTalkDialogCode(q.suffix),
@@ -687,8 +634,7 @@ export const DefaultCyberiaQuests = [
     rewards: [{ itemId: 'coin', quantity: 50 }],
   },
   {
-    // Parallel initial mission — same source cell as Wason (12,10), no
-    // prerequisites, so the player can accept it alongside the intro quest.
+    // Parallel initial mission: same source cell as the intro quest, no prerequisites.
     code: 'wason-errand',
     title: "Wason's Errand",
     description: 'Gather coins from the field and bring them back to Wason.',
@@ -741,8 +687,7 @@ export const DefaultCyberiaQuests = [
     rewards: [{ itemId: 'hatchet', quantity: 1 }],
   },
   // ── Demo quests (testing only) ─────────────────────────────────────────────
-  // Built from LAIN_DEMO_QUEST_SPECS so the quest definitions, their
-  // quest-talk dialogues, and Lain's questDialogueCodes mapping stay in sync.
+  // Derived from LAIN_DEMO_QUEST_SPECS.
   ...LAIN_DEMO_QUEST_SPECS.map((q) => ({
     code: lainDemoQuestCode(q.suffix),
     title: q.title,
@@ -762,11 +707,9 @@ export const DefaultCyberiaQuests = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Governs which ObjectLayer item types may be simultaneously active on an
- * entity and enforces the one-per-type constraint.  The server validates
- * every item_activation request against these rules, scoped to the item set
- * of the entity's current state: liveItemIds while alive, deadItemIds while
- * in the Fragmented State (see DEFAULT_DEAD_ITEM_ID).
+ * Which ObjectLayer item types may be active together on an entity. The server
+ * validates every item_activation against these rules, scoped to the item set
+ * of the entity state: liveItemIds while alive, deadItemIds while dead.
  */
 export const EQUIPMENT_RULES_DEFAULTS = Object.freeze({
   activeItemTypes: [ITEM_TYPES.skin, ITEM_TYPES.breastplate, ITEM_TYPES.weapon],
@@ -779,13 +722,10 @@ export const EQUIPMENT_RULES_DEFAULTS = Object.freeze({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Numeric Entity Status Indicator (ESI) IDs.  The Go server stamps one of
- * these u8 IDs on every entity in the AOI binary wire format; the client
- * resolves the icon stem + border colour from its own presentation
- * defaults table (see `SharedDefaultsCyberia.js#STATUS_ICONS_PRESENTATION`).
- *
- * IDs MUST stay in sync with:
- *   cyberia-server/src/entity_status.go  (StatusNone … StatusResourceExtracted)
+ * Numeric Entity Status Indicator (ESI) IDs. The server stamps one u8 ID on
+ * every entity in the AOI wire format; the client resolves the icon from
+ * `SharedDefaultsCyberia.js#STATUS_ICONS_PRESENTATION`. These IDs are wire
+ * contract: append only, never renumber.
  */
 export const STATUS_ICONS = Object.freeze([
   { id: 0, name: 'none', description: 'No icon (skill/coin bots, world objects)' },
@@ -836,14 +776,14 @@ export const RESOURCE_ENTITY_TYPE_DEFAULTS = Object.freeze([
     liveItemIds: ['wood-1'],
     deadItemIds: ['wood-extracted-1'],
     dropItemIds: ['wood-drop-1'],
-    defaultObjectLayers: [],
+    inventoryItemsIds: [],
   }),
   Object.freeze({
     entityType: ENTITY_TYPES.resource,
     liveItemIds: ['wood-2'],
     deadItemIds: ['wood-extracted-2'],
     dropItemIds: ['wood-drop-2'],
-    defaultObjectLayers: [],
+    inventoryItemsIds: [],
   }),
 ]);
 
@@ -851,63 +791,51 @@ export const RESOURCE_ENTITY_TYPE_DEFAULTS = Object.freeze([
 export const RESOURCE_ENTITY_TYPE_DEFAULT = RESOURCE_ENTITY_TYPE_DEFAULTS[0];
 
 /**
- * Canonical dead-state visual (Fragmentation): applied by cyberia-server when
- * an entity-type default declares no deadItemIds. Dead-state items — this
- * default and any deadItemIds configured via MongoDB — form the Fragmented
- * State's aesthetic loadout: equippable only while the entity is dead, under
- * EQUIPMENT_RULES_DEFAULTS scoped to the dead-item set, and remembered across
- * deaths. Only this default id is excluded from the player inventory wire;
- * the rest appear (lock-badged while alive). No defaultObjectLayers row is
- * needed — the death handler appends missing dead items on demand.
- * Mirrored by `defaultDeadItemID` in cyberia-server/game/dead_items.go.
+ * Canonical dead-state visual (Fragmentation). The server applies it when an
+ * entity-type default declares no deadItemIds. Dead items are equippable only
+ * while the entity is dead and are kept across deaths. This id stays out of
+ * the player inventory wire; other dead items appear in it.
  */
 export const DEFAULT_DEAD_ITEM_ID = 'fragmentation';
 
 /**
- * Per-entity-type defaults consumed by the Go server (live / dead / drop
- * item IDs and the seed inventory for newly spawned entities).
+ * Per-entity-type defaults the simulation consumes: live / dead / drop item IDs
+ * and the seed inventory of a new entity.
  *
  * Field reference:
- *   entityType            — server-side category string.
- *   liveItemIds           — ObjectLayer item IDs while the entity is alive.
- *   deadItemIds           — IDs swapped in on death / ghost state.
- *   dropItemIds           — IDs granted to the killer on resource depletion.
- *   defaultObjectLayers   — initial inventory rows ({itemId, active, qty}).
+ *   entityType        — server-side category string.
+ *   liveItemIds       — ObjectLayer item IDs while the entity is alive.
+ *   deadItemIDs       — IDs swapped in on death / ghost state.
+ *   dropItemIds       — IDs granted to the killer on resource depletion.
+ *   inventoryItemsIds     — IDs the entity carries but never activates by lifecycle.
+ *   overrideItemsIdsState — per-id overrides of what those lists derive.
+ *
+ * The three lifecycle lists are discriminators, not separate inventories: an entity holds one
+ * inventory and the runtime activates the slots the context calls for. `inventoryItemsIds` is only
+ * for what no lifecycle state ever activates — a coin balance, say. See
+ * {@link resolveEntityInventory}, which is where that single inventory is derived.
  */
 export const ENTITY_TYPE_DEFAULTS = Object.freeze([
   {
     entityType: ENTITY_TYPES.player,
     liveItemIds: ['anon', 'atlas_pistol_mk2'],
     deadItemIds: [DEFAULT_DEAD_ITEM_ID],
-    defaultObjectLayers: [
-      { itemId: 'anon', active: true, quantity: 1 },
-      { itemId: 'atlas_pistol_mk2', active: true, quantity: 1 },
-      { itemId: 'coin', active: false, quantity: 0 },
-    ],
+    inventoryItemsIds: ['coin'],
   },
   {
     entityType: ENTITY_TYPES.other_player,
     liveItemIds: ['anon', 'atlas_pistol_mk2'],
     deadItemIds: [DEFAULT_DEAD_ITEM_ID],
-    defaultObjectLayers: [
-      { itemId: 'anon', active: true, quantity: 1 },
-      { itemId: 'atlas_pistol_mk2', active: true, quantity: 1 },
-      { itemId: 'coin', active: false, quantity: 0 },
-    ],
+    inventoryItemsIds: ['coin'],
   },
   {
     entityType: ENTITY_TYPES.bot,
     liveItemIds: ['purple'],
     deadItemIds: [DEFAULT_DEAD_ITEM_ID],
-    defaultObjectLayers: [
-      { itemId: 'purple', active: true, quantity: 1 },
-      { itemId: 'coin', active: false, quantity: 0 },
-    ],
+    inventoryItemsIds: ['coin'],
   },
-  // Fallback-world mission/action givers. Resolved by their active skin (the
-  // liveItemIds key), these bots take the canonical `provider` behavior: they
-  // barely move from their spawn and are immortal. Lain only talks in place, so
-  // she is fully static. Authors can retarget any of these via EntityEngineCyberia.
+  // Fallback-world mission givers, keyed by their active skin. `provider` bots
+  // stay near their spawn and are immortal; `provider-static` bots do not move.
   { entityType: ENTITY_TYPES.bot, liveItemIds: ['wason'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider' },
   { entityType: ENTITY_TYPES.bot, liveItemIds: ['alex'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider' },
   { entityType: ENTITY_TYPES.bot, liveItemIds: ['agent'], deadItemIds: [DEFAULT_DEAD_ITEM_ID], behavior: 'provider' },
@@ -934,37 +862,271 @@ export const ENTITY_TYPE_DEFAULTS = Object.freeze([
     entityType: ENTITY_TYPES.skill,
     liveItemIds: ['atlas_pistol_mk2_bullet'],
     deadItemIds: [],
-    defaultObjectLayers: [{ itemId: 'atlas_pistol_mk2_bullet', active: true, quantity: 1 }],
+    inventoryItemsIds: [],
   },
   {
     entityType: ENTITY_TYPES.coin,
     liveItemIds: ['coin'],
     deadItemIds: [],
-    defaultObjectLayers: [{ itemId: 'coin', active: true, quantity: 1 }],
+    inventoryItemsIds: [],
   },
-  { entityType: ENTITY_TYPES.floor, liveItemIds: ['grass'], deadItemIds: [], dropItemIds: [], defaultObjectLayers: [] },
-  { entityType: ENTITY_TYPES.obstacle, liveItemIds: [], deadItemIds: [], dropItemIds: [], defaultObjectLayers: [] },
-  { entityType: ENTITY_TYPES.portal, liveItemIds: [], deadItemIds: [], dropItemIds: [], defaultObjectLayers: [] },
-  { entityType: ENTITY_TYPES.foreground, liveItemIds: [], deadItemIds: [], dropItemIds: [], defaultObjectLayers: [] },
+  { entityType: ENTITY_TYPES.floor, liveItemIds: ['grass'], deadItemIds: [], dropItemIds: [], inventoryItemsIds: [] },
+  { entityType: ENTITY_TYPES.obstacle, liveItemIds: [], deadItemIds: [], dropItemIds: [], inventoryItemsIds: [] },
+  { entityType: ENTITY_TYPES.portal, liveItemIds: [], deadItemIds: [], dropItemIds: [], inventoryItemsIds: [] },
+  { entityType: ENTITY_TYPES.foreground, liveItemIds: [], deadItemIds: [], dropItemIds: [], inventoryItemsIds: [] },
   // Static decorator — non-moving, passable, depth-sorted. Visuals come from the
   // map definition / world generator; no live/dead/drop rotation.
-  { entityType: ENTITY_TYPES.static, liveItemIds: [], deadItemIds: [], dropItemIds: [], defaultObjectLayers: [] },
+  { entityType: ENTITY_TYPES.static, liveItemIds: [], deadItemIds: [], dropItemIds: [], inventoryItemsIds: [] },
   ...RESOURCE_ENTITY_TYPE_DEFAULTS,
 ]);
+
+/**
+ * The default a placed entity resolves to, by the item ids it already carries.
+ *
+ * Mirrors `resolveEntityDefaultBuild` in cyberia-server/game/entity_defaults.go, which is the rule
+ * the simulation applies at spawn: a default matches only when the entity carries ALL of its live
+ * ids, and the most specific match wins — the one requiring the largest set, so `{purple, pistol}`
+ * beats `{purple}`. Ties keep the earlier default, which makes the order a world declares them in
+ * significant. With no containing match, the first default of that type answers.
+ *
+ * @param {{entityType: string, itemIds?: string[]}} entity - Placed entity type and its item ids.
+ * @param {Array<{entityType: string, liveItemIds?: string[]}>} defaults - Candidate defaults, in order.
+ * @returns {object|undefined} The matched default, or undefined when the type has none.
+ */
+export function resolveEntityDefaultBuild({ entityType, itemIds = [] }, defaults = []) {
+  const carried = new Set(itemIds.filter(Boolean));
+  let firstOfType;
+  let matched;
+  let matchedSize = 0;
+  for (const candidate of defaults) {
+    if (candidate?.entityType !== entityType) continue;
+    firstOfType ??= candidate;
+    const liveItemIds = candidate.liveItemIds || [];
+    if (carried.size === 0 || liveItemIds.length === 0) continue;
+    if (!liveItemIds.every((itemId) => carried.has(itemId))) continue;
+    if (liveItemIds.length > matchedSize) {
+      matched = candidate;
+      matchedSize = liveItemIds.length;
+    }
+  }
+  return matched ?? firstOfType;
+}
+
+/**
+ * The canonical inventory contract: one entity, one inventory, derived.
+ *
+ * An entity carries the union of every item id its default names — the lifecycle discriminators
+ * (live / dead / drop) and the inventory-only extras — deduplicated, in that order. Which slots
+ * are *active* is not stored anywhere: it follows from the discriminator the id belongs to, and
+ * the runtime flips them as context changes (`activateOrAppendLayer` in
+ * cyberia-server/game/dead_items.go activates the slot that is already there). Seeding the whole
+ * union is what lets it activate rather than append.
+ *
+ * Spawn state is alive, so the live ids are the active ones. A slot the entity is not wearing
+ * starts empty; a coin balance is exactly that, and the server owns its quantity from there.
+ *
+ * `overrideItemsIdsState` adjusts that derivation for one carried id: `active` forces the spawn
+ * state — a skin the equipment rules would otherwise leave inactive — and `quantity` sizes a
+ * stack, which is how a drop bundle declares how many it scatters. It never adds an id: the union
+ * decides membership, an override only what a member starts as, so a rule naming an id no list
+ * carries does nothing at all.
+ *
+ * Activating one item can deactivate another. `EQUIPMENT_RULES_DEFAULTS` allows one active item
+ * per type, so an override that activates a skin is a decision about which skin the entity wears:
+ * the one the lists derived gives way to the one the author named. Only the governed types are
+ * constrained, and only where the item's type is known — a resource visual, a coin, anything the
+ * rules do not name, passes through untouched.
+ *
+ * @param {{liveItemIds?:string[],deadItemIds?:string[],dropItemIds?:string[],inventoryItemsIds?:string[],
+ *   overrideItemsIdsState?:Array<{itemId:string,active?:boolean,quantity?:number}>}} entityDefault
+ * @param {{itemTypes?:Object<string,string>|Map<string,string>}} [context] - itemId → item type, where known.
+ * @returns {Array<{itemId:string,active:boolean,quantity:number}>} Inventory rows, as the wire carries them.
+ */
+export function resolveEntityInventory(entityDefault = {}, { itemTypes } = {}) {
+  const live = new Set(entityDefault.liveItemIds || []);
+  const overrides = new Map(
+    (entityDefault.overrideItemsIdsState || []).filter((rule) => rule?.itemId).map((rule) => [rule.itemId, rule]),
+  );
+  const itemIds = [
+    ...new Set(
+      [
+        ...(entityDefault.liveItemIds || []),
+        ...(entityDefault.deadItemIds || []),
+        ...(entityDefault.dropItemIds || []),
+        ...(entityDefault.inventoryItemsIds || []),
+      ].filter(Boolean),
+    ),
+  ];
+  const drops = new Set(entityDefault.dropItemIds || []);
+  const rows = itemIds.map((itemId) => {
+    const override = overrides.get(itemId);
+    const active = 'boolean' === typeof override?.active ? override.active : live.has(itemId);
+    const quantity = Number.isFinite(override?.quantity) ? override.quantity : active ? 1 : 0;
+    // A drop id scatters on death unless an override says how often. Rows that are not drops
+    // carry the same 1, so every consumer reads one field and never a missing one.
+    const dropChance =
+      drops.has(itemId) && Number.isFinite(override?.dropChance)
+        ? Math.min(1, Math.max(0, override.dropChance))
+        : 1;
+    return { itemId, active, quantity, dropChance };
+  });
+  return applyEquipmentRules(rows, { itemTypes, overrides });
+}
+
+/**
+ * One active item per governed type, with the authored choice ahead of the derived one.
+ *
+ * An override that activates an item states which item of its type the entity wears; a row the
+ * lists merely derived yields to it. Two overrides of the same type resolve in list order, first
+ * kept — the same first-wins the runtime applies when it normalizes a loadout.
+ *
+ * @param {Array<{itemId:string,active:boolean,quantity:number}>} rows - Resolved inventory rows.
+ * @param {{itemTypes?:Object<string,string>|Map<string,string>, overrides?:Map<string,object>}} context
+ * @returns {Array<{itemId:string,active:boolean,quantity:number}>} The same rows, contested types settled.
+ */
+function applyEquipmentRules(rows, { itemTypes, overrides = new Map() } = {}) {
+  if (!itemTypes || !EQUIPMENT_RULES_DEFAULTS.onePerType) return rows;
+  const typeOf = (itemId) => (itemTypes instanceof Map ? itemTypes.get(itemId) : itemTypes[itemId]) || '';
+  const governed = new Set(EQUIPMENT_RULES_DEFAULTS.activeItemTypes);
+  const claimed = new Set();
+  // Authored first, so an override wins the slot it asks for; the derived rows fill what is left.
+  const contenders = [
+    ...rows.filter((row) => row.active && overrides.get(row.itemId)?.active === true),
+    ...rows.filter((row) => row.active && overrides.get(row.itemId)?.active !== true),
+  ];
+  const deactivated = new Set();
+  for (const row of contenders) {
+    const type = typeOf(row.itemId);
+    if (!governed.has(type)) continue;
+    if (claimed.has(type)) deactivated.add(row.itemId);
+    else claimed.add(type);
+  }
+  // Taking something off does not take it away: the entity still carries the stack, so only the
+  // worn flag changes. A row emptied here would leave the inventory holding nothing.
+  return rows.map((row) => (deactivated.has(row.itemId) ? { ...row, active: false } : row));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio seed content
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The audio bank the seeded world needs: one `cyberia-audio` module per asset code.
+ *
+ * `bus` names the module directory (`cyberia-audio/src/audio-module/<bus-id>/<code>`) and is the
+ * asset's natural route; `options` are that module's render parameters. The code is also the
+ * identity the client fetches by, so a code here must exist as a module there.
+ *
+ * @type {ReadonlyArray<{code:string,bus:'music'|'sfx',options?:object}>}
+ */
+export const DEFAULT_AUDIO_BANK = Object.freeze([
+  ...['shoot', 'coin', 'drop', 'item-pickup', 'victory', 'heal', 'hit', 'portal', 'ui-click', 'footsteps'].map((code) =>
+    Object.freeze({ code, bus: AUDIO_BUS_SFX }),
+  ),
+  Object.freeze({ code: 'exploration', bus: AUDIO_BUS_MUSIC, options: { cycles: 1 } }),
+  Object.freeze({ code: 'combat', bus: AUDIO_BUS_MUSIC, options: { rounds: 1 } }),
+  Object.freeze({ code: 'boss', bus: AUDIO_BUS_MUSIC }),
+  Object.freeze({ code: 'portal-cooldown', bus: AUDIO_BUS_MUSIC }),
+  Object.freeze({ code: 'craft', bus: AUDIO_BUS_MUSIC }),
+]);
+
+/** Map-level audio settings the seed writes onto every seeded map. */
+export const DEFAULT_AUDIO_SETTINGS = Object.freeze({ volume: 0.8, crossfadeMs: 800 });
+
+/**
+ * The music bed a seeded map falls back to when no event is holding the bus.
+ *
+ * One bed for every map of a world: what a map sounds like when nothing is happening is the
+ * world's ambient identity, and the events are what make a place sound different — a combat or a
+ * boss bed is bound to the moment it belongs to, not to a map index.
+ */
+export const DEFAULT_MAP_MUSIC = 'exploration';
+
+/**
+ * Canonical runtime-event → asset bindings.
+ *
+ * `logicEventId` is the semantic event the client emits (an audio LogicId, or a skill LogicId the
+ * dispatcher runs); `audioCode` is the bank entry that answers it.
+ *
+ * @type {ReadonlyArray<{logicEventId:string,audioCode:string}>}
+ */
+export const DEFAULT_AUDIO_BINDINGS = Object.freeze([
+  Object.freeze({ logicEventId: 'projectile', audioCode: 'shoot' }),
+  Object.freeze({ logicEventId: 'coin_drop_or_transaction', audioCode: 'coin' }),
+  Object.freeze({ logicEventId: 'drop', audioCode: 'drop' }),
+  Object.freeze({ logicEventId: 'item-pickup', audioCode: 'item-pickup' }),
+  Object.freeze({ logicEventId: 'craft', audioCode: 'craft' }),
+  Object.freeze({ logicEventId: 'heal', audioCode: 'heal' }),
+  Object.freeze({ logicEventId: 'hit', audioCode: 'hit' }),
+  Object.freeze({ logicEventId: 'portal', audioCode: 'portal' }),
+  Object.freeze({ logicEventId: 'ui-click', audioCode: 'ui-click' }),
+  Object.freeze({ logicEventId: 'footsteps', audioCode: 'footsteps' }),
+  Object.freeze({ logicEventId: 'combat', audioCode: 'combat' }),
+  Object.freeze({ logicEventId: 'boss', audioCode: 'boss' }),
+  Object.freeze({ logicEventId: 'victory', audioCode: 'victory' }),
+  Object.freeze({ logicEventId: 'portal-cooldown', audioCode: 'portal-cooldown' }),
+]);
+
+const AUDIO_BANK_CODES = DEFAULT_AUDIO_BANK.map(({ code }) => code);
+
+for (const { code, bus } of DEFAULT_AUDIO_BANK) {
+  if (!AUDIO_BUSES.includes(bus)) {
+    throw new Error(`DEFAULT_AUDIO_BANK: "${code}" names bus "${bus}". Allowed: ${AUDIO_BUSES.join(', ')}`);
+  }
+}
+
+// Fail fast on an audio binding the runtime cannot honour: an unknown event would never fire, and
+// an unbanked code would leave the client requesting an asset the seed never imported. Both read
+// as silence at play time, so they must surface at boot instead.
+for (const { logicEventId, audioCode } of DEFAULT_AUDIO_BINDINGS) {
+  if (!isCanonicalAudioLogicId(logicEventId)) {
+    throw new Error(
+      `DEFAULT_AUDIO_BINDINGS: unknown logicEventId "${logicEventId}". ` +
+        `Allowed (SharedDefaultsCyberia): ${[...AUDIO_LOGIC_ID_VALUES, ...SKILL_LOGIC_ID_VALUES].join(', ')}`,
+    );
+  }
+  if (!AUDIO_BANK_CODES.includes(audioCode)) {
+    throw new Error(
+      `DEFAULT_AUDIO_BINDINGS: "${logicEventId}" binds audioCode "${audioCode}", ` +
+        `absent from DEFAULT_AUDIO_BANK: ${AUDIO_BANK_CODES.join(', ')}`,
+    );
+  }
+}
+if (!AUDIO_BANK_CODES.includes(DEFAULT_MAP_MUSIC)) {
+  throw new Error(`Default map music "${DEFAULT_MAP_MUSIC}" is absent from DEFAULT_AUDIO_BANK`);
+}
+
+/**
+ * Expands {@link DEFAULT_AUDIO_BINDINGS} into `cyberia-map-audio-conf` event records.
+ *
+ * Routing is derived, not restated: an event's bus comes from the canonical audio registry
+ * (a skill LogicId is a one-shot, so it falls back to sfx), music holds the bed in a loop unless
+ * the binding is a one-shot cue, and only music crossfades.
+ *
+ * @param {{volume?:number,crossfadeMs?:number}} [settings=DEFAULT_AUDIO_SETTINGS]
+ * @returns {Array<{logicEventId:string,audioCode:string,settings:object}>}
+ */
+export function buildAudioEventBindings(settings = DEFAULT_AUDIO_SETTINGS) {
+  const { volume, crossfadeMs } = { ...DEFAULT_AUDIO_SETTINGS, ...settings };
+  return DEFAULT_AUDIO_BINDINGS.map(({ logicEventId, audioCode }) => {
+    const bus = AUDIO_LOGIC_ID_BUSES[logicEventId] ?? AUDIO_BUS_SFX;
+    const music = AUDIO_BUS_MUSIC === bus;
+    return {
+      logicEventId,
+      audioCode,
+      settings: { bus, volume, loop: music, crossfadeMs: music ? crossfadeMs : 0 },
+    };
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Player spawn
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Canonical default player spawn policy. Mirrors PlayerSpawnSchema in
- * cyberia-instance.model.js and the Go PlayerSpawnConfig: when `random` is false
- * and `sourceMapCode` names a loaded map, new players spawn at
- * (sourceCellX, sourceCellY) on it; otherwise (random, or no/unknown map) they
- * spawn at a random walkable cell on a random map.
- *
- * The canonical default is a random spawn so a fresh or procedural world never
- * piles every new player onto a single cell.
+ * Default player spawn policy, the shape of PlayerSpawnSchema. With `random`
+ * false and `sourceMapCode` naming a loaded map, players spawn at
+ * (sourceCellX, sourceCellY). Otherwise they spawn on a random walkable cell.
  */
 export const DEFAULT_PLAYER_SPAWN = Object.freeze({
   sourceMapCode: 'fallback-map-0',
@@ -1039,17 +1201,19 @@ export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
   maxChance: 10000,
 
   // ── Per-entity-type defaults ───────────────────────────────────────
-  entityDefaults: ENTITY_TYPE_DEFAULTS.map((e) => ({ ...e })),
+  // References into the CyberiaEntityTypeDefault collection — see the schema.
+  // Empty by default: a conf that names no document resolves against the
+  // canonical ENTITY_TYPE_DEFAULTS above, so a fresh world is complete without
+  // owning a single row.
+  entityDefaults: [],
 
   // ── Status icons (numeric IDs only — visuals live in client defaults) ──
   statusIcons: STATUS_ICONS.map((s) => ({ ...s })),
 
   // ── Skill system ───────────────────────────────────────────────────
-  // Canonical skill definitions live in DefaultSkillConfig above.
-  // This reference is the single point of consumption for the gRPC
-  // fallback defaults — any change goes through DefaultSkillConfig.
-  skillConfig: DefaultSkillConfig,
-
+  // No skillConfig: the skills an instance runs are derived from its own content, never
+  // stored on the conf. See DefaultSkillConfig above for the definitions and
+  // cyberia-instance-items.js for the membership rule.
   skillRules: {
     projectileSpawnChance: 0.5,
     projectileLifetimeMs: 2000,
@@ -1078,7 +1242,7 @@ const _cloneDefault = (v) => JSON.parse(JSON.stringify(v));
  * Recursively backfill one value against its canonical default:
  *   - null / undefined  → deep clone of the default
  *   - empty array       → deep clone of the default (config lists must never
- *                         export empty — e.g. skillConfig, entityDefaults)
+ *                         export empty — e.g. entityDefaults, statusIcons)
  *   - non-empty array   → kept verbatim (author content)
  *   - plain object      → keep author-set keys, recurse to fill missing default keys
  *   - scalar            → kept verbatim when present (0, '', false count as present)
@@ -1099,25 +1263,11 @@ function _deepFillDefaults(value, defaultValue) {
 }
 
 /**
- * Normalise a skillConfig array to the shape CyberiaInstanceConfSchema stores
- * (`SkillConfigEntrySchema` = { triggerItemId, logicEventIds }). The canonical
- * DefaultSkillConfig carries extra `skills` metadata the schema drops on write;
- * stripping it here keeps export ⇄ DB round-trips churn-free.
- */
-function _normaliseSkillConfig(skillConfig) {
-  if (!Array.isArray(skillConfig)) return [];
-  return skillConfig.map((entry) => ({
-    triggerItemId: entry.triggerItemId,
-    logicEventIds: [...(entry.logicEventIds || [])],
-  }));
-}
-
-/**
  * Return a copy of a CyberiaInstanceConf document with every field defined by
  * CyberiaInstanceConfSchema present. Missing, null/undefined, or empty-array
  * fields — common when a doc is read with `.lean()` (which skips Mongoose schema
  * defaults), was created before a schema field existed, or was seeded with the
- * schema's empty-array default (e.g. `skillConfig`) — are filled from
+ * schema's empty-array default (e.g. `entityDefaults`) — are filled from
  * CYBERIA_INSTANCE_CONF_DEFAULTS, the same canonical values the fallback world
  * uses. Author-set scalars (including 0, '', false), non-empty arrays, and DB
  * metadata (_id, instanceCode, timestamps) are preserved untouched.
@@ -1131,6 +1281,8 @@ export function fillInstanceConfDefaults(conf = {}) {
   for (const key of Object.keys(CYBERIA_INSTANCE_CONF_DEFAULTS)) {
     out[key] = _deepFillDefaults(source[key], CYBERIA_INSTANCE_CONF_DEFAULTS[key]);
   }
-  out.skillConfig = _normaliseSkillConfig(out.skillConfig);
+  // A conf from before skills were derived still carries the field; it is not part of the
+  // schema any more, and leaving it would put a stale second answer back on the wire.
+  delete out.skillConfig;
   return out;
 }

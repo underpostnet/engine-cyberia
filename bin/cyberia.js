@@ -1981,14 +1981,9 @@ try {
         // and git refuses to touch a tree owned by someone else until it is declared safe.
         Underpost.repo.declareSafeDirectory('/home/dd/cyberia-instances');
         if (options.publishBuild) {
-          if (!fs.existsSync('/home/dd/cyberia-instances')) {
+          if (!fs.existsSync('/home/dd/cyberia-instances'))
             shellExec(`cd /home/dd && ${cli()} clone underpostnet/cyberia-instances`);
-          } else {
-            shellExec(`${cli()} run clean /home/dd/cyberia-instances`);
-            shellExec(`cd /home/dd/cyberia-instances && ${cli()} pull . underpostnet/cyberia-instances`, {
-              silentOnError: true,
-            });
-          }
+          else shellExec(`cd /home/dd/cyberia-instances && ${cli()} cmt --switch-repo underpostnet/cyberia-instances`);
 
           fs.mkdirpSync(`/home/dd/cyberia-instances/conf/dd-cyberia`);
           fs.copyFileSync(
@@ -4316,7 +4311,7 @@ try {
     )
     .option('--import <file>', 'Load a previously generated payload file (the shape --out writes) into the database')
     .option('--model <model>', 'Gemini model id (default: gemma-4-26b-a4b-it)')
-    .option('--timeout <ms>', 'Per-request timeout in ms (default: 300000)', (v) => parseInt(v, 10))
+    .option('--timeout <ms>', 'Per-request timeout in ms (default: 10000)', (v) => parseInt(v, 10))
     .option('--thinking-level <level>', 'Gemini thinking level: low | medium | high (default: high)')
     .option(
       '--lore-path <path>',
@@ -5391,7 +5386,7 @@ try {
     });
 
   runner.command('setup-workspace').action(() => {
-    shellExec(`node bin fs src/client/public/cyberia --git --recursive --pull --deploy-id dd-cyberia`);
+    shellExec(`node bin fs src/client/public/cyberia --tracked --pull --deploy-id dd-cyberia`);
     shellExec(`node bin/deploy.js cyberia`);
     if (!fs.existsSync('./cyberia-server')) shellExec(`${cli()} clone underpostnet/cyberia-server`);
     if (!fs.existsSync('./cyberia-client')) shellExec(`${cli()} clone underpostnet/cyberia-client`);
@@ -6422,7 +6417,19 @@ node bin image --path cyberia-client \
   // subprocess, a CLI parse error, a missing module — must exit non-zero, so a
   // CI parent sees the failure.
   if (error && error.message === 'Trigger underpost passthrough') {
-    process.argv = process.argv.filter((c) => c !== 'underpost');
+    // A redundant CLI name can only appear before the command; everything from the command
+    // onward is an argument. Filtering the whole of argv removed those too, so an option whose
+    // value happens to be `underpost` — a storage id, a public asset path — lost it, and the
+    // parse failed on a missing argument rather than on anything the caller wrote.
+    const commandIndex = process.argv.findIndex(
+      (token, index) => index >= 2 && underpostProgram.commands.some((command) => command._name === token),
+    );
+    if (commandIndex > 2)
+      process.argv = [
+        ...process.argv.slice(0, 2),
+        ...process.argv.slice(2, commandIndex).filter((token) => token !== 'underpost'),
+        ...process.argv.slice(commandIndex),
+      ];
     if (!process.argv.includes('--plain')) logger.info('Rerouting to underpost cli...');
     try {
       await underpostProgram.parseAsync();

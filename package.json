@@ -72,34 +72,6 @@
     },
     "homepage": "https://github.com/underpostnet/engine-cyberia#readme",
     "dependencies": {
-        "underpost": "^3.3.73",
-        "adm-zip": "^0.6.0",
-        "maxrects-packer": "^2.7.3",
-        "pngjs": "^7.0.0",
-        "jimp": "^1.6.0",
-        "sharp": "^0.35.3",
-        "ethers": "~6.16.0"
-    },
-    "publishConfig": {
-        "provenance": true,
-        "access": "public",
-        "registry": "https://registry.npmjs.org/"
-    },
-    "overrides": {
-        "simple-xml-to-json": "1.2.4",
-        "minimatch": "^10.2.2",
-        "glob": "^11.0.0",
-        "diff": ">=8.0.3",
-        "js-yaml": "$js-yaml",
-        "debug": ">=4.3.6",
-        "serialize-javascript": ">=7.0.5",
-        "router": {
-            "path-to-regexp": ">=8.4.0"
-        },
-        "ws": "^8.20.2",
-        "qs": ">=6.16.0"
-    },
-    "devDependencies": {
         "@fortawesome/fontawesome-free": "^7.3.1",
         "@fullcalendar/rrule": "^7.0.2",
         "@grpc/grpc-js": "^1.14.4",
@@ -137,13 +109,14 @@
         "http-proxy-middleware": "^4.2.0",
         "ignore-walk": "^9.0.0",
         "iovalkey": "^0.4.0",
-        "json-colorizer": "^3.0.1",
         "js-yaml": "^5.4.1",
+        "json-colorizer": "^3.0.1",
         "jsonwebtoken": "^9.0.3",
+        "jszip": "^3.10.2",
         "mariadb": "^3.5.4",
+        "marked": "^18.0.11",
         "mongoose": "^9.9.4",
         "morgan": "^1.12.0",
-        "marked": "^18.0.11",
         "nodemailer": "^10.0.0",
         "nodemon": "^3.0.1",
         "peer": "^1.0.2",
@@ -170,6 +143,31 @@
         "workbox-expiration": "^7.4.1",
         "workbox-precaching": "^7.4.1",
         "workbox-routing": "^7.4.1",
-        "workbox-strategies": "^7.4.1"
+        "workbox-strategies": "^7.4.1",
+        "maxrects-packer": "^2.7.3",
+        "pngjs": "^7.0.0",
+        "jimp": "^1.6.0",
+        "sharp": "^0.35.4",
+        "ethers": "~6.16.0"
+    },
+    "publishConfig": {
+        "provenance": true,
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
+    },
+    "overrides": {
+        "simple-xml-to-json": "1.2.4",
+        "minimatch": "^10.2.2",
+        "glob": "^11.0.0",
+        "diff": ">=8.0.3",
+        "js-yaml": "$js-yaml",
+        "debug": ">=4.3.6",
+        "serialize-javascript": ">=7.0.5",
+        "router": {
+            "path-to-regexp": ">=8.4.0"
+        },
+        "ws": "^8.20.2",
+        "qs": ">=6.16.0",
+        "sharp": "^0.35.4"
     }
 }

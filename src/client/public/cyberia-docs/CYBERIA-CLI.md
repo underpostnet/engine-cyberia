@@ -43,7 +43,10 @@ cyberia ol [item-id] [options]
 | `--count <n>` / `--density <0..1>`                                                   | Shape count multiplier (default `3`) / density (default `0.5`)           |
 | `--seed <seed>`                                                                      | Deterministic seed for `--generate` (e.g. `fx-42`)                       |
 | `--frame-index <n>` / `--frame-count <n>`                                            | Start frame (default `0`) / frame count (default `1`)                    |
-| `--to-atlas-sprite-sheet [dim]`                                                      | Build a consolidated atlas PNG for the item                              |
+| `--to-atlas-sprite-sheet [dim]`                                                      | Rebuild both atlas renders for the selected items                        |
+| `--minify`                                                                           | Refresh the minified atlas render the client downloads                   |
+| `--instance <code>`                                                                  | Narrows `--minify` and `--to-atlas-sprite-sheet` to one instance         |
+| `--upscale <px-factor>`                                                              | Pixels per cell of the human-resolution render; alone, rebuilds it       |
 | `--show-frame [dir_frame]`                                                           | View one frame (e.g. `08_0`; default `08_0`)                             |
 | `--show-atlas-sprite-sheet`                                                          | Display the atlas PNG for the item                                       |
 | `--drop`                                                                             | Drop existing data before importing (or standalone)                      |
@@ -66,6 +69,15 @@ cyberia ol floor-grass  --generate --frame-count 4 --count 5 --density 0.7
 cyberia ol hatchet --to-atlas-sprite-sheet
 cyberia ol hatchet --show-frame 08_0
 
+# Rebuild both atlas renders. The scope is an item-id, an instance, or everything.
+cyberia ol hatchet --to-atlas-sprite-sheet --upscale 40
+cyberia ol --instance TEST --upscale 20
+cyberia ol --to-atlas-sprite-sheet
+
+# Refresh the minified render the client downloads
+cyberia ol hatchet --minify
+cyberia ol --minify --instance FOREST
+
 # Drop + re-import a single item, including static folders
 cyberia ol hatchet --drop --client-public --import
 ```
@@ -87,7 +99,7 @@ cyberia instance [instance-code] [options]
 | `--import [path]`                                     | Import from a backup directory (upsert, preserves UUIDs)                |
 | `--conf`                                              | With `--export`/`--import`: only `cyberia-instance.json` + `-conf.json` |
 | `--drop`                                              | Drop all documents associated with the instance code                    |
-| `--sync-entities`                                     | Sync the conf's entity-type default references and skill config          |
+| `--sync-entities`                                     | Sync the conf's entity-type default references and skill config         |
 | `--export-current-fallbackworld`                      | Capture the in-memory procedural fallback world, then export it         |
 | `--keep-fallback-codes`                               | Capture using the raw `fallback-map-*` / canonical action-quest codes   |
 | `--fallback-url <url>`                                | Capture the world a running engine serves instead of regenerating it    |
@@ -258,14 +270,14 @@ of import: a WAV with no manifest beside it is skipped. Produce the pair with `c
 cyberia audio [audio-code] [options]
 ```
 
-| Option                                                | Description                                                            |
-| ----------------------------------------------------- | ------------------------------------------------------------------------ |
-| `--import`                                            | Import WAV + manifest pairs; all of them when no code is given         |
-| `--records-path <path>`                               | Records directory to import from (default `./cyberia-audio/records`)   |
-| `--map <map-code>`                                    | Target `cyberia-map` code to read or configure                         |
-| `--set-default-music <audio-code>`                    | Default background music for `--map`                                   |
-| `--set-event <logic-event-id:audio-code>`             | Bind an asset to a logic event (e.g. `combat`, `shoot`); repeatable    |
-| `--env-path <path>` · `--mongo-host <host>` · `--dev` | env / DB / dev overrides                                               |
+| Option                                                | Description                                                          |
+| ----------------------------------------------------- | -------------------------------------------------------------------- |
+| `--import`                                            | Import WAV + manifest pairs; all of them when no code is given       |
+| `--records-path <path>`                               | Records directory to import from (default `./cyberia-audio/records`) |
+| `--map <map-code>`                                    | Target `cyberia-map` code to read or configure                       |
+| `--set-default-music <audio-code>`                    | Default background music for `--map`                                 |
+| `--set-event <logic-event-id:audio-code>`             | Bind an asset to a logic event (e.g. `combat`, `shoot`); repeatable  |
+| `--env-path <path>` · `--mongo-host <host>` · `--dev` | env / DB / dev overrides                                             |
 
 ```bash
 # Import every recorded asset, or a single one
@@ -278,7 +290,7 @@ cyberia audio --map FOREST --set-default-music exploration \
 cyberia audio --map FOREST
 ```
 
-An asset is identified by its `code` alone — `cyberia-audio` stores what a sound *is* (`code`, `fileId`,
+An asset is identified by its `code` alone — `cyberia-audio` stores what a sound _is_ (`code`, `fileId`,
 `manifest`) and never what it is for. `manifest.bus` is the `src/audio-module/<bus-id>/` directory the module
 was authored in — the asset's natural route, recorded as provenance; a map binding decides where it actually
 plays. Configuration lands in `cyberia-map-audio-conf`, one document per map code,

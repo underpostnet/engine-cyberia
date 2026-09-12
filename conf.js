@@ -780,6 +780,7 @@ const DefaultConf = /**/ {
             './src/client/public/cyberia-docs/QUEST-SYSTEM.md',
             './src/client/public/cyberia-docs/ACTION-SYSTEM.md',
             './src/client/public/cyberia-docs/ENTITY-PROFILE.md',
+            './src/client/public/cyberia-docs/STATS-PROGRESSION.md',
             './src/client/public/cyberia-docs/OFF-CHAIN-ECONOMY.md',
             './src/client/public/cyberia-docs/HARDHAT-MODULE.md',
             './src/client/public/cyberia-docs/CYBERIA-SERVER.md',

@@ -4,8 +4,10 @@
  * @namespace CyberiaObjectLayerModel
  */
 import crypto from 'crypto';
+import { STAT_TYPES, STAT_DEFAULT, STAT_MODIFIER_MIN, STAT_MODIFIER_MAX, STAT_CONTRACT_VERSION, validateStats } from '../../client/components/cyberia/SharedDefaultsCyberia.js';
 import stringify from 'fast-json-stable-stringify';
 import { Schema, model } from 'mongoose';
+import { deleteOwnedFiles, documentFileIds, fileRefFields } from '../file/file.ref.js';
 /**
  * @typedef {Object} Stats
  * @property {number} effect - The effect attribute value
@@ -17,15 +19,11 @@ import { Schema, model } from 'mongoose';
  * @memberof CyberiaObjectLayerModel
  */
 const StatsSchema = new Schema(
-  {
-    effect: { type: Number, required: true, min: 0 },
-    resistance: { type: Number, required: true, min: 0 },
-    agility: { type: Number, required: true, min: 0 },
-    range: { type: Number, required: true, min: 0 },
-    intelligence: { type: Number, required: true, min: 0 },
-    utility: { type: Number, required: true, min: 0 },
-  },
-  { _id: false },
+  Object.fromEntries(STAT_TYPES.map((key) => [key, {
+    type: Number, required: true, default: STAT_DEFAULT, min: STAT_MODIFIER_MIN, max: STAT_MODIFIER_MAX,
+    validate: Number.isInteger,
+  }])),
+  { _id: false, strict: 'throw' },
 );
 /**
  * @typedef {Object} Item
@@ -112,6 +110,7 @@ const RenderSchema = new Schema(
  */
 const ObjectLayerSchema = new Schema(
   {
+    statContractVersion: { type: Number, default: STAT_CONTRACT_VERSION, enum: [STAT_CONTRACT_VERSION] },
     data: {
       stats: { type: StatsSchema, required: true },
       item: { type: ItemSchema, required: true },
@@ -228,7 +227,7 @@ function mergeObjectLayerData(existing, incoming) {
  * payload the writer hashed before merging.
  * @memberof CyberiaObjectLayerModel
  */
-const UPSERTABLE_FIELDS = ['data', 'cid', 'objectLayerRenderFramesId', 'atlasSpriteSheetId'];
+const UPSERTABLE_FIELDS = ['statContractVersion', 'data', 'cid', 'objectLayerRenderFramesId', 'atlasSpriteSheetId'];
 
 /**
  * Collapses any pre-existing duplicates of a given `data.item.id` down to a
@@ -247,10 +246,45 @@ async function collapseItemIdDuplicates(Model, itemId) {
   const removedIds = duplicates.map((duplicate) => duplicate._id);
   await Model.deleteMany({ _id: { $in: removedIds } });
 
+  // What the survivor still links is never collateral: a duplicate written by an older
+  // upsert can carry the very same render frames or atlas the survivor points at.
+  const survivorLinks = new Set(
+    [survivor.objectLayerRenderFramesId, survivor.atlasSpriteSheetId].filter(Boolean).map(String),
+  );
+  const droppedLinks = (field) =>
+    [
+      ...new Set(
+        duplicates
+          .map((duplicate) => duplicate[field])
+          .filter(Boolean)
+          .map(String),
+      ),
+    ].filter((id) => !survivorLinks.has(id));
+
   // Orphaned render frames have no other cleanup path once their owner is gone.
-  const renderFramesIds = duplicates.map((duplicate) => duplicate.objectLayerRenderFramesId).filter(Boolean);
+  const renderFramesIds = droppedLinks('objectLayerRenderFramesId');
   if (renderFramesIds.length > 0 && Model.db.models.ObjectLayerRenderFrames) {
     await Model.db.models.ObjectLayerRenderFrames.deleteMany({ _id: { $in: renderFramesIds } });
+  }
+
+  // An atlas owns File renders, so dropping its document without them is what leaves
+  // unreachable blobs in the File collection.
+  const atlasIds = droppedLinks('atlasSpriteSheetId');
+  const AtlasSpriteSheet = Model.db.models.AtlasSpriteSheet;
+  if (atlasIds.length > 0 && AtlasSpriteSheet) {
+    const fields = fileRefFields('atlas-sprite-sheet');
+    const atlasDocs = await AtlasSpriteSheet.find(
+      { _id: { $in: atlasIds } },
+      Object.fromEntries(fields.map((field) => [field, 1])),
+    ).lean();
+    await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
+    if (Model.db.models.File)
+      await deleteOwnedFiles({
+        File: Model.db.models.File,
+        Owner: AtlasSpriteSheet,
+        fields,
+        ids: documentFileIds(atlasDocs, fields),
+      });
   }
 
   return { survivor, removedIds };
@@ -332,6 +366,7 @@ ObjectLayerSchema.statics.upsertByItemId = async function (payload, { setOnInser
   const itemId = payload?.data?.item?.id;
   if (!itemId) throw new Error('ObjectLayer.upsertByItemId requires data.item.id');
 
+  if (Object.hasOwn(payload.data, 'stats')) validateStats(payload.data.stats);
   const { survivor } = await collapseItemIdDuplicates(this, itemId);
 
   if (!survivor) {
@@ -348,7 +383,7 @@ ObjectLayerSchema.statics.upsertByItemId = async function (payload, { setOnInser
   }
   update.sha256 = computeObjectLayerSha256(update.data ?? existing.data);
 
-  return await this.findByIdAndUpdate(survivor._id, { $set: update }, { returnDocument: 'after' });
+  return await this.findByIdAndUpdate(survivor._id, { $set: update }, { returnDocument: 'after', runValidators: true });
 };
 
 // Create and export the model

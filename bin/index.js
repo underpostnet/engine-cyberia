@@ -10,6 +10,7 @@
  */
 
 import dotenv from 'dotenv';
+import { registerStatCommands } from '../src/projects/cyberia/stat-commands.js';
 import { Command, InvalidArgumentError } from 'commander';
 import fs from 'fs-extra';
 import stringify from 'fast-json-stable-stringify';
@@ -47,6 +48,7 @@ import { fetchInstanceObjectLayerItemIds, getInstanceModels } from '../src/proje
 import { getKeyframeDirectionsByCode } from '../src/client/components/cyberia/SharedDefaultsCyberia.js';
 import { DEFAULT_ATLAS_UPSCALE_FACTOR } from '../src/projects/cyberia/atlas-sprite-sheet-generator.js';
 import { AtlasSpriteSheetStore } from '../src/projects/cyberia/atlas-sprite-sheet-store.js';
+import { fileRefFields } from '../src/api/file/file.ref.js';
 import {
   generateMultiFrame,
   lookupSemantic,
@@ -75,6 +77,7 @@ import {
   ITEM_TYPES as itemTypes,
   DefaultCyberiaItems,
 } from '../src/client/components/cyberia/SharedDefaultsCyberia.js';
+import { balanceStats, resolveStatBounds, statPolicyActive } from '../src/projects/cyberia/stat-balance.js';
 import { loadDeployCatalog } from '../src/server/build/catalog.js';
 import {
   DEPLOY_MANIFEST_INDENT,
@@ -224,6 +227,31 @@ const parseItemIds = (itemId) =>
     : [];
 
 /**
+ * Applies the `ol` stat policy (`--normalize-stats`, `--random-stats`,
+ * `--min-stat`, `--max-stat`) to one object layer before it is written.
+ * Marks the path on a Mongoose document so the save carries it; a plain
+ * payload needs no mark. A policy that changes nothing leaves the stats alone.
+ *
+ * @param {{ data: { item: { id: string, type: string }, stats: Object }, markModified?: Function }} objectLayer
+ * @param {import('../src/projects/cyberia/stat-balance.js').StatPolicy} policy
+ * @returns {boolean} Whether the stats were rewritten.
+ */
+const applyStatPolicy = (objectLayer, policy) => {
+  if (!statPolicyActive(policy)) return false;
+  const { stats, item } = objectLayer.data;
+  objectLayer.data.stats = balanceStats({
+    stats: typeof stats?.toObject === 'function' ? stats.toObject() : stats,
+    itemType: item.type,
+    policy,
+  });
+  if (typeof objectLayer.markModified === 'function') objectLayer.markModified('data.stats');
+  logger.info(
+    `Stats for '${objectLayer.data.item.id}' (${objectLayer.data.item.type}): ${JSON.stringify(objectLayer.data.stats)}`,
+  );
+  return true;
+};
+
+/**
  * Finds the asset type directory that holds one item id.
  *
  * @param {string} itemId - Object layer item id.
@@ -300,6 +328,7 @@ const installCyberiaDockerHostAliases = () => {
 
 try {
   const program = new Command();
+  registerStatCommands(program);
 
   /** @type {string} */
   const version = Underpost.version;
@@ -332,6 +361,24 @@ try {
       'Limit --minify and --to-atlas-sprite-sheet to the object layers one instance runs on (e.g. ol --minify --instance FOREST)',
     )
     .option(
+      '--normalize-stats',
+      'Clamp every stat of each object layer the action writes into the semantic bounds of its item type',
+    )
+    .option(
+      '--random-stats',
+      'Regenerate every stat of each object layer the action writes, with random signed modifiers',
+    )
+    .option(
+      '--min-stat <value>',
+      'Lowest value --random-stats or --normalize-stats may leave (default: -100)',
+      parseInt,
+    )
+    .option(
+      '--max-stat <value>',
+      'Highest value --random-stats or --normalize-stats may leave (default: 100)',
+      parseInt,
+    )
+    .option(
       '--upscale <px-factor>',
       `Pixels per cell of the human-resolution atlas render; on its own it rebuilds that render (default: ${DEFAULT_ATLAS_UPSCALE_FACTOR})`,
       parseInt,
@@ -361,6 +408,10 @@ try {
        * @param {boolean} options.import - Import specific item-id(s) from the command argument (comma-separated).
        * @param {boolean} options.minify - Refresh the minified atlas render of stored item(s).
        * @param {string} options.instance - Instance code whose object layers --minify reprocesses.
+       * @param {boolean} options.normalizeStats - Clamp the stats of every object layer the action writes to its type's bounds.
+       * @param {boolean} options.randomStats - Regenerate the stats of every object layer the action writes.
+       * @param {number} [options.minStat] - Lowest value --random-stats may draw.
+       * @param {number} [options.maxStat] - Highest value --random-stats may draw.
        * @param {number} options.upscale - Pixels per cell of the human-resolution atlas render.
        * @param {boolean|string} options.importTypes - Object layer types to batch import (e.g., 'all', 'skin,floor') or `false`.
        * @param {boolean|string} options.showFrame - Direction-frame string (e.g., '08_0') or `true` for default.
@@ -390,6 +441,8 @@ try {
           instance: '',
           upscale: DEFAULT_ATLAS_UPSCALE_FACTOR,
           importTypes: false,
+          normalizeStats: false,
+          randomStats: false,
           showFrame: '',
           envPath: '',
           mongoHost: '',
@@ -487,6 +540,24 @@ try {
 
         const rebuildAtlases = ObjectLayerEngine.selectAtlasRebuild(options);
 
+        /* Bounds fail here, before any write, rather than on the first item. */
+        const statPolicy = {
+          normalize: !!options.normalizeStats,
+          random: !!options.randomStats,
+          min: options.minStat,
+          max: options.maxStat,
+        };
+        if (statPolicyActive(statPolicy)) {
+          try {
+            resolveStatBounds('', statPolicy);
+          } catch (boundsError) {
+            logger.error(`--min-stat/--max-stat: ${boundsError.message}`);
+            process.exit(1);
+          }
+        } else if (statPolicy.min !== undefined || statPolicy.max !== undefined) {
+          logger.warn('--min-stat and --max-stat only bound --random-stats and --normalize-stats, ignored');
+        }
+
         if (options.instance && !options.minify && !rebuildAtlases) {
           logger.warn('--instance only narrows --minify and --to-atlas-sprite-sheet, ignored');
         }
@@ -524,9 +595,9 @@ try {
             logger.info('Dropping ALL object layer data');
           }
 
-          // Build query filter: targeted or all
+          // Build query filter: targeted or all. The atlas side of the drop is selected by
+          // the store, from the item keys and the links collected below.
           const olFilter = isTargetedDrop ? { 'data.item.id': { $in: dropItemIds } } : {};
-          const atlasFilter = isTargetedDrop ? { 'metadata.itemKey': { $in: dropItemIds } } : {};
 
           // Collect data before deletion
           const olDocs = await ObjectLayer.find(olFilter, {
@@ -537,7 +608,6 @@ try {
             objectLayerRenderFramesId: 1,
             atlasSpriteSheetId: 1,
           }).lean();
-          const atlasDocs = await AtlasSpriteSheet.find(atlasFilter, { fileId: 1, cid: 1 }).lean();
 
           const cidsToUnpin = new Set();
           const itemIdsToClean = new Set();
@@ -553,34 +623,36 @@ try {
             if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
           }
 
-          const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
-          for (const atlas of atlasDocs) {
-            if (atlas.cid) cidsToUnpin.add(atlas.cid);
-          }
-
           const olCount = olDocs.length;
-          const atlasCount = atlasDocs.length;
 
           // Delete targeted documents
           if (isTargetedDrop) {
             const olIds = olDocs.map((d) => d._id);
             if (olIds.length > 0) await ObjectLayer.deleteMany({ _id: { $in: olIds } });
             if (renderFrameIds.length > 0) await ObjectLayerRenderFrames.deleteMany({ _id: { $in: renderFrameIds } });
-            if (atlasIds.length > 0) await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
           } else {
             await ObjectLayer.deleteMany();
             await ObjectLayerRenderFrames.deleteMany();
-            await AtlasSpriteSheet.deleteMany();
           }
 
           const rfCount = renderFrameIds.length;
 
-          // Remove only the File documents that were referenced by atlas sprite sheets
-          let fileCount = 0;
-          if (atlasFileIds.length > 0) {
-            const result = await File.deleteMany({ _id: { $in: atlasFileIds } });
-            fileCount = result.deletedCount || 0;
-          }
+          // The atlas owns two renders and the store is what knows that: a drop naming
+          // `fileId` alone left every minified render unreachable in the File collection.
+          // Both selectors are passed, so an atlas linked by the object layer and one
+          // matching the item key are the same drop.
+          const purged = await AtlasSpriteSheetStore.purge({
+            itemKeys: isTargetedDrop ? dropItemIds : [],
+            atlasIds: isTargetedDrop ? atlasIds : [],
+            all: !isTargetedDrop,
+            options: { host, path },
+          });
+          for (const cid of purged.cids) cidsToUnpin.add(cid);
+          const atlasCount = purged.atlases;
+          // Renders an earlier drop left behind are unreachable by definition, so this
+          // drop takes them too instead of letting them accumulate.
+          const fileCount =
+            purged.files + (await AtlasSpriteSheetStore.pruneOrphanRenders({ options: { host, path } }));
 
           // Delete IPFS pin registry records for all collected CIDs
           if (cidsToUnpin.size > 0) {
@@ -639,7 +711,8 @@ try {
         // ── Handle --minify (stored item-id(s)) ──────────────────────────
         // Refreshes only the minified atlas render, the one the client runtime
         // downloads. It reads its item ids from the collection, so it never
-        // creates an object layer, and it leaves every other attribute alone.
+        // creates an object layer. With --random-stats every stored document
+        // in scope is rewritten, whether or not its render can be refreshed.
         if (options.minify) {
           const selectedItemIds = await selectScopedItemIds({
             ObjectLayer,
@@ -659,8 +732,12 @@ try {
               const objectLayer = await liveObjectLayer()
                 .findByItemId(currentItemId)
                 .populate('objectLayerRenderFramesId');
+              if (objectLayer && applyStatPolicy(objectLayer, statPolicy)) {
+                await objectLayer.save();
+                await ObjectLayerEngine.computeAndSaveFinalSha256({ objectLayer, options: { host, path } });
+              }
               if (!objectLayer?.objectLayerRenderFramesId) {
-                logger.warn(`No render frames stored for '${currentItemId}', skipped`);
+                logger.warn(`No render frames stored for '${currentItemId}', render skipped`);
                 tally.missing++;
                 continue;
               }
@@ -716,6 +793,7 @@ try {
                 objectLayerType: found.type,
                 objectLayerId: currentItemId,
               });
+            applyStatPolicy(objectLayerData, statPolicy);
 
             // Write processed frames back to disk so WebP matches atlas
             await ObjectLayerEngine.writeStaticFrameAssets({
@@ -790,6 +868,7 @@ try {
                       objectLayerType,
                       objectLayerId,
                     });
+                  applyStatPolicy(objectLayerData, statPolicy);
 
                   // Write processed frames back to disk so WebP matches atlas
                   const srcBasePath = './src/client/public/cyberia/';
@@ -958,6 +1037,7 @@ try {
               objectLayer.data.render.cid = atlasCid;
               objectLayer.data.render.metadataCid = atlasMetadataCid;
               objectLayer.markModified('data.render');
+              applyStatPolicy(objectLayer, statPolicy);
               await objectLayer.save();
 
               await ObjectLayerEngine.computeAndSaveFinalSha256({ objectLayer, options: { host, path } });
@@ -1075,6 +1155,7 @@ try {
 
           // Overwrite the item id in the generated data with the unique variant
           multiFrameResult.objectLayerData.data.item.id = uniqueItemId;
+          applyStatPolicy(multiFrameResult.objectLayerData, statPolicy);
 
           logger.info(
             `Generated ${multiFrameResult.frameCount} frame(s) with ${multiFrameResult.objectLayerRenderFramesData.colors.length} unique colors`,
@@ -1352,6 +1433,19 @@ try {
               '/home/dd/cyberia-instances/conf/dd-cyberia/conf.instances.json',
             );
 
+          if (!fs.existsSync('/home/dd/cyberia-instances/manifests'))
+            fs.mkdirSync('/home/dd/cyberia-instances/manifests');
+          fs.copySync('./cyberia-server/manifests', '/home/dd/cyberia-instances/manifests', { overwrite: true });
+          fs.copySync('./cyberia-client/manifests', '/home/dd/cyberia-instances/manifests', { overwrite: true });
+          if (!fs.existsSync('/home/dd/cyberia-instances/manifests/deployments/dd-cyberia-development'))
+            fs.mkdirSync('/home/dd/cyberia-instances/manifests/deployments/dd-cyberia-development', {
+              recursive: true,
+            });
+          fs.copySync(
+            './manifests/deployment/dd-cyberia-development',
+            '/home/dd/cyberia-instances/manifests/deployments/dd-cyberia-development',
+            { overwrite: true },
+          );
           const fromN = parseInt(options.fromNCommit) > 0 ? parseInt(options.fromNCommit) : 1;
           const publishMessage =
             shellExec(`node bin cmt --changelog-msg --from-n-commit ${fromN} --changelog-no-hash`, {
@@ -2404,19 +2498,17 @@ try {
                 if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
               }
 
-              // Delete AtlasSpriteSheet + referenced File docs
-              if (atlasIds.length > 0) {
-                const atlasDocs = await AtlasSpriteSheet.find({ _id: { $in: atlasIds } }, { fileId: 1, cid: 1 }).lean();
-                const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
-                for (const atlas of atlasDocs) {
-                  if (atlas.cid) cidsToUnpin.add(atlas.cid);
-                }
-                if (atlasFileIds.length > 0) {
-                  const fileResult = await File.deleteMany({ _id: { $in: atlasFileIds } });
-                  logger.info(`Dropped ${fileResult.deletedCount} File document(s) (atlas)`);
-                }
-                const atlasResult = await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
-                logger.info(`Dropped ${atlasResult.deletedCount} AtlasSpriteSheet document(s)`);
+              // Delete AtlasSpriteSheet + every File render it owns, through the store that
+              // knows how many renders that is.
+              if (atlasIds.length > 0 || itemKeysToClean.size > 0) {
+                const purged = await AtlasSpriteSheetStore.purge({
+                  itemKeys: [...itemKeysToClean],
+                  atlasIds,
+                  options: { host, path },
+                });
+                for (const cid of purged.cids) cidsToUnpin.add(cid);
+                if (purged.files > 0) logger.info(`Dropped ${purged.files} File document(s) (atlas)`);
+                if (purged.atlases > 0) logger.info(`Dropped ${purged.atlases} AtlasSpriteSheet document(s)`);
               }
 
               // Delete RenderFrames
@@ -2571,6 +2663,9 @@ try {
             atlasCount++;
           }
           logger.info(`Imported ${atlasCount} AtlasSpriteSheet document(s)`);
+          // The replaced atlases took their renders out of reach; the imported ones are
+          // already stored, so what no atlas points at now is exactly the leftover.
+          await AtlasSpriteSheetStore.pruneOrphanRenders({ options: { host, path } });
         }
 
         // 4. Import object layers
@@ -3276,18 +3371,15 @@ try {
               if (doc.atlasSpriteSheetId) atlasIds.push(doc.atlasSpriteSheetId);
             }
 
-            if (atlasIds.length > 0) {
-              const atlasDocs = await AtlasSpriteSheet.find({ _id: { $in: atlasIds } }, { fileId: 1, cid: 1 }).lean();
-              const atlasFileIds = atlasDocs.map((a) => a.fileId).filter(Boolean);
-              for (const atlas of atlasDocs) {
-                if (atlas.cid) cidsToUnpin.add(atlas.cid);
-              }
-              if (atlasFileIds.length > 0) {
-                const fileResult = await File.deleteMany({ _id: { $in: atlasFileIds } });
-                logger.info(`Dropped ${fileResult.deletedCount} File document(s) (atlas)`);
-              }
-              const atlasResult = await AtlasSpriteSheet.deleteMany({ _id: { $in: atlasIds } });
-              logger.info(`Dropped ${atlasResult.deletedCount} AtlasSpriteSheet document(s)`);
+            if (atlasIds.length > 0 || itemKeysToClean.size > 0) {
+              const purged = await AtlasSpriteSheetStore.purge({
+                itemKeys: [...itemKeysToClean],
+                atlasIds,
+                options: { host, path },
+              });
+              for (const cid of purged.cids) cidsToUnpin.add(cid);
+              if (purged.files > 0) logger.info(`Dropped ${purged.files} File document(s) (atlas)`);
+              if (purged.atlases > 0) logger.info(`Dropped ${purged.atlases} AtlasSpriteSheet document(s)`);
             }
 
             if (renderFrameIds.length > 0) {
@@ -4807,13 +4899,12 @@ try {
       ];
 
       // Every File _id a Cyberia document owns: instance and map thumbnails and previews, and the
-      // recorded WAV each audio asset points at. Read before anything is dropped, so the backing
-      // File documents do not survive the collections that referenced them.
-      const fileReferences = [
-        { api: 'cyberia-instance', fields: ['thumbnail', 'preview'] },
-        { api: 'cyberia-map', fields: ['thumbnail', 'preview'] },
-        { api: 'cyberia-audio', fields: ['fileId'] },
-      ];
+      // recorded WAV each audio asset points at. Read from the registry that maps a model to its
+      // File fields, so a reference added there is dropped here without editing this command, and
+      // read before anything is dropped, so no backing File survives the collection that held it.
+      const fileReferences = cyberiaCollections
+        .map((api) => ({ api, fields: fileRefFields(api) }))
+        .filter(({ fields }) => fields.length > 0);
 
       await DataBaseProviderService.load({ apis: [...cyberiaCollections, 'file'], host, path, db });
 

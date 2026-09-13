@@ -770,9 +770,11 @@ const DefaultConf = /**/ {
         ws: 'core',
         peer: true,
         docs: {
-          coveragePath: './hardhat',
           jsJsonPath: './typedoc.dd-cyberia.json',
-          coverageOutputDir: 'hardhat-coverage',
+          coverage: [
+            { id: 'cyberia', label: 'Cyberia coverage', suite: 'cyberia' },
+            { id: 'hardhat', label: 'Hardhat coverage', path: './hardhat' },
+          ],
           references: [
             './src/client/public/cyberia-docs/CYBERIA.md',
             './src/client/public/cyberia-docs/WHITE-PAPER.md',

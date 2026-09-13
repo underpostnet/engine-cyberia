@@ -46,10 +46,10 @@ import {
   buildImgFromTile,
 } from '../src/projects/cyberia/object-layer.js';
 import { fetchInstanceObjectLayerItemIds, getInstanceModels } from '../src/projects/cyberia/instance-data.js';
-import { restoreObjectLayerBackup } from '../src/projects/cyberia/instance-backup.js';
+import { atlasBackupFileKey, restoreObjectLayerBackup } from '../src/projects/cyberia/instance-backup.js';
 import { getKeyframeDirectionsByCode } from '../src/client/components/cyberia/SharedDefaultsCyberia.js';
 import { DEFAULT_ATLAS_UPSCALE_FACTOR } from '../src/projects/cyberia/atlas-sprite-sheet-generator.js';
-import { AtlasSpriteSheetStore } from '../src/projects/cyberia/atlas-sprite-sheet-store.js';
+import { ATLAS_FILE_FIELDS, AtlasSpriteSheetStore } from '../src/projects/cyberia/atlas-sprite-sheet-store.js';
 import { fileRefFields } from '../src/api/file/file.ref.js';
 import {
   generateMultiFrame,
@@ -351,7 +351,11 @@ try {
     .option('--show-atlas-sprite-sheet', 'Show consolidated atlas sprite sheet PNG for given item-id')
     .option(
       '--import',
-      'Import specific item-id(s) passed as comma-separated command argument (e.g. ol hatchet,sword --import)',
+      'Import specific item-id(s) passed as comma-separated command argument (e.g. ol hatchet,sword --instance FOREST --import); with --from-directory, from the asset directory instead',
+    )
+    .option(
+      '--from-directory',
+      'Source --import and --import-types from src/client/public/cyberia/assets/<type>/<item-id>/<direction>/<frame>.png',
     )
     .option(
       '--minify',
@@ -384,7 +388,10 @@ try {
       `Pixels per cell of the human-resolution atlas render; on its own it rebuilds that render (default: ${DEFAULT_ATLAS_UPSCALE_FACTOR})`,
       parseInt,
     )
-    .option('--import-types [object-layer-type]', 'Batch import by object layer type e.g. skin,floors or all')
+    .option(
+      '--import-types [object-layer-type]',
+      'Batch import by object layer type from the asset directory, needs --from-directory (e.g. skin,floors or all)',
+    )
     .option('--show-frame [direction-frame]', 'View object layer frame for given item-id e.g. 08_0 (default: 08_0)')
     .option('--generate', 'Generate procedural object layers from semantic item-id (e.g. floor-desert)')
     .option('--count <count>', 'Shape element count multiplier for --generate (default: 3)', parseFloat)
@@ -394,7 +401,6 @@ try {
     .option('--density <density>', 'Density factor 0..1 for --generate (default: 0.5)', parseFloat)
     .option('--env-path <env-path>', 'Env path e.g. ./engine-private/conf/dd-cyberia/.env.development')
     .option('--mongo-host <mongo-host>', 'Mongo host override')
-    .option('--storage-file-path <storage-file-path>', 'Storage file path override')
     .option('--drop', 'Drop existing data before importing')
     .option('--client-public', 'When used with --drop, also remove static asset folders for dropped items')
     .option('--git-clean', 'When used with --drop, run underpost clean on the cyberia asset directory')
@@ -407,6 +413,7 @@ try {
        * @param {string|undefined} itemId - Optional item ID argument.
        * @param {Object} options - Command options parsed by Commander.
        * @param {boolean} options.import - Import specific item-id(s) from the command argument (comma-separated).
+       * @param {boolean} options.fromDirectory - Source --import and --import-types from the asset directory.
        * @param {boolean} options.minify - Refresh the minified atlas render of stored item(s).
        * @param {string} options.instance - Instance code whose object layers --minify reprocesses.
        * @param {boolean} options.normalizeStats - Clamp the stats of every object layer the action writes to its type's bounds.
@@ -418,7 +425,6 @@ try {
        * @param {boolean|string} options.showFrame - Direction-frame string (e.g., '08_0') or `true` for default.
        * @param {string} options.envPath - Path to the `.env` file.
        * @param {string} options.mongoHost - MongoDB host override.
-       * @param {string} options.storageFilePath - Path to a storage filter JSON file.
        * @param {boolean|string} options.toAtlasSpriteSheet - Atlas dimension or `true` for auto-calc.
        * @param {boolean} options.showAtlasSpriteSheet - Whether to display the atlas sprite sheet.
        * @param {boolean} options.drop - Whether to drop existing data before importing.
@@ -438,6 +444,7 @@ try {
         itemId,
         options = {
           import: false,
+          fromDirectory: false,
           minify: false,
           instance: '',
           upscale: DEFAULT_ATLAS_UPSCALE_FACTOR,
@@ -447,7 +454,6 @@ try {
           showFrame: '',
           envPath: '',
           mongoHost: '',
-          storageFilePath: '',
           toAtlasSpriteSheet: '',
           showAtlasSpriteSheet: false,
           drop: false,
@@ -706,9 +712,6 @@ try {
           }
         }
 
-        /** @type {Object|null} */
-        const storage = options.storageFilePath ? JSON.parse(fs.readFileSync(options.storageFilePath, 'utf8')) : null;
-
         // ── Handle --minify (stored item-id(s)) ──────────────────────────
         // Refreshes only the minified atlas render, the one the client runtime
         // downloads. It reads its item ids from the collection, so it never
@@ -754,6 +757,12 @@ try {
               else if (status === 'stale')
                 logger.warn(`Render frames of '${currentItemId}' moved the atlas layout; regenerate the atlas`);
               else logger.info(`Minified render ${status} for '${currentItemId}'`);
+
+              const still = await AtlasSpriteSheetStore.syncIdlePreview({
+                itemKey: currentItemId,
+                options: { host, path },
+              });
+              if (still.status !== 'missing') logger.info(`Idle preview ${still.status} for '${currentItemId}'`);
             } catch (minifyError) {
               logger.error(`Minify failed for '${currentItemId}': ${minifyError.message}`);
               tally.failed.push(currentItemId);
@@ -804,14 +813,27 @@ try {
           logger.info(`Instance restore done: ${restored}/${itemIds.length} item(s)`);
         }
 
-        // ── Handle --import (specific item-id(s)) ────────────────────────
-        if (options.import && !options.instance) {
+        if (options.import && !options.instance === !options.fromDirectory) {
+          logger.error(
+            '--import takes exactly one source: --instance <code> for a backup, or --from-directory for the asset tree',
+          );
+          process.exit(1);
+        }
+        if (options.importTypes && !options.fromDirectory) {
+          logger.error('--import-types reads the asset tree and needs --from-directory');
+          process.exit(1);
+        }
+
+        // ── Handle --import --from-directory (specific item-id(s)) ────────
+        if (options.import && options.fromDirectory) {
           const itemIds = parseItemIds(itemId);
           if (itemIds.length === 0) {
-            logger.error('item-id is required for --import (comma-separated item IDs, e.g. ol hatchet,sword --import)');
+            logger.error(
+              'item-id is required for --import --from-directory (comma-separated item IDs, e.g. ol hatchet,sword --from-directory --import)',
+            );
             process.exit(1);
           }
-          logger.info(`Importing specific item(s): ${itemIds.join(', ')}`);
+          logger.info(`Importing specific item(s) from the asset directory: ${itemIds.join(', ')}`);
 
           for (const currentItemId of itemIds) {
             const found = findAssetFolder(currentItemId);
@@ -884,12 +906,6 @@ try {
             await pngDirectoryIteratorByObjectLayerType(
               argItemType,
               async ({ path: framePath, objectLayerType, objectLayerId, direction, frame }) => {
-                if (
-                  storage &&
-                  !storage[`src/client/public/cyberia/assets/${objectLayerType}/${objectLayerId}/08/0.png`]
-                )
-                  return;
-
                 // Skip items that already exist in the database (bulk import only)
                 if (isImportAll && existingItemIds.has(objectLayerId)) return;
 
@@ -1438,7 +1454,7 @@ try {
             `./engine-private/conf/dd-cyberia/instances/mmo-server/build/development/.`,
             `/home/dd/cyberia-instances/deployments/cyberia-server/.`,
           );
-          const folders = ['ui-icons', 'cursor', 'fonts', 'icons', 'splash', 'templates', 'video'];
+          const folders = ['ui-icons', 'cursor', 'fonts', 'icons', 'splash', 'templates'];
           for (const folder of folders)
             fs.copySync(
               `./src/client/public/cyberia/assets/${folder}`,
@@ -1763,7 +1779,7 @@ try {
           logger.error(
             `Capture aborted: ${capture.missingObjectLayerItemIds.length} referenced item id(s) have no ObjectLayer in MongoDB:`,
             capture.missingObjectLayerItemIds.join(', '),
-            `— run \`node bin/cyberia ol ${capture.missingObjectLayerItemIds.join(' ')} --import\` (or ` +
+            `— run \`node bin/cyberia ol ${capture.missingObjectLayerItemIds.join(',')} --from-directory --import\` (or ` +
               '`node bin/cyberia run-workflow import-default-items`) first.',
           );
           await DataBaseProviderService.getProvider({ host, path }, 'mongoose').close();
@@ -2169,9 +2185,10 @@ try {
             if (atlas) {
               const atlasExport = newInstance(atlas);
               objectLayerExport.atlasSpriteSheetId = atlas._id;
-              // Both renders travel with the atlas, so a restore leaves neither reference dangling.
-              if (atlas.fileId) await exportFileDoc(atlas.fileId, `atlas-${itemKey}`);
-              if (atlas.minifyFileId) await exportFileDoc(atlas.minifyFileId, `atlas-minify-${itemKey}`);
+              // Every render travels with the atlas, so a restore leaves no reference dangling.
+              for (const field of ATLAS_FILE_FIELDS) {
+                if (atlas[field]) await exportFileDoc(atlas[field], atlasBackupFileKey(field, itemKey));
+              }
 
               const atlasFile = atlas.fileId ? await File.findById(atlas.fileId).lean() : null;
               const atlasBuffer = toBuffer(atlasFile?.data);
@@ -2686,6 +2703,7 @@ try {
 
         // 3. Import AtlasSpriteSheet
         const atlasDir = `${backupDir}/atlas-sprite-sheets`;
+        const atlasesWithoutMinify = new Set();
         if (fs.existsSync(atlasDir)) {
           const atlasFiles = fs.readdirSync(atlasDir).filter((f) => f.endsWith('.json'));
           let atlasCount = 0;
@@ -2699,6 +2717,19 @@ try {
             atlasCount++;
           }
           logger.info(`Imported ${atlasCount} AtlasSpriteSheet document(s)`);
+          // A backup from before the still existed restores without one; cut each from its render.
+          // An atlas restored without its minified render is rebuilt whole once its object
+          // layer is in place, below.
+          let stillCount = 0;
+          for (const f of atlasFiles) {
+            const atlasData = fs.readJsonSync(`${atlasDir}/${f}`);
+            const itemKey = atlasData.metadata?.itemKey;
+            if (!itemKey) continue;
+            if (!atlasData.minifyFileId) atlasesWithoutMinify.add(itemKey);
+            const { status } = await AtlasSpriteSheetStore.syncIdlePreview({ itemKey, options: { host, path } });
+            if (status === 'updated') stillCount++;
+          }
+          if (stillCount) logger.info(`Filled ${stillCount} idle preview still(s)`);
           // The replaced atlases took their renders out of reach; the imported ones are
           // already stored, so what no atlas points at now is exactly the leftover.
           await AtlasSpriteSheetStore.pruneOrphanRenders({ options: { host, path } });
@@ -2729,6 +2760,36 @@ try {
             olCount++;
           }
           logger.info(`Imported ${olCount} ObjectLayer document(s)`);
+        }
+
+        // 4a. An atlas the backup restored without its minified render cannot be served: the
+        //     client runtime pairs the blob with the metadata, so a render cut from the frames
+        //     alone would be refused wherever the stored layout moved. Regenerate the whole
+        //     atlas from the frames the backup carries, and relink the object layer to it the
+        //     way `ol --to-atlas-sprite-sheet` does.
+        for (const itemKey of atlasesWithoutMinify) {
+          try {
+            const objectLayer = await ObjectLayer.findByItemId(itemKey).populate('objectLayerRenderFramesId');
+            if (!objectLayer?.objectLayerRenderFramesId) {
+              logger.warn(`Backup atlas '${itemKey}' has no minified render and no render frames to rebuild it from`);
+              continue;
+            }
+            const { atlasDoc, atlasCid, atlasMetadataCid } = await AtlasSpriteSheetStore.persist({
+              itemKey,
+              objectLayerRenderFrames: objectLayer.objectLayerRenderFramesId,
+              options: { host, path },
+            });
+            objectLayer.atlasSpriteSheetId = atlasDoc._id;
+            if (!objectLayer.data.render) objectLayer.data.render = {};
+            objectLayer.data.render.cid = atlasCid;
+            objectLayer.data.render.metadataCid = atlasMetadataCid;
+            objectLayer.markModified('data.render');
+            await objectLayer.save();
+            await ObjectLayerEngine.computeAndSaveFinalSha256({ objectLayer, options: { host, path } });
+            logger.info(`Rebuilt the atlas of '${itemKey}': the backup carried no minified render`);
+          } catch (rebuildError) {
+            logger.error(`Atlas rebuild failed for '${itemKey}': ${rebuildError.message}`);
+          }
         }
 
         // 4b. Regenerate static frame PNGs from imported render-frames + object-layer documents.

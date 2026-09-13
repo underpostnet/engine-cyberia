@@ -8,12 +8,17 @@ import {
   getPathsSSR,
   syncPrivateConf,
   syncDeployIdSources,
+  syncDeployIdSourcesBack,
   buildTemplate,
   updatePrivateEngineTestRepo,
 } from '../src/server/runtime/conf.js';
 import { resolveDeployList } from '../src/server/network/router.js';
 import { loadDeployCatalog } from '../src/server/build/catalog.js';
-import { buildProductPackageJson, productPackageOptionsFactory } from '../src/server/build/package.js';
+import {
+  buildProductPackageJson,
+  installDeployDependencies,
+  productPackageOptionsFactory,
+} from '../src/server/build/package.js';
 import {
   COVERAGE_BUNDLE_DIRECTORY,
   bundleCoverageReports,
@@ -38,13 +43,16 @@ const basePath = '../pwa-microservices-template';
  * SSR assets, manifests, and packaging declared by its conf into the template repo.
  * @param {string} confName - A concrete deploy id (e.g. `dd-prototype`).
  */
-const buildDeployTemplate = async (confName) => {
+const buildDeployTemplate = async (confName, { force = false } = {}) => {
   const repoName = Underpost.repo.engineRepoFactory(confName);
   const catalog = await loadDeployCatalog(confName);
 
   if (catalog.sourceMoves.length) {
     Underpost.repo.sparseCheckoutDirectory(`conf/${confName}`);
-    if (catalog.sourceMoves.some(([src]) => !fs.existsSync(src))) Underpost.repo.pullSourceRepo(repoName);
+    // Only a path neither tree holds needs the repo: one the engine holds is mirrored out.
+    // --force pulls regardless, to bring the repo up to date before the mirror.
+    if (force || catalog.sourceMoves.some(([src, dest]) => !fs.existsSync(src) && !fs.existsSync(dest)))
+      Underpost.repo.pullSourceRepo(repoName);
   }
   syncDeployIdSources(catalog.sourceMoves);
 
@@ -227,11 +235,32 @@ const buildDeployTemplate = async (confName) => {
 
 /**
  * The coverage reports a deploy id's conf declares, as {@link deployCoverageReports} reads them.
+ * The conf is fetched when this checkout does not carry it yet: a CI runner builds from a bare
+ * engine tree, and a deploy without source moves never pulls its conf through the assembly.
  * @param {string} deployId - A concrete deploy id.
  * @returns {Array<{id: string, suite?: string, path?: string}>}
  */
-const deployReports = (deployId) =>
-  deployCoverageReports(JSON.parse(fs.readFileSync(`./engine-private/conf/${deployId}/conf.server.json`, 'utf8')));
+const deployReports = (deployId) => {
+  Underpost.repo.sparseCheckoutDirectory(`conf/${deployId}`);
+  return deployCoverageReports(
+    JSON.parse(fs.readFileSync(`./engine-private/conf/${deployId}/conf.server.json`, 'utf8')),
+  );
+};
+
+/**
+ * Runs, once each, the test suites the deploy ids' coverage reports name. A product suite
+ * imports the modules its catalog pins, so those dependencies are installed into this
+ * checkout first — the same install a product deploy performs before it builds.
+ * @param {string[]} deployIds - Concrete deploy ids.
+ */
+const runDeployCoverage = async (deployIds) => {
+  const suites = new Set();
+  for (const deployId of deployIds) {
+    await installDeployDependencies(deployId);
+    for (const { suite } of deployReports(deployId)) if (suite) suites.add(suite);
+  }
+  for (const suite of suites) shellExec(coverageReportCommand({ suite }));
+};
 
 /**
  * Carries this build stage's coverage HTML reports into the assembled template, so every
@@ -272,6 +301,16 @@ program
     'After assembling each deploy id, publish it to its private test source repo (underpostnet/engine-test-<id>) for isolated test deploys.',
     false,
   )
+  .option(
+    '--force',
+    'Always pull each deploy id source repo (e.g. ../engine-prototype) before syncing its sourceMoves, instead of only when a path is missing from both trees.',
+    false,
+  )
+  .option(
+    '--sync-sources',
+    'Copy each deploy id catalog sourceMoves path from this tree back to its source repo (e.g. ../engine-prototype) and exit (no template assembly). The engine ignores these paths, so the change is reviewed and committed there.',
+    false,
+  )
   .action(async (confName, env, options) => {
     const deployList = resolveDeployList(confName);
     logger.info('Build repository', { confName, basePath, deployList, conf: !!options.conf });
@@ -284,20 +323,36 @@ program
       return;
     }
 
+    if (options.syncSources) {
+      for (const deployId of deployList) {
+        const { sourceMoves } = await loadDeployCatalog(deployId);
+        if (!sourceMoves.length) {
+          logger.warn('No sourceMoves declared; nothing to sync back', { deployId });
+          continue;
+        }
+        const mirrored = syncDeployIdSourcesBack(sourceMoves);
+        for (const src of mirrored) logger.info('Build sync source', src);
+        if (mirrored.length !== sourceMoves.length)
+          logger.warn('Some declared sources are not in this tree and were left as they are in the source repo', {
+            deployId,
+            hint: `node bin/build ${deployId}`,
+            skipped: sourceMoves.length - mirrored.length,
+          });
+      }
+      return;
+    }
+
     // Tests run here, in the build stage, and once per declared suite: the artifact carries
     // each report so no container ever has to produce its own. Refreshing is opt-in because
     // a template assembly is not otherwise a test run.
-    if (options.coverage) {
-      const suites = new Set(deployList.flatMap(deployReports).flatMap(({ suite }) => (suite ? [suite] : [])));
-      for (const suite of suites) shellExec(coverageReportCommand({ suite }));
-    }
+    if (options.coverage) await runDeployCoverage(deployList);
 
     for (const deployId of deployList) {
       // Reconstruct the base template from 0 before each deploy id so neither a previous
       // build run nor the deploy id assembled before this one leaks into it. Opt out with
       // --no-template-rebuild.
       if (options.templateRebuild) await buildTemplate({ toPath: basePath });
-      await buildDeployTemplate(deployId);
+      await buildDeployTemplate(deployId, { force: options.force });
       bundleDeployCoverage(deployId);
       // Publish the just-assembled tree to the deploy id's private test repo so a
       // pod started with `--private-test-repo` clones this work-in-progress source.

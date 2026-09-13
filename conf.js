@@ -266,7 +266,6 @@ const DefaultConf = /**/ {
         { path: '/docs', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-action-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/cyberia-entity-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
-        { path: '/fallback-world-engine', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
         { path: '/instance-selection', title: 'Select World', client: 'CyberiaPortal', ssr: 'CyberiaPortal' },
       ],
       dists: [

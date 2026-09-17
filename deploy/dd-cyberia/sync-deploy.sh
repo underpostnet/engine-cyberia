@@ -14,6 +14,10 @@ DEPLOY_IMAGE="${DEPLOY_IMAGE:-underpost/engine-cyberia:latest}"
 ENGINE_SRC_REPO="${ENGINE_SRC_REPO:-underpostnet/engine-test-cyberia}"
 ENGINE_SRC_PRIVATE_REPO="${ENGINE_SRC_PRIVATE_REPO:-underpostnet/engine-private}"
 POD_SRC_PRIVATE_REPO="${POD_SRC_PRIVATE_REPO:-underpostnet/engine-cyberia-private}"
+# The product checkouts `bin/cyberia` reads beside the engine, brought to their tip once the
+# engine itself is at HEAD.
+CYBERIA_SERVER_REPO="${CYBERIA_SERVER_REPO:-underpostnet/cyberia-server}"
+CYBERIA_CLIENT_REPO="${CYBERIA_CLIENT_REPO:-underpostnet/cyberia-client}"
 
 CYBERIA_ASSETS=src/client/public/cyberia
 UNDERPOST_ASSETS=src/client/public/underpost
@@ -31,6 +35,9 @@ main() {
     deploy_start "Starting remote sync and deploy"
 
     prepare_host "$ENGINE_ROOT"
+
+    sync_checkout "$CYBERIA_SERVER_REPO" "$ENGINE_ROOT"
+    sync_checkout "$CYBERIA_CLIENT_REPO" "$ENGINE_ROOT"
 
     deploy_step "Clean cyberia public assets" \
         sudo -n -- /bin/bash -lc \
@@ -127,6 +134,10 @@ main() {
     if [ "$BUNDLE_MODE" = "1" ]; then
         start_flags="$start_flags --pull-bundle"
     fi
+    # `db --migrate-stable-slugs` gives every document on each host serving the document api
+    # its `/entry` and `/content` URL slug — a panel title without one is a dead link. It runs
+    # after the imports so a re-imported database is covered too, and is idempotent: a document
+    # that has a slug keeps it, so on a deploy with nothing to backfill it only checks.
     pod_cmd="$(pod_bootstrap_cmd $DEPLOY_ID $DEPLOY_ENV "$ENGINE_SRC_REPO"), \
         underpost clone ${POD_SRC_PRIVATE_REPO}, \
         sudo rm -rf ./engine-private, \
@@ -137,6 +148,7 @@ main() {
         node bin/cyberia instance amethyst-strata-expansion --import --env-path .env, \
         node bin/cyberia instance FOREST --import --env-path .env, \
         node bin/cyberia instance TEST --import --env-path .env, \
+        underpost db $DEPLOY_ID --migrate-stable-slugs, \
         underpost start $DEPLOY_ID $DEPLOY_ENV $start_flags"
 
     deploy_step "Sync $DEPLOY_ID cluster" \

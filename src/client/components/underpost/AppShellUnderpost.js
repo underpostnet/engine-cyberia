@@ -1,6 +1,6 @@
 import { Account } from '../core/Account.js';
 import { BtnIcon } from '../core/BtnIcon.js';
-import { getId, newInstance } from '../core/CommonJs.js';
+import { commonAdminGuard, getId, newInstance } from '../core/CommonJs.js';
 import { Css, ThemeEvents, Themes, darkTheme } from '../core/Css.js';
 import { EventsUI } from '../core/EventsUI.js';
 import { LogIn } from '../core/LogIn.js';
@@ -18,7 +18,6 @@ import { CyberpunkBloggerUnderpost } from './CyberpunkBloggerUnderpost.js';
 import { Badge } from '../core/Badge.js';
 import { SettingsUnderpost } from './SettingsUnderpost.js';
 import { Recover } from '../core/Recover.js';
-import { githubUrl, repositoryIdentity } from '../core/Repository.js';
 import { PanelForm } from '../core/PanelForm.js';
 import { SearchBox } from '../core/SearchBox.js';
 import { DocumentSearchProvider } from './DocumentSearchProvider.js';
@@ -26,6 +25,7 @@ import { PublicProfile } from '../core/PublicProfile.js';
 import { Polyhedron } from '../core/Polyhedron.js';
 import { FileExplorer } from '../core/FileExplorer.js';
 import { Content } from '../core/Content.js';
+import { UserManagement } from '../../services/user/user.management.js';
 
 class AppShellUnderpost {
   static Data = {};
@@ -33,6 +33,7 @@ class AppShellUnderpost {
     const id = getId(AppShellUnderpost.Data, 'menu-');
     AppShellUnderpost.Data[id] = {};
     const RouterInstance = RouterUnderpost.instance();
+    const githubUrl = 'https://github.com/underpost';
 
     const { barConfig } = await Themes[Css.currentTheme]();
 
@@ -172,6 +173,19 @@ class AppShellUnderpost {
             tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('cloud')),
           })}
           ${await BtnIcon.instance({
+            // Admins only: shown by the log-in handler for an admin session, hidden again on log-out.
+            class: 'in wfa main-btn-menu main-btn-user-management hide',
+            useMenuBtn: true,
+            label: renderMenuLabel({
+              icon: html`<i class="fas fa-users-cog inl underpost-menu-icon"></i>`,
+              text: html`<span class="menu-label-text">${Translate.instance('user-management')}</span>`,
+            }),
+            attrs: `data-id="user-management"`,
+            tabHref: `${getProxyPath()}user-management`,
+            handleContainerClass: 'handle-btn-container',
+            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('user-management')),
+          })}
+          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-settings',
             useMenuBtn: true,
             label: renderMenuLabel({
@@ -215,7 +229,7 @@ class AppShellUnderpost {
               text: html`<span class="menu-label-text">${Translate.instance('github')}</span>`,
             }),
             attrs: `data-id="github"`,
-            tabHref: githubUrl(),
+            tabHref: githubUrl,
             handleContainerClass: 'handle-btn-container',
             tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('github')),
           })}
@@ -627,6 +641,28 @@ class AppShellUnderpost {
       });
     });
 
+    EventsUI.onClick(`.main-btn-user-management`, async () => {
+      // The route reaches here for anyone; only an admin session opens the view, the rest go home.
+      if (!commonAdminGuard(AppStoreUnderpost.Data.user?.main?.model?.user?.role)) return Modal.onHomeRouterEvent();
+      const { barConfig } = await Themes[Css.currentTheme]();
+      await Modal.instance({
+        id: 'modal-user-management',
+        route: 'user-management',
+        barConfig,
+        title: renderViewTitle({
+          icon: html`<i class="fas fa-users-cog inl underpost-menu-icon-modal"></i>`,
+          text: `<span class='inl underpost-text-title-modal'>${Translate.instance('user-management')}</span>`,
+        }),
+        html: async () => await UserManagement.instance({ appStore: AppStoreUnderpost }),
+        handleType: 'bar',
+        maximize: true,
+        mode: 'view',
+        slideMenu: 'modal-menu',
+        RouterInstance,
+        observer: true,
+      });
+    });
+
     EventsUI.onClick(`.main-btn-recover`, async () => {
       const { barConfig } = await Themes[Css.currentTheme]();
       await Modal.instance({
@@ -681,7 +717,7 @@ class AppShellUnderpost {
     });
 
     EventsUI.onClick(`.main-btn-github`, async () => {
-      location.href = githubUrl(repositoryIdentity().template);
+      location.href = githubUrl;
     });
   }
 }

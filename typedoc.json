@@ -13,9 +13,22 @@
     "./src/projects/cyberia"
   ],
   "entryPointStrategy": "expand",
-  "exclude": ["**/node_modules/**", "**/docs/**", "**/client/**", "**/hardhat/**"],
+  "exclude": [
+    "**/api/atlas-sprite-sheet/**",
+    "**/api/ipfs/**",
+    "**/api/item-ledger-balance/**",
+    "**/api/item-ledger-checkpoint/**",
+    "**/api/item-ledger-transfer/**",
+    "**/api/item-ledger/**",
+    "**/api/object-layer-render-frames/**",
+    "**/api/object-layer/**",
+    "**/client/**",
+    "**/docs/**",
+    "**/hardhat/**",
+    "**/node_modules/**"
+  ],
   "out": "./public/www.cyberiaonline.com/docs/",
-  "readme": "./src/client/public/cyberia-docs/ARCHITECTURE.md",
+  "readme": "./src/client/public/docs/cyberia/overview/index.md",
   "tsconfig": "./tsconfig.docs.json",
   "skipErrorChecking": true,
   "logLevel": "Error",
@@ -27,5 +40,7 @@
     "includeGroups": true
   },
   "categorizeByGroup": true,
-  "sort": ["source-order"]
+  "sort": [
+    "source-order"
+  ]
 }

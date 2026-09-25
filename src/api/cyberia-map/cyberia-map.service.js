@@ -1,15 +1,22 @@
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../server/ops/logger.js';
 import { DataQuery } from '../../server/storage/data-query.js';
+import { CacheService } from '../../server/storage/cache.js';
+import { assertOwnerOrAdmin } from '../../server/security/auth.js';
+import { CyberiaMapDto } from './cyberia-map.model.js';
 
 const logger = loggerFactory(import.meta);
+
+/** Map lists and reads by code; every map write invalidates them. */
+const mapCache = (options) => CacheService.namespace(options, 'cyberia-map');
 
 class CyberiaMapService {
   static post = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProviderService.getModel("CyberiaMap", options);
-    if (req.auth && req.auth.user) req.body.creator = req.auth.user._id;
-    return await new CyberiaMap(req.body).save();
+    const map = await new CyberiaMap({ ...req.body, creator: req.auth.user._id }).save();
+    await CacheService.invalidate(mapCache(options));
+    return map;
   };
   static get = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
@@ -30,50 +37,75 @@ class CyberiaMapService {
 
     // Maps are addressed by code, the key the engine navigates by.
     if (req.params.id)
-      return await CyberiaMap.findOne(DataQuery.naturalKeyFilter('code', req.params.id)).populate(populateCreator);
+      return await CacheService.getOrLoad(mapCache(options), {
+        identifier: req.params.id,
+        load: async () => {
+          const map = await CyberiaMap.findOne(DataQuery.naturalKeyFilter('code', req.params.id)).populate(
+            populateCreator,
+          );
+          return map ? map.toJSON() : null;
+        },
+      });
 
-    // Parse query parameters using DataQuery helper
-    const { query, sort, skip, limit, page } = DataQuery.parse(req.query);
-
-    const [data, total] = await Promise.all([
-      CyberiaMap.find(query).sort(sort).limit(limit).skip(skip).populate(populateCreator),
-      CyberiaMap.countDocuments(query),
-    ]);
-
-    const totalPages = Math.ceil(total / limit);
-    return { data, total, page, totalPages };
+    // A list row is a summary: the entities of a map come with the map, by code.
+    return await CacheService.getOrLoad(mapCache(options), {
+      identifier: 'list',
+      variant: CacheService.variant(req.query),
+      load: async () => {
+        const { query, sort, skip, limit, page } = DataQuery.parse(req.query);
+        const [documents, total] = await Promise.all([
+          CyberiaMap.find(query)
+            .sort(sort)
+            .limit(limit)
+            .skip(skip)
+            .select(CyberiaMapDto.select.list())
+            .populate(populateCreator),
+          CyberiaMap.countDocuments(query),
+        ]);
+        const data = documents.map((document) => document.toJSON());
+        return { data, total, page, totalPages: Math.ceil(total / limit) };
+      },
+    });
   };
   static put = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProviderService.getModel("CyberiaMap", options);
     const map = await CyberiaMap.findById(req.params.id);
     if (!map) throw new Error('map not found');
-    if (req.auth.user.role !== 'admin' && String(map.creator) !== String(req.auth.user._id))
-      throw new Error('insufficient permission');
-    const candidate = new CyberiaMap({ ...map.toObject(), ...req.body });
+    assertOwnerOrAdmin(req.auth.user, map.creator);
+    // The owner is set once, by the write that created the map.
+    const { creator, ...changes } = req.body;
+    const candidate = new CyberiaMap({ ...map.toObject(), ...changes });
     await candidate.validate();
     const File = DataBaseProviderService.getModel("File", options);
-    if (req.body.thumbnail && map.thumbnail && String(req.body.thumbnail) !== String(map.thumbnail)) {
+    if (changes.thumbnail && map.thumbnail && String(changes.thumbnail) !== String(map.thumbnail)) {
       await File.findByIdAndDelete(map.thumbnail);
     }
-    if (req.body.preview && map.preview && String(req.body.preview) !== String(map.preview)) {
+    if (changes.preview && map.preview && String(changes.preview) !== String(map.preview)) {
       await File.findByIdAndDelete(map.preview);
     }
-    return await CyberiaMap.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
+    const updated = await CyberiaMap.findByIdAndUpdate(req.params.id, changes, {
+      returnDocument: 'after',
+      runValidators: true,
+    });
+    await CacheService.invalidate(mapCache(options));
+    return updated;
   };
   static delete = async (req, res, options) => {
     /** @type {import('./cyberia-map.model.js').CyberiaMapModel} */
     const CyberiaMap = DataBaseProviderService.getModel("CyberiaMap", options);
+    let removed;
     if (req.params.id) {
       const map = await CyberiaMap.findById(req.params.id);
       if (!map) throw new Error('map not found');
-      if (req.auth.user.role !== 'admin' && String(map.creator) !== String(req.auth.user._id))
-        throw new Error('insufficient permission');
+      assertOwnerOrAdmin(req.auth.user, map.creator);
       const File = DataBaseProviderService.getModel("File", options);
       if (map.thumbnail) await File.findByIdAndDelete(map.thumbnail);
       if (map.preview) await File.findByIdAndDelete(map.preview);
-      return await CyberiaMap.findByIdAndDelete(req.params.id);
-    } else return await CyberiaMap.deleteMany();
+      removed = await CyberiaMap.findByIdAndDelete(req.params.id);
+    } else removed = await CyberiaMap.deleteMany();
+    await CacheService.invalidate(mapCache(options));
+    return removed;
   };
 }
 

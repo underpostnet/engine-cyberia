@@ -15,13 +15,19 @@ import { loggerFactory } from '../../server/ops/logger.js';
 import { domainOrigin } from '../../server/domain/domain-client.js';
 import { publishObjectLayer, resolveObjectLayer } from '../../server/domain/object-layer-resolver.js';
 import { objectLayerIdentity, renderContractOf } from '../../api/object-layer/object-layer.identity.js';
-import { isProfileRef } from '../../client/components/object-layer/ObjectLayerProtocol.js';
+import { isProfileRef } from '../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
 import { PINNED_REFERENCES, readItemRefs } from '../../api/cyberia-item-catalog/item-ref.js';
-import { RELEASE_ID_PATTERN } from '../../api/cyberia-content-release/cyberia-content-release.model.js';
+import {
+  collectInstanceItemIds,
+  collectSummonedItemIds,
+  isMaterialItemId,
+} from '../../api/cyberia-instance/cyberia-instance-items.js';
 import { triggerHotReload } from './hot-reload-trigger.js';
 import { CyberiaObjectLayerProfile } from '../../client/components/cyberia/ObjectLayerProfileCyberia.js';
 import { AtlasSpriteSheetStore } from '../../api/atlas-sprite-sheet/atlas-sprite-sheet.store.js';
 import { MongooseDB } from '../../db/mongo/MongooseDB.js';
+import { assertReleaseId } from '../../server/release/source-release.js';
+import { loadContentArtifact, serveContentArtifact, servedContentArtifact } from './content-artifact.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -31,21 +37,11 @@ export const CONTENT_PARTITION = 'content';
 /** How often a running engine looks for a promoted release. `0` disables the watch. */
 export const RELEASE_WATCH_MS = Number(process.env.CYBERIA_CONTENT_RELEASE_WATCH_MS ?? 15000);
 
+/** A lease older than this belongs to an execution that stopped: its release may be built again. */
+export const RELEASE_LEASE_MS = Number(process.env.CYBERIA_CONTENT_RELEASE_LEASE_MS ?? 2 * 60 * 60 * 1000);
+
 /** Cap on finding lines one check keeps, so a broken release reads as a report, not a dump. */
 const MAX_FINDINGS = 25;
-
-/**
- * A valid release id, or an error.
- * @param {string} releaseId
- * @returns {string}
- * @memberof CyberiaContentRelease
- */
-export function assertReleaseId(releaseId) {
-  const id = String(releaseId ?? '').trim();
-  if (!RELEASE_ID_PATTERN.test(id))
-    throw new Error(`Invalid release id "${releaseId}": use lower-case letters, digits and dashes`);
-  return id;
-}
 
 /**
  * The database one release lives in.
@@ -57,6 +53,26 @@ export function assertReleaseId(releaseId) {
 export const releaseDatabaseName = (base, releaseId) => `${base}-${assertReleaseId(releaseId)}`;
 
 /**
+ * Imports the content artifact in dependency order: the foundation, the sagas, then each instance.
+ * Each saga moves what it holds to the artifact, and each instance restores what it holds. Each
+ * import starts only once the one before it succeeded, so no instance reaches a store that lacks
+ * its foundation.
+ * @param {Object} params
+ * @param {(args:string)=>Promise<void>} params.run - Runs one `cyberia` command line; rejects when it fails.
+ * @param {string[]} params.instances - Instance codes.
+ * @param {string[]} [params.sagas=[]] - Saga codes.
+ * @param {string} [params.releaseId] - The release database to import into; the workspace without one.
+ * @returns {Promise<void>}
+ * @memberof CyberiaContentRelease
+ */
+export async function importArtifactContent({ run, instances, sagas = [], releaseId = '' }) {
+  const target = releaseId ? ` --release ${assertReleaseId(releaseId)}` : '';
+  await run(`content import${target}`);
+  for (const code of sagas) await run(`content import --saga ${code} --rebind${target}`);
+  for (const code of instances) await run(`instance ${code} --import${target}`);
+}
+
+/**
  * One ledger row as `content-release status` prints it. It starts `<status> <release-id>`, which
  * the deploy scripts parse.
  * @param {Object} entry - A CyberiaContentRelease document.
@@ -64,7 +80,9 @@ export const releaseDatabaseName = (base, releaseId) => `${base}-${assertRelease
  * @memberof CyberiaContentRelease
  */
 export const contentReleaseRowFactory = (entry) =>
-  `${entry.status.padEnd(9)} ${entry.releaseId}  ${entry.database}  ${entry.instances.join(',')}  commit=${entry.source?.commit || '-'}`;
+  `${entry.status.padEnd(9)} ${entry.releaseId}  ${entry.database}  ${entry.instances.join(',')}  ` +
+  `source=${entry.source?.channel || entry.source?.from || '-'}@${entry.source?.sourceRevision?.slice(0, 12) || '-'}  ` +
+  `engine=${entry.provenance?.engineCommit || '-'}`;
 
 /**
  * The content partition a host's db configuration declares.
@@ -126,6 +144,8 @@ const identityDefect = (doc) => {
 /**
  * Validates a release's content. Every check runs; the report says which failed and why.
  *
+ * - `artifact`: the release database holds, complete and unaltered, the content artifact the
+ *   release records. Skipped, and said so, for the workspace, which holds none.
  * - `catalog`: every bound label names a published definition in the release, under the Cyberia
  *   runtime's profile, whose identity is its content's.
  * - `canonical`: every bound cid resolves at the Object Layer authority, with the same digest.
@@ -139,15 +159,27 @@ const identityDefect = (doc) => {
  *
  * @param {Object} models - Content models of the release: `CyberiaItemCatalog`, `ObjectLayer`,
  *   `AtlasSpriteSheet`, `File`, `CyberiaQuest`, `CyberiaAction`, `CyberiaMap`,
- *   `CyberiaEntityTypeDefault`, `CyberiaInstance`, `CyberiaInstanceConf`.
+ *   `CyberiaEntityTypeDefault`, `CyberiaSkill`, `CyberiaInstance`, `CyberiaInstanceConf`.
  * @param {Object} [params]
  * @param {import('../../api/types.js').RouterOptions} [params.options] - Router options of the host, for the canonical resolver.
  * @param {(cid:string)=>Promise<Object|null>} [params.resolveCanonical] - Canonical lookup; defaults to the domain resolver.
+ * @param {{db:import('mongodb').Db, digest:string}} [params.artifact] - The release database and the
+ *   content digest the release records; absent for the workspace.
  * @returns {Promise<{ok:boolean,checkedAt:Date,checks:Array<{name:string,ok:boolean,count:number,findings:string[]}>,manifest:Object,dependencies:string[]}>}
  * @memberof CyberiaContentRelease
  */
-export async function validateContentRelease(models, { options, resolveCanonical } = {}) {
+export async function validateContentRelease(models, { options, resolveCanonical, artifact } = {}) {
   const checks = [];
+
+  const artifactCheck = check('artifact');
+  if (!artifact) artifactCheck.findings.push('skipped: the workspace holds no content artifact');
+  else
+    try {
+      artifactCheck.count = (await loadContentArtifact(artifact.db, artifact.digest)).files.length;
+    } catch (error) {
+      fail(artifactCheck, error.message);
+    }
+  checks.push(artifactCheck);
 
   const catalog = await models.CyberiaItemCatalog.find({}, { itemId: 1, objectLayerCid: 1 }).lean();
   const boundCids = [...new Set(catalog.map((entry) => entry.objectLayerCid))];
@@ -216,21 +248,24 @@ export async function validateContentRelease(models, { options, resolveCanonical
   }
   checks.push(pinnedCheck);
 
+  // Every label the content names, by the rule the boot payload and the export use, with the
+  // first document that names it.
   const labelsCheck = check('labels');
   const bound = new Set(catalog.map((entry) => entry.itemId));
   const used = new Map();
-  for (const map of await models.CyberiaMap.find({}, { code: 1, 'entities.objectLayerItemIds': 1 }).lean()) {
-    for (const entity of map.entities ?? []) {
-      for (const itemId of entity.objectLayerItemIds ?? []) used.set(itemId, `map ${map.code}`);
-    }
-  }
-  for (const entityDefault of await models.CyberiaEntityTypeDefault.find(
-    {},
-    { entityType: 1, liveItemIds: 1 },
-  ).lean()) {
-    for (const itemId of entityDefault.liveItemIds ?? [])
-      used.set(itemId, `entity default ${entityDefault.entityType}`);
-  }
+  const name = (where, itemIds) => {
+    for (const itemId of itemIds) if (isMaterialItemId(itemId) && !used.has(itemId)) used.set(itemId, where);
+  };
+  for (const map of await models.CyberiaMap.find({}, { code: 1, 'entities.objectLayerItemIds': 1 }).lean())
+    name(`map ${map.code}`, collectInstanceItemIds({ maps: [map] }));
+  for (const entityDefault of await models.CyberiaEntityTypeDefault.find({}).lean())
+    name(`entity default ${entityDefault.entityType}`, collectInstanceItemIds({ entityDefaults: [entityDefault] }));
+  for (const action of await models.CyberiaAction.find({}).lean())
+    name(`action ${action.code}`, collectInstanceItemIds({ actions: [action] }));
+  for (const quest of await models.CyberiaQuest.find({}).lean())
+    name(`quest ${quest.code}`, collectInstanceItemIds({ quests: [quest] }));
+  for (const skill of await models.CyberiaSkill.find({}).lean())
+    name(`skill ${skill.triggerItemId}`, [skill.triggerItemId, ...collectSummonedItemIds([skill])]);
   labelsCheck.count = used.size;
   for (const [itemId, where] of used)
     if (!bound.has(itemId)) fail(labelsCheck, `${where}: label "${itemId}" is not bound`);
@@ -345,6 +380,119 @@ export async function publishContentRelease(models, { options, publish } = {}) {
   return entry;
 }
 
+const leaseLive = (release, leaseMs) =>
+  !!release?.lease?.heartbeatAt && Date.now() - new Date(release.lease.heartbeatAt).getTime() < leaseMs;
+
+const sameSource = (a = {}, b = {}) =>
+  (a.from ?? 'backups') === (b.from ?? 'backups') && (a.sourceRevision ?? '') === (b.sourceRevision ?? '');
+
+/**
+ * Ends a building or candidate release as `failed`, naming the stage, and frees the execution.
+ * The active release keeps serving.
+ * @param {import('mongoose').Model} CyberiaContentRelease
+ * @param {string} releaseId
+ * @param {string} stage
+ * @param {Error|string} error
+ * @returns {Promise<Object|null>} The release, or null when it was not executing.
+ * @memberof CyberiaContentRelease
+ */
+export async function failContentRelease(CyberiaContentRelease, releaseId, stage, error) {
+  return await CyberiaContentRelease.findOneAndUpdate(
+    { releaseId, status: { $in: ['building', 'candidate'] } },
+    {
+      $set: {
+        status: 'failed',
+        failure: { stage, message: String(error?.message ?? error).slice(0, 2000), at: new Date() },
+      },
+      $unset: { lease: 1 },
+    },
+    { returnDocument: 'after' },
+  ).lean();
+}
+
+/**
+ * Opens a release, or builds a failed one again, and takes the one execution lease.
+ *
+ * - A new id starts `building`.
+ * - A `validated`, `active` or `retired` release is kept as it is: `skipped` is true.
+ * - A `failed` release, or one whose lease expired, is built again from the same source.
+ * - An id built from another source is refused: another source needs another release.
+ *
+ * Every build that runs starts from an empty candidate database: `reset` removes it first, so no
+ * document of an earlier attempt survives into the release.
+ * @param {import('mongoose').Model} CyberiaContentRelease
+ * @param {Object} params
+ * @param {string} params.releaseId
+ * @param {string} params.holder - Who executes: a Job pod or a host.
+ * @param {Object} params.fields - `database`, `instances`, `source` and the rest the release records.
+ * @param {(database:string)=>Promise<void>} [params.reset] - Removes the candidate database.
+ * @param {number} [params.leaseMs]
+ * @returns {Promise<{release:Object, skipped:boolean}>}
+ * @throws {Error} On another source, or while another release executes.
+ * @memberof CyberiaContentRelease
+ */
+export async function beginContentRelease(
+  CyberiaContentRelease,
+  { releaseId, holder, fields, reset, leaseMs = RELEASE_LEASE_MS },
+) {
+  const id = assertReleaseId(releaseId);
+  const existing = await CyberiaContentRelease.findOne({ releaseId: id }).lean();
+  if (existing) {
+    if (!sameSource(existing.source, fields.source))
+      throw new Error(`Release ${id} was built from another source; give this one a new release id`);
+    if (['validated', 'active', 'retired'].includes(existing.status)) return { release: existing, skipped: true };
+    if (leaseLive(existing, leaseMs)) throw new Error(`Release ${id} is executing (${existing.lease.holder})`);
+  }
+  if (reset) await reset(fields.database);
+  const acquire = () =>
+    CyberiaContentRelease.findOneAndUpdate(
+      { releaseId: id },
+      {
+        $set: {
+          ...fields,
+          status: 'building',
+          failure: { stage: '', message: '', at: null },
+          lease: { executing: true, holder, heartbeatAt: new Date() },
+        },
+        $setOnInsert: { releaseId: id },
+      },
+      { upsert: true, returnDocument: 'after' },
+    ).lean();
+  try {
+    return { release: await acquire(), skipped: false };
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    const executing = await CyberiaContentRelease.findOne({ 'lease.executing': true }).lean();
+    if (!executing || leaseLive(executing, leaseMs))
+      throw new Error(`Release ${executing?.releaseId ?? '?'} is executing; one release builds at a time`);
+    await failContentRelease(CyberiaContentRelease, executing.releaseId, 'lease', 'The execution lease expired');
+    return { release: await acquire(), skipped: false };
+  }
+}
+
+/**
+ * Moves an executing release forward: `building` to `candidate`, `candidate` to `validated`.
+ * `validated` frees the execution.
+ * @param {import('mongoose').Model} CyberiaContentRelease
+ * @param {string} releaseId
+ * @param {'candidate'|'validated'} status
+ * @param {Object} [fields]
+ * @returns {Promise<Object>} The release.
+ * @throws {Error} When the release is not in the status before `status`.
+ * @memberof CyberiaContentRelease
+ */
+export async function advanceContentRelease(CyberiaContentRelease, releaseId, status, fields = {}) {
+  const from = { candidate: 'building', validated: 'candidate' }[status];
+  if (!from) throw new Error(`A release does not advance to ${status}`);
+  const release = await CyberiaContentRelease.findOneAndUpdate(
+    { releaseId, status: from },
+    { $set: { ...fields, status }, ...(status === 'validated' ? { $unset: { lease: 1 } } : {}) },
+    { returnDocument: 'after' },
+  ).lean();
+  if (!release) throw new Error(`Release ${releaseId} is not ${from}; it cannot become ${status}`);
+  return release;
+}
+
 /**
  * Runs `fn` in one transaction on the model's connection: every write lands, or none does.
  * @param {import('mongoose').Model} Model
@@ -365,15 +513,23 @@ const inTransaction = async (Model, fn) => {
 };
 
 /**
- * Makes a validated release the active one, in one transaction: the release before it is
- * retired and stays the rollback target, the new one turns active, or nothing changes. The
- * ledger's unique index allows one active release, so a concurrent promotion fails whole.
+ * Makes a validated release the content a host serves, in one transaction: the active release
+ * before it is retired and stays the rollback target, or nothing changes. A production runtime
+ * takes a new release only when it is built from an exact source revision; a retired release
+ * served this ledger before, so it comes back as it was.
  * @param {import('mongoose').Model} CyberiaContentRelease
  * @param {string} releaseId
+ * @param {Object} [params]
+ * @param {boolean} [params.production] - Whether this runtime serves production.
  * @returns {Promise<{active:Object,retired:Object|null}>}
+ * @throws {Error} When the release does not exist, is not validated, or has no exact source on production.
  * @memberof CyberiaContentRelease
  */
-export async function promoteContentRelease(CyberiaContentRelease, releaseId) {
+export async function promoteContentRelease(
+  CyberiaContentRelease,
+  releaseId,
+  { production = process.env.NODE_ENV === 'production' } = {},
+) {
   const id = assertReleaseId(releaseId);
   const result = await inTransaction(CyberiaContentRelease, async (session) => {
     const release = await CyberiaContentRelease.findOne({ releaseId: id }).session(session).lean();
@@ -381,8 +537,8 @@ export async function promoteContentRelease(CyberiaContentRelease, releaseId) {
     if (release.status === 'active') return { active: release, retired: null };
     if (release.status !== 'validated' && release.status !== 'retired')
       throw new Error(`Release "${id}" is ${release.status}; only a validated release can be promoted`);
-    if (!release.validation?.ok) throw new Error(`Release "${id}" has no passing validation`);
-
+    if (production && release.status === 'validated' && release.source?.from !== 'source')
+      throw new Error(`Release "${id}" has no exact source revision; a production runtime serves only one that has`);
     const now = new Date();
     const retired = await CyberiaContentRelease.findOneAndUpdate(
       { status: 'active' },
@@ -402,8 +558,23 @@ export async function promoteContentRelease(CyberiaContentRelease, releaseId) {
 }
 
 /**
+ * Re-promotes the release that was active before the current one, under the same policy.
+ * @param {import('mongoose').Model} CyberiaContentRelease
+ * @param {Object} [params] - As {@link promoteContentRelease}.
+ * @param {string} [params.from] - Roll back only while this release is the active one.
+ * @returns {Promise<{active:Object,retired:Object|null}|null>} Null when `from` is not the active release.
+ * @memberof CyberiaContentRelease
+ */
+export async function rollbackContentRelease(CyberiaContentRelease, { from, ...params } = {}) {
+  if (from && (await CyberiaContentRelease.active())?.releaseId !== from) return null;
+  const previous = await CyberiaContentRelease.previousActive();
+  if (!previous) throw new Error('No previous release to roll back to');
+  return await promoteContentRelease(CyberiaContentRelease, previous.releaseId, params);
+}
+
+/**
  * Retires the active release without a successor: the runtime serves the workspace again, and
- * the release stays the rollback target. The explicit exit of a local release rehearsal.
+ * the release stays the rollback target.
  * @param {import('mongoose').Model} CyberiaContentRelease
  * @returns {Promise<Object>} The retired release.
  * @throws {Error} When no release is active.
@@ -416,20 +587,7 @@ export async function retireContentRelease(CyberiaContentRelease) {
     { returnDocument: 'after' },
   ).lean();
   if (!retired) throw new Error('No release is active; the runtime already serves the workspace');
-  logger.info(`Content release retired: ${retired.releaseId}; the workspace serves until a promotion`);
   return retired;
-}
-
-/**
- * Re-promotes the release that was active before the current one, in one transaction.
- * @param {import('mongoose').Model} CyberiaContentRelease
- * @returns {Promise<{active:Object,retired:Object|null}>}
- * @memberof CyberiaContentRelease
- */
-export async function rollbackContentRelease(CyberiaContentRelease) {
-  const previous = await CyberiaContentRelease.previousActive();
-  if (!previous) throw new Error('No previous release to roll back to');
-  return await promoteContentRelease(CyberiaContentRelease, previous.releaseId);
 }
 
 /**
@@ -462,14 +620,15 @@ export async function materializeWorkspace({ connection, workspace, database, ap
 }
 
 /**
- * Drops the databases of retired releases beyond the newest `keep`, never the active release
- * and never the rollback target, then removes the atlas renders no kept release points at.
+ * Drops the releases beyond the newest `keep`: their database, then their ledger entry, then the
+ * atlas renders no kept release points at. Never a building, validated or active release, the
+ * rollback target, or a release whose execution lease is live. The host prunes the release store.
  * @param {Object} params
  * @param {import('mongoose').Model} params.CyberiaContentRelease
  * @param {import('mongoose').Connection} params.connection - A connection on the content server.
  * @param {{host:string,path:string}} [params.context] - Host context; when given, orphaned atlas renders are removed.
  * @param {string} [params.baseDatabase] - The partition's base database, kept like a release.
- * @param {number} [params.keep=2] - Retired releases to keep, newest first.
+ * @param {number} [params.keep=2] - Releases to keep beyond the protected ones, newest first.
  * @returns {Promise<string[]>} The release ids removed.
  * @memberof CyberiaContentRelease
  */
@@ -480,16 +639,17 @@ export async function pruneContentReleases({
   baseDatabase = '',
   keep = 2,
 }) {
-  const retired = await CyberiaContentRelease.find({ status: { $in: ['retired', 'invalid', 'candidate'] } })
-    .sort({ retiredAt: -1, createdAt: -1 })
-    .lean();
   const rollbackTarget = await CyberiaContentRelease.previousActive();
-  const removable = retired
-    .filter((release) => release.releaseId !== rollbackTarget?.releaseId)
+  const removable = (
+    await CyberiaContentRelease.find({ status: { $nin: ['building', 'validated', 'active'] } })
+      .sort({ retiredAt: -1, updatedAt: -1 })
+      .lean()
+  )
+    .filter((release) => release.releaseId !== rollbackTarget?.releaseId && !leaseLive(release, RELEASE_LEASE_MS))
     .slice(Math.max(0, keep));
   const removed = [];
   for (const release of removable) {
-    await connection.useDb(release.database, { useCache: true }).dropDatabase();
+    if (release.database) await connection.useDb(release.database, { useCache: true }).dropDatabase();
     await CyberiaContentRelease.deleteOne({ releaseId: release.releaseId });
     removed.push(release.releaseId);
   }
@@ -505,34 +665,65 @@ export async function pruneContentReleases({
 }
 
 /**
- * Makes the content partition of a running host serve its active release. With no promotion
- * yet, it serves the workspace. Authoring keeps reading the workspace either way.
+ * The content database the runtime of a host serves: the active release's, else the workspace.
+ * @param {{host:string,path:string}} context - A context whose models hold the release ledger.
+ * @param {string} workspace - The workspace database name.
+ * @returns {Promise<{releaseId:string,database:string}>}
+ * @memberof CyberiaContentRelease
+ */
+export async function servedContent(context, workspace) {
+  const active = await DataBaseProviderService.getProvider(context, 'mongoose').models.CyberiaContentRelease.active();
+  return {
+    releaseId: active?.releaseId ?? '',
+    database: active?.database ?? workspace,
+    digest: active?.content?.digest ?? '',
+  };
+}
+
+/**
+ * Makes the content partition of a running host serve its active release to every reader, and the
+ * process read the content artifact that release holds. With no promotion yet, it serves the
+ * workspace and the artifact on disk. An artifact that failed to load is loaded again on each call.
  * @param {{host:string,path:string}} context
- * @returns {Promise<{releaseId:string,database:string,changed:boolean}|null>} Null when the host has no content partition.
+ * @returns {Promise<{releaseId:string,database:string,changed:boolean,artifact:{releaseId:string,error:string}}|null>}
+ *   `changed` when the served database or the state of its artifact changed. Null when the host has
+ *   no content partition.
  * @memberof CyberiaContentRelease
  */
 export async function activateContentRelease(context) {
   const bucket = DataBaseProviderService.getProvider(context, 'mongoose');
   if (!bucket.partitions?.[CONTENT_PARTITION] || !bucket.models.CyberiaContentRelease) return null;
-  const active = await bucket.models.CyberiaContentRelease.active();
-  const target = active?.database ?? bucket.partitions[CONTENT_PARTITION].name;
-  const { previous, database } = await DataBaseProviderService.serveDatabase(context, CONTENT_PARTITION, target);
-  return { releaseId: active?.releaseId ?? '', database, changed: previous !== database };
+  const served = await servedContent(context, bucket.partitions[CONTENT_PARTITION].name);
+  const before = servedContentArtifact();
+  const artifact = await serveContentArtifact({
+    releaseId: served.releaseId,
+    digest: served.digest,
+    db: served.releaseId ? bucket.connection.getClient().db(served.database) : undefined,
+  });
+  const { previous, database } = await DataBaseProviderService.serveDatabase(
+    context,
+    CONTENT_PARTITION,
+    served.database,
+  );
+  const changed = previous !== database || before.releaseId !== artifact.releaseId || before.error !== artifact.error;
+  return { releaseId: served.releaseId, database, changed, artifact };
 }
 
 /**
- * Asks every registered Cyberia server to rebuild its world from the content now served.
+ * Asks every registered Cyberia server to rebuild from the content now served: its whole world,
+ * or only its object layers with `incremental`.
  * @param {{host:string,path:string}} context
+ * @param {{mode?:'full'|'incremental'}} [params]
  * @returns {Promise<number>} Servers reached.
  * @memberof CyberiaContentRelease
  */
-export async function reloadContentServers(context) {
+export async function reloadContentServers(context, { mode = 'full' } = {}) {
   const Registry = DataBaseProviderService.getProvider(context, 'mongoose').models.CyberiaServerRegistry;
   if (!Registry) return 0;
   let reached = 0;
   for (const server of await Registry.find({}, { serverUrl: 1, instanceCode: 1 }).lean()) {
     try {
-      await triggerHotReload({ serverUrl: server.serverUrl, instanceCode: server.instanceCode, mode: 'full' });
+      await triggerHotReload({ serverUrl: server.serverUrl, instanceCode: server.instanceCode, mode });
       reached++;
     } catch (error) {
       logger.warn(`Hot reload of ${server.serverUrl} failed: ${error.message}`);
@@ -562,6 +753,7 @@ export function watchContentRelease(context, { intervalMs = RELEASE_WATCH_MS } =
       const result = await activateContentRelease(context);
       if (result?.changed) {
         logger.info(`Content release ${result.releaseId} is now served from ${result.database}`);
+        if (result.artifact.error) logger.warn(result.artifact.error);
         await reloadContentServers(context);
       }
     } catch (error) {

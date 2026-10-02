@@ -27,8 +27,15 @@ import { Badge } from '../core/Badge.js';
 import { Docs } from '../core/Docs.js';
 import { deployPackageReleaseUrl } from '../core/Repository.js';
 import { Recover } from '../core/Recover.js';
-import { ObjectLayerEngineViewer } from '../object-layer/ObjectLayerEngineViewer.js';
+import { ObjectLayerEngineViewer } from '../objectlayer-studio/ObjectLayerEngineViewer.js';
 import { MainBodyDocument } from '../core/MainBodyDocument.js';
+
+/** A viewer title of this host: the Object Layer icon and the text. */
+const viewerTitle = (text) =>
+  renderViewTitle({
+    icon: html`<img class="inl objectlayer-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/object-layer.png" />`,
+    text: html`<span class="inl objectlayer-text-title-modal">${text}</span>`,
+  });
 
 class AppShellObjectlayer {
   static Data = {};
@@ -36,6 +43,13 @@ class AppShellObjectlayer {
     const id = getId(AppShellObjectlayer.Data, 'menu-');
     AppShellObjectlayer.Data[id] = {};
     const RouterInstance = RouterObjectlayer.instance();
+    ObjectLayerEngineViewer.configure({
+      appStore: AppStoreObjectlayer,
+      RouterInstance,
+      readOnly: true,
+      lifecycle: true,
+      renderTitle: viewerTitle,
+    });
 
     const { barConfig } = await Themes[Css.currentTheme]();
     const barMode = 'top-bottom-bar';
@@ -180,7 +194,7 @@ class AppShellObjectlayer {
       mode: 'slide-menu',
       barMode,
       RouterInstance,
-      htmlMainBody: async () => await MainBodyDocument.instance({ domain: 'object-layer' }),
+      htmlMainBody: async () => await MainBodyDocument.instance({ path: 'object-layer/explanation/white-paper' }),
       searchCustomImgClass: 'objectlayer-menu-icon',
     });
 
@@ -355,15 +369,8 @@ class AppShellObjectlayer {
         id: 'modal-object-layer-engine-viewer',
         route: 'object-layer-engine-viewer',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img
-            class="inl objectlayer-menu-icon-modal"
-            src="${getProxyPath()}assets/ui-icons/object-layer.png"
-          />`,
-          text: `<span class='inl objectlayer-text-title-modal'>${Translate.instance('object-layer-engine-viewer')}</span>`,
-        }),
-        html: async () =>
-          ObjectLayerEngineViewer.instance({ appStore: AppStoreObjectlayer, readOnly: true, lifecycle: true }),
+        title: viewerTitle(Translate.instance('object-layer-engine-viewer')),
+        html: async () => ObjectLayerEngineViewer.instance(),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -392,7 +399,6 @@ class AppShellObjectlayer {
           await Docs.instance({
             idModal: 'modal-docs',
             ...Docs.uiIcons({ iconClass: 'objectlayer-menu-icon' }),
-            domain: 'object-layer',
             disabled: ['demo'],
             lastReleaseUrl: deployPackageReleaseUrl,
           }),

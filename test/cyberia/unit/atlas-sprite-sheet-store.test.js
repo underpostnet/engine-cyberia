@@ -19,18 +19,20 @@ vi.mock('../../../src/api/ipfs/ipfs.client.js', () => ({
 }));
 
 const { AtlasSpriteSheetStore } = await import('../../../src/api/atlas-sprite-sheet/atlas-sprite-sheet.store.js');
+const { sourceFromIndexedFrames } = await import('../../../src/client/components/objectlayer-studio/RenderSource.js');
 const { CacheService } = await import('../../../src/server/storage/cache.js');
 const { objectLayerCache } = await import('../../../src/api/object-layer/object-layer.publication.js');
 
 const colors = [
   [255, 0, 0, 255],
   [0, 255, 0, 255],
+  [0, 0, 0, 0],
 ];
 const frame = [
   [0, 1],
-  [null, 0],
+  [2, 0],
 ];
-const renderFrames = (frames) => ({ colors, frame_duration: 250, frames });
+const renderFrames = (frames) => sourceFromIndexedFrames({ colors, frameDurationMs: 250, frames });
 const twoFrames = renderFrames({ down_idle: [frame], up_idle: [frame] });
 
 /**
@@ -325,6 +327,16 @@ describe('purging an atlas', () => {
 
     expect((await AtlasSpriteSheetStore.purge({ objectLayerCids: ['cid-hatchet'] })).files).toBe(0);
     expect(models.File.docs.map((doc) => doc._id)).toContain('hatchet-upscale-1');
+  });
+
+  it('leaves the renders of a content release to the release prune: other releases share them', async () => {
+    expect(AtlasSpriteSheetStore.sharedStore({})).toBe(false);
+    models.AtlasSpriteSheet.db = { name: 'content-v1-abc' };
+    models.File.db = { name: 'cyberia' };
+    expect(AtlasSpriteSheetStore.sharedStore({})).toBe(true);
+
+    expect(await AtlasSpriteSheetStore.purge({ objectLayerCids: ['cid-hatchet'] })).toEqual({ atlases: 1, files: 0 });
+    expect(models.File.docs).toHaveLength(6);
   });
 });
 

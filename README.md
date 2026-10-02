@@ -223,11 +223,10 @@ Common examples:
 
 ```bash
 # Object layer content
-cyberia ol hatchet,sword --import                 # import specific items
-cyberia ol --import-types skin,floors             # batch import by type (or: all)
-cyberia ol floor-desert --generate --seed fx-42   # procedural generation
+cyberia ol hatchet,sword --client-public --import # import specific items from the asset tree
+cyberia ol --client-public --import-types skin    # batch import by type (or: all)
 cyberia ol hatchet --to-atlas-sprite-sheet        # build atlas sprite sheet
-cyberia ol --drop --client-public                 # drop data + static asset folders
+cyberia ol --drop --client-public                 # drop data and asset folders
 
 # Instance data
 cyberia instance FOREST --export ./backup
@@ -242,11 +241,19 @@ cyberia chain deploy --chain-id 777771
 cyberia chain status
 cyberia chain register / mint / transfer / burn / pause / unpause
 
+# Content artifact (the cyberia-content checkout or CYBERIA_CONTENT_ROOT)
+cyberia content status
+cyberia content audit --dev
+cyberia content import --dev
+cyberia content import --saga <saga-code> --dev
+
+# Product repositories: build, pin in the deployment lock, publish
+cyberia release build --commit
+cyberia release lock --commit
+cyberia release publish
+
 # Named workflows
-cyberia run-workflow import-default-items
-cyberia run-workflow seed-skills
-cyberia run-workflow seed-dialogues
-cyberia run-workflow build-manifest
+cyberia run-workflow import-content
 cyberia run-workflow build-server-dashboard
 ```
 

@@ -1,22 +1,7 @@
 import { AgGrid } from '../core/AgGrid.js';
-import { borderChar, subThemeManager } from '../core/Css.js';
+import { borderChar, renderRetroFontFaces, subThemeManager } from '../core/Css.js';
 import { LoadingAnimation } from '../core/LoadingAnimation.js';
-import { markdownStyle } from '../core/Markdown.js';
 import { Modal } from '../core/Modal.js';
-import { getProxyPath } from '../core/Router.js';
-
-/** The retro face every Markdown body of this client renders in. */
-const MARKDOWN_RETRO_TOKENS = {
-  'font-family': 'var(--up-font-retro-sensitive)',
-  'heading-font-family': 'var(--up-font-retro-sensitive)',
-  'code-font-family': 'var(--up-font-retro-sensitive)',
-  'font-size': '24px',
-  'code-font-size': '1em',
-  h1: '36px',
-  h2: '30px',
-  h3: '26px',
-  h4: '24px',
-};
 
 const CssCommonUnderpost = async () => {
   LoadingAnimation.img.load({
@@ -38,7 +23,8 @@ const CssCommonUnderpost = async () => {
     },
   });
 
-  return html`<style>
+  return html`${renderRetroFontFaces()}
+    <style>
       /* Core variables: override in each theme */
       :root {
         --up-font-retro: 'retro-font';
@@ -47,22 +33,6 @@ const CssCommonUnderpost = async () => {
         --up-font-retro-cta: 'retro-font-cta';
       }
 
-      @font-face {
-        font-family: 'retro-font-title';
-        src: URL('${getProxyPath()}assets/fonts/EndlessBossBattleRegular-v7Ey.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font';
-        src: URL('${getProxyPath()}assets/fonts/Pixeboy-z8XGD.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font-sensitive';
-        src: URL('${getProxyPath()}assets/fonts/VT323-Regular.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font-cta';
-        src: URL('${getProxyPath()}assets/fonts/PressStart2P-Regular.ttf') format('truetype');
-      }
       .default-slide-menu-top-bar-fix-title-container {
         top: 10px;
       }
@@ -140,7 +110,6 @@ const CssCommonUnderpost = async () => {
         color: white !important;
       }
 
-      .modal,
       .badge {
         font-family: var(--up-font-retro);
       }
@@ -196,39 +165,15 @@ const CssCommonUnderpost = async () => {
       .underpost-panel-form-container {
         transition: padding-left 0.3s ease;
       }
+      .down-arrow-submenu {
+        left: 102px;
+      }
       @media (prefers-reduced-motion: reduce) {
         .underpost-panel-form-container {
           transition: none;
         }
       }
     </style>
-
-    ${markdownStyle({
-      id: 'markdown-style-underpost-panel',
-      containers: ['.underpost-panel-cell', '.underpost-panel-cell .markdown-content', '.EasyMDEContainer'],
-      tokens: MARKDOWN_RETRO_TOKENS,
-    })}
-    ${markdownStyle({
-      id: 'markdown-style-underpost-preview',
-      containers: [
-        '.EasyMDEContainer .editor-preview',
-        '.EasyMDEContainer .editor-preview-full',
-        '.EasyMDEContainer .editor-preview-side',
-      ],
-      tokens: MARKDOWN_RETRO_TOKENS,
-    })}
-    ${markdownStyle({
-      id: 'markdown-style-underpost-content',
-      containers: ['.content-render', '.content-render .markdown-content'],
-      tokens: {
-        ...MARKDOWN_RETRO_TOKENS,
-        'font-size': '22px',
-        h1: '18px',
-        h2: '16px',
-        h3: '14px',
-        h4: '14px',
-      },
-    })}
 
     <div class="ag-grid-style"></div>
     ${borderChar(1, `#010101`, ['.default-slide-menu-top-bar-fix-title-container-text'])} `;
@@ -239,16 +184,7 @@ class CssUnderpostDark {
   static dark = true;
   static barButtonsIconTheme = 'img';
   static render = async () => {
-    return (
-      (await CssCommonUnderpost()) +
-      html`
-        <style>
-          .action-bar-box {
-            color: white;
-          }
-        </style>
-      `
-    );
+    return (await CssCommonUnderpost()) + html` <style></style> `;
   };
 }
 

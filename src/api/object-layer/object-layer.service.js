@@ -13,13 +13,14 @@
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../server/ops/logger.js';
 import { ObjectLayerRenderFramesDto } from '../object-layer-render-frames/object-layer-render-frames.model.js';
+import { toWire } from '../../client/components/objectlayer-studio/RenderSource.js';
 import { AtlasSpriteSheetStore } from '../atlas-sprite-sheet/atlas-sprite-sheet.store.js';
 import { ObjectLayerDto, isObjectLayerCid } from './object-layer.model.js';
 import { objectLayerIdentity } from './object-layer.identity.js';
 import { isObjectLayerAuthority, objectLayerCache, publishDefinition } from './object-layer.publication.js';
 import { purgeObjectLayers } from './object-layer.purge.js';
-import { resolveLedgerBindings } from '../../server/domain/object-layer-resolver.js';
-import { isProfileRef } from '../../client/components/object-layer/ObjectLayerProtocol.js';
+import { resolveRegisteredCids } from '../../server/domain/object-layer-resolver.js';
+import { isProfileRef } from '../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
 import { DataQuery } from '../../server/storage/data-query.js';
 import { CacheService } from '../../server/storage/cache.js';
 import { assertOwnerOrAdmin } from '../../server/security/auth.js';
@@ -106,7 +107,7 @@ class ObjectLayerService {
    * GET handler for retrieving object layers.
    *
    * Supports multiple sub-routes:
-   * - `/render/:id` — The editor source of one definition: its render frames, colors and frame duration.
+   * - `/render/:id` — The editor source of one definition, in wire form: indexed frames, palette and frame duration.
    * - `/metadata/:id` — One definition with its stats and timestamps, without its editor source.
    * - `/:id` — One definition by cid, document id or (through the host's extension) label; 404 when none.
    * - `/` — Get a paginated list of object layers.
@@ -151,17 +152,22 @@ class ObjectLayerService {
     if (req.path.startsWith('/render/')) {
       const objectLayer = await findByKey(req.params.id, { select: { _id: 1, cid: 1 } });
       if (!objectLayer) throw new Error('ObjectLayer not found');
-      const renderFrames = await DataBaseProviderService.getModel('ObjectLayerRenderFrames', options)
-        .findOne({ objectLayerCid: objectLayer.cid })
+      const ObjectLayerRenderFrames = DataBaseProviderService.getModel('ObjectLayerRenderFrames', options);
+      const stored = await ObjectLayerRenderFrames.findOne({ objectLayerCid: objectLayer.cid })
         .select(ObjectLayerRenderFramesDto.select.getFull())
         .lean();
+      const renderFrames = stored && {
+        _id: stored._id,
+        revision: stored.revision,
+        ...toWire(ObjectLayerRenderFrames.sourceOf(stored)),
+      };
       return { _id: objectLayer._id, cid: objectLayer.cid, renderFrames };
     }
 
     // GET /metadata/:id - one definition, without its editor source
     if (req.path.startsWith('/metadata/')) {
       const objectLayer = await findByKey(req.params.id, { select: ObjectLayerDto.select.getMetadata() });
-      if (!objectLayer) throw new Error('ObjectLayer not found');
+      if (!objectLayer) throw Object.assign(new Error('ObjectLayer not found'), { status: 404 });
       return objectLayer;
     }
 
@@ -179,11 +185,13 @@ class ObjectLayerService {
       return objectLayer;
     }
 
+    // The host's extension may move a filter on a column it adds onto the stored fields.
+    const params = (await options.extension?.listParams?.(req.query, options)) ?? req.query;
     return await CacheService.getOrLoad(objectLayerCache(options), {
       identifier: 'list',
-      variant: CacheService.variant(req.query),
+      variant: CacheService.variant(params),
       load: async () => {
-        const { query, sort, skip, limit, page } = DataQuery.parse(req.query);
+        const { query, sort, skip, limit, page } = DataQuery.parse(params);
         const [documents, total] = await Promise.all([
           ObjectLayer.find(query).sort(sort).limit(limit).skip(skip).select(ObjectLayerDto.select.get()),
           ObjectLayer.countDocuments(query),
@@ -253,9 +261,8 @@ class ObjectLayerService {
     assertOwnerOrAdmin(req.auth.user, objectLayer.createdBy);
     if (objectLayer.origin === 'canonical')
       throw new Error(`ObjectLayer ${objectLayer.cid} is published and immutable; archive it instead`);
-    // A registered definition is a token type's content: it stays. The ledger is asked where it
-    // lives; an unreachable ledger fails the delete.
-    if ((await resolveLedgerBindings(objectLayer.cid, options)).length > 0)
+    // A registered definition is a token type's content: it stays.
+    if ((await resolveRegisteredCids([objectLayer.cid], options)).size > 0)
       throw new Error(`ObjectLayer ${objectLayer.cid} is registered in ItemLedger and cannot be deleted`);
 
     await options.extension?.beforeDelete?.(objectLayer, options);

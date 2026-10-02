@@ -28,8 +28,8 @@ import { SettingsCyberiaPortal } from './SettingsCyberiaPortal.js';
 import { Chat } from '../core/Chat.js';
 import { Badge } from '../core/Badge.js';
 import { Recover } from '../core/Recover.js';
-import { ObjectLayerEngineModal } from '../object-layer/ObjectLayerEngineModal.js';
-import { ObjectLayerEngineViewer } from '../object-layer/ObjectLayerEngineViewer.js';
+import { ObjectLayerEngineModal } from '../objectlayer-studio/ObjectLayerEngineModal.js';
+import { ObjectLayerEngineViewer } from '../objectlayer-studio/ObjectLayerEngineViewer.js';
 import { ObjectLayerManagement } from '../../services/object-layer/object-layer.management.js';
 import { MainBodyCyberiaPortal } from './MainBodyCyberiaPortal.js';
 import { MapEngineCyberia } from '../cyberia/MapEngineCyberia.js';
@@ -38,6 +38,8 @@ import { InstanceSelectionView } from '../cyberia/InstanceSelectionView.js';
 import { ActionEngineCyberia } from '../cyberia/ActionEngineCyberia.js';
 import { EntityEngineCyberia } from '../cyberia/EntityEngineCyberia.js';
 import { CyberiaObjectLayerProfile } from '../cyberia/ObjectLayerProfileCyberia.js';
+import { CyberiaObjectLayerStudio } from '../cyberia/ObjectLayerStudioCyberia.js';
+import { StudioCyberia } from '../cyberia/StudioCyberia.js';
 
 class AppShellCyberiaPortal {
   static Data = {};
@@ -45,6 +47,14 @@ class AppShellCyberiaPortal {
     const id = getId(AppShellCyberiaPortal.Data, 'menu-');
     AppShellCyberiaPortal.Data[id] = {};
     const RouterInstance = RouterCyberiaPortal.instance();
+    ObjectLayerEngineViewer.configure({
+      appStore: AppStoreCyberiaPortal,
+      RouterInstance,
+      profile: CyberiaObjectLayerProfile,
+      studio: CyberiaObjectLayerStudio,
+      columns: CyberiaObjectLayerStudio.columns,
+      renderTitle: (text) => StudioCyberia.renderTitle('object-layer-engine-viewer', text),
+    });
 
     const { barConfig } = await Themes[Css.currentTheme]();
     const barMode = 'top-bottom-bar';
@@ -186,18 +196,6 @@ class AppShellCyberiaPortal {
           })}
           <div class="abs menu-btn-container-children-docs"></div>
           ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-admin hide',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<i class="fa-solid fa-user-tie"></i>`,
-              text: html`<span class="menu-label-text">${Translate.instance('admin')}</span>`,
-            }),
-            attrs: `data-id="admin"`,
-            tabHref: `/admin`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('admin')),
-          })}
-          ${await BtnIcon.instance({
             class: 'in wfa main-btn-menu main-btn-recover hide',
             useMenuBtn: true,
             label: renderMenuLabel({
@@ -209,90 +207,7 @@ class AppShellCyberiaPortal {
             handleContainerClass: 'handle-btn-container',
             tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('recover')),
           })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-object-layer-engine',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('object-layer-engine')}</span>`,
-            }),
-            attrs: `data-id="object-layer-engine"`,
-            tabHref: `${getProxyPath()}object-layer-engine`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('object-layer-engine')),
-          })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-object-layer-engine-management hide',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('object-layer-engine-management')}</span>`,
-            }),
-            attrs: `data-id="object-layer-engine-management"`,
-            tabHref: `${getProxyPath()}object-layer-engine-management`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('object-layer-engine-management')),
-          })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-object-layer-engine-viewer',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('object-layer-engine-viewer')}</span>`,
-            }),
-            attrs: `data-id="object-layer-engine-viewer"`,
-            tabHref: `${getProxyPath()}object-layer-engine-viewer`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('object-layer-engine-viewer')),
-          })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-cyberia-map-engine',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('cyberia-map-engine')}</span>`,
-            }),
-            attrs: `data-id="cyberia-map-engine"`,
-            tabHref: `${getProxyPath()}cyberia-map-engine`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('cyberia-map-engine')),
-          })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-cyberia-instance-engine',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('cyberia-instance-engine')}</span>`,
-            }),
-            attrs: `data-id="cyberia-instance-engine"`,
-            tabHref: `${getProxyPath()}cyberia-instance-engine`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('cyberia-instance-engine')),
-          })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-cyberia-action-engine',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('cyberia-action-engine')}</span>`,
-            }),
-            attrs: `data-id="cyberia-action-engine"`,
-            tabHref: `${getProxyPath()}cyberia-action-engine`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('cyberia-action-engine')),
-          })}
-          ${await BtnIcon.instance({
-            class: 'in wfa main-btn-menu main-btn-cyberia-entity-engine',
-            useMenuBtn: true,
-            label: renderMenuLabel({
-              icon: html`<img class="inl cyberia-menu-icon" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-              text: html`<span class="menu-label-text">${Translate.instance('cyberia-entity-engine')}</span>`,
-            }),
-            attrs: `data-id="cyberia-entity-engine"`,
-            tabHref: `${getProxyPath()}cyberia-entity-engine`,
-            handleContainerClass: 'handle-btn-container',
-            tooltipHtml: await Badge.instance(buildBadgeToolTipMenuOption('cyberia-entity-engine')),
-          })}
+          ${await StudioCyberia.renderMenu()}
         </div>
       `,
       // htmlMainBody: async () => {
@@ -321,7 +236,7 @@ class AppShellCyberiaPortal {
       searchCustomImgClass: 'cyberia-menu-icon',
     });
 
-    const sortableSubMenus = sortableSubMenuEvents(['docs']);
+    const sortableSubMenus = sortableSubMenuEvents(['docs', 'cyberia-studio']);
     AppShellCyberiaPortal.Data[id].sortable = new Sortable(s(`.menu-btn-container`), {
       animation: 150,
       group: `menu-sortable`,
@@ -542,6 +457,24 @@ class AppShellCyberiaPortal {
       });
     });
 
+    EventsUI.onClick(`.main-btn-cyberia-studio`, async (e) => {
+      if (!isSubMenuOpen('cyberia-studio') || e.isTrusted) await subMenuRender('cyberia-studio');
+      const { barConfig } = await Themes[Css.currentTheme]();
+      await Modal.instance({
+        id: 'modal-cyberia-studio',
+        route: 'cyberia-studio',
+        barConfig,
+        title: StudioCyberia.renderTitle('cyberia-studio'),
+        html: async () => StudioCyberia.renderLanding(),
+        handleType: 'bar',
+        observer: true,
+        maximize: true,
+        mode: 'view',
+        slideMenu: 'modal-menu',
+        RouterInstance,
+      });
+    });
+
     EventsUI.onClick(`.main-btn-docs`, async (e) => {
       if (!isSubMenuOpen('docs') || e.isTrusted) {
         if (e.isTrusted) setQueryParams({ [SUBMENU_SELECTION_QUERY_KEY]: '' });
@@ -561,7 +494,6 @@ class AppShellCyberiaPortal {
           await Docs.instance({
             idModal: 'modal-docs',
             ...Docs.uiIcons({ iconClass: 'cyberia-menu-icon' }),
-            domain: 'cyberia',
             demoUrl: () => `https://client.cyberiaonline.com/`,
             lastReleaseUrl: deployPackageReleaseUrl,
           }),
@@ -628,15 +560,13 @@ class AppShellCyberiaPortal {
         id: 'modal-object-layer-engine',
         route: 'object-layer-engine',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal' > ${Translate.instance('object-layer-engine')}</span>`,
-        }),
+        title: StudioCyberia.renderTitle('object-layer-engine'),
         html: async () =>
           await ObjectLayerEngineModal.instance({
             idModal: 'modal-object-layer-engine',
             appStore: AppStoreCyberiaPortal,
             profile: CyberiaObjectLayerProfile,
+            studio: CyberiaObjectLayerStudio,
           }),
         handleType: 'bar',
         maximize: true,
@@ -652,13 +582,12 @@ class AppShellCyberiaPortal {
         id: 'modal-object-layer-engine-management',
         route: 'object-layer-engine-management',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal'>${Translate.instance('object-layer-engine-management')}</span>`,
-        }),
+        title: StudioCyberia.renderTitle('object-layer-engine-management'),
         html: async () =>
           ObjectLayerManagement.instance({
             appStore: AppStoreCyberiaPortal,
+            profile: CyberiaObjectLayerProfile,
+            columns: CyberiaObjectLayerStudio.columns(),
           }),
         handleType: 'bar',
         maximize: true,
@@ -675,15 +604,8 @@ class AppShellCyberiaPortal {
         id: 'modal-object-layer-engine-viewer',
         route: 'object-layer-engine-viewer',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal'>${Translate.instance('object-layer-engine-viewer')}</span>`,
-        }),
-        html: async () =>
-          ObjectLayerEngineViewer.instance({
-            appStore: AppStoreCyberiaPortal,
-            profile: CyberiaObjectLayerProfile,
-          }),
+        title: StudioCyberia.renderTitle('object-layer-engine-viewer'),
+        html: async () => ObjectLayerEngineViewer.instance(),
         handleType: 'bar',
         maximize: true,
         mode: 'view',
@@ -699,10 +621,7 @@ class AppShellCyberiaPortal {
         id: 'modal-cyberia-map-engine',
         route: 'cyberia-map-engine',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal'>${Translate.instance('cyberia-map-engine')}</span>`,
-        }),
+        title: StudioCyberia.renderTitle('cyberia-map-engine'),
         html: async () => await MapEngineCyberia.render({ appStore: AppStoreCyberiaPortal }),
         handleType: 'bar',
         maximize: true,
@@ -719,10 +638,7 @@ class AppShellCyberiaPortal {
         id: 'modal-cyberia-instance-engine',
         route: 'cyberia-instance-engine',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal'>${Translate.instance('cyberia-instance-engine')}</span>`,
-        }),
+        title: StudioCyberia.renderTitle('cyberia-instance-engine'),
         html: async () => await InstanceEngineCyberia.render({ appStore: AppStoreCyberiaPortal }),
         handleType: 'bar',
         maximize: true,
@@ -739,10 +655,7 @@ class AppShellCyberiaPortal {
         id: 'modal-cyberia-action-engine',
         route: 'cyberia-action-engine',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal'>${Translate.instance('cyberia-action-engine')}</span>`,
-        }),
+        title: StudioCyberia.renderTitle('cyberia-action-engine'),
         html: async () => await ActionEngineCyberia.render({ appStore: AppStoreCyberiaPortal }),
         handleType: 'bar',
         maximize: true,
@@ -759,10 +672,7 @@ class AppShellCyberiaPortal {
         id: 'modal-cyberia-entity-engine',
         route: 'cyberia-entity-engine',
         barConfig,
-        title: renderViewTitle({
-          icon: html`<img class="inl cyberia-menu-icon-modal" src="${getProxyPath()}assets/ui-icons/engine.png" />`,
-          text: `<span class='inl cyberia-text-title-modal'>${Translate.instance('cyberia-entity-engine')}</span>`,
-        }),
+        title: StudioCyberia.renderTitle('cyberia-entity-engine'),
         html: async () => await EntityEngineCyberia.render({ appStore: AppStoreCyberiaPortal }),
         handleType: 'bar',
         maximize: true,
@@ -772,11 +682,6 @@ class AppShellCyberiaPortal {
         observer: true,
       });
     });
-
-    s(`.main-btn-admin`).onclick = () => {
-      const { protocol, hostname } = window.location;
-      return (location.href = `${protocol}//${hostname}/admin${['', 0][random(0, 1)]}`);
-    };
   }
 }
 

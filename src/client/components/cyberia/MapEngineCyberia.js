@@ -3,8 +3,8 @@ import { Input, InputFile, getFileFromBlobEndpoint } from '../core/Input.js';
 import { htmls, s } from '../core/VanillaJs.js';
 import { commonModeratorGuard } from '../core/CommonJs.js';
 import { NotificationManager } from '../core/NotificationManager.js';
-import { Translate } from '../core/Translate.js';
-import { darkTheme, dynamicCol, ThemeEvents } from '../core/Css.js';
+import { Modal } from '../core/Modal.js';
+import { dynamicCol } from '../core/Css.js';
 import { DropDown } from '../core/DropDown.js';
 import { ToggleSwitch } from '../core/ToggleSwitch.js';
 import { CyberiaMapManagement } from '../../services/cyberia-map/cyberia-map.management.js';
@@ -16,9 +16,22 @@ import { AtlasSpriteSheetService } from '../../services/atlas-sprite-sheet/atlas
 import { ObjectLayerService } from '../../services/object-layer/object-layer.service.js';
 import { getQueryParams, listenQueryParamsChange, setQueryParams } from '../core/Router.js';
 import { ENTITY_TYPES, ENTITY_LEVEL_MIN, ENTITY_LEVEL_MAX, validateEntityLevel } from './SharedDefaultsCyberia.js';
+import { CommandHistory } from '../core/CommandHistory.js';
+import { EditorCrud } from '../core/EditorCrud.js';
+import { EditorDraftStore } from '../core/EditorDraftStore.js';
+import { EditorLayout } from '../core/EditorLayout.js';
+import { Tabs } from '../core/Tabs.js';
+import { MapStudioCyberia } from './MapStudioCyberia.js';
+import { MapAudioCyberia } from './MapAudioCyberia.js';
 import '../core/ColorPaletteElement.js';
 
 const DEFAULT_ENTITY_TYPE = ENTITY_TYPES.floor;
+const DEFAULT_MAP_DIMENSIONS = Object.freeze({
+  gridX: 64,
+  gridY: 64,
+  cellWidth: 10,
+  cellHeight: 10,
+});
 const dropdownValueKey = (value = '') => String(value).trim().replaceAll(' ', '-');
 const createDropdownOption = (value, onClick = () => {}, display = value, data = value) => ({
   value,
@@ -29,21 +42,27 @@ const createDropdownOption = (value, onClick = () => {}, display = value, data =
 
 class MapEngineCyberia {
   static entities = [];
+  // The entity the form adds, under the pointer: `{ col, row, dimX, dimY, color }`, or null.
+  static ghost = null;
   static currentMapId = null;
   static currentMapCode = null;
   static currentThumbnailId = null;
   static thumbnailDirty = false;
   static currentPreviewId = null;
   static loadMap = null;
+  static crud = null;
   static showGridBorders = true;
   static addOnClick = true;
   static removeOnClick = false;
   static showObjectLayers = false;
   static enableRandomFactors = false;
   static captureObjLayerThumbnail = true;
-  static entityUndoStack = [];
-  static entityRedoStack = [];
-  static maxEntityHistory = 200;
+  // One named command per finished edit of the entities.
+  static history = new CommandHistory({ limit: 200 });
+  // The revision of the stored map the editor loaded; a save names it.
+  static currentRevision = null;
+  // Called after each command, undo and redo: the editor keeps its draft there.
+  static onCommand = () => {};
   static entityHistorySync = null;
   static entityHistoryHotkeyHandler = null;
   static entityTypeDropdownId = 'map-engine-entity-type';
@@ -220,7 +239,7 @@ class MapEngineCyberia {
     // its renames or none, so a partly-renamed loadout is never produced.
     let matchedEntities = 0;
     let renamedReferences = 0;
-    const changed = MapEngineCyberia.commitEntityMutation(() => {
+    const changed = MapEngineCyberia.commitEntityMutation('RenameItemIds', () => {
       for (const i of eligible) {
         if (MapEngineCyberia.enableRandomFactors) {
           const rawA = parseFloat(s('.map-engine-factor-a')?.value);
@@ -309,11 +328,6 @@ class MapEngineCyberia {
     return true;
   }
 
-  static pushEntityHistory(stack, snapshot) {
-    stack.push(snapshot);
-    if (stack.length > MapEngineCyberia.maxEntityHistory) stack.shift();
-  }
-
   static setEntityHistorySync(callback) {
     MapEngineCyberia.entityHistorySync = callback;
   }
@@ -333,8 +347,7 @@ class MapEngineCyberia {
   }
 
   static clearEntityHistory() {
-    MapEngineCyberia.entityUndoStack.length = 0;
-    MapEngineCyberia.entityRedoStack.length = 0;
+    MapEngineCyberia.history.clear();
   }
 
   static setEntities(entities, { clearHistory = false } = {}) {
@@ -343,37 +356,41 @@ class MapEngineCyberia {
     MapEngineCyberia.refreshEntityEditor();
   }
 
-  static commitEntityMutation(mutate) {
-    if (typeof mutate !== 'function') return false;
-
+  /**
+   * Runs one named command over the entities: one undo step when it changes them.
+   * @param {string} name - Such as `PlaceEntity` or `BatchPlace`.
+   * @param {() => void} mutate - Changes `MapEngineCyberia.entities`.
+   * @returns {boolean} Whether the entities changed.
+   */
+  static commitEntityMutation(name, mutate) {
     const before = MapEngineCyberia.cloneEntities();
     mutate();
     const after = MapEngineCyberia.cloneEntities();
 
     if (MapEngineCyberia.entitySnapshotsEqual(before, after)) return false;
 
-    MapEngineCyberia.pushEntityHistory(MapEngineCyberia.entityUndoStack, before);
-    MapEngineCyberia.entityRedoStack.length = 0;
+    MapEngineCyberia.history.record(name, before, after);
     MapEngineCyberia.refreshEntityEditor();
+    MapEngineCyberia.onCommand();
     return true;
   }
 
   static undoEntityMutation() {
-    if (!MapEngineCyberia.entityUndoStack.length) return false;
-
-    const previous = MapEngineCyberia.entityUndoStack.pop();
-    MapEngineCyberia.pushEntityHistory(MapEngineCyberia.entityRedoStack, MapEngineCyberia.cloneEntities());
-    MapEngineCyberia.setEntities(previous);
-    return true;
+    const command = MapEngineCyberia.history.undo();
+    if (command) {
+      MapEngineCyberia.setEntities(command.before);
+      MapEngineCyberia.onCommand();
+    }
+    return !!command;
   }
 
   static redoEntityMutation() {
-    if (!MapEngineCyberia.entityRedoStack.length) return false;
-
-    const next = MapEngineCyberia.entityRedoStack.pop();
-    MapEngineCyberia.pushEntityHistory(MapEngineCyberia.entityUndoStack, MapEngineCyberia.cloneEntities());
-    MapEngineCyberia.setEntities(next);
-    return true;
+    const command = MapEngineCyberia.history.redo();
+    if (command) {
+      MapEngineCyberia.setEntities(command.after);
+      MapEngineCyberia.onCommand();
+    }
+    return !!command;
   }
 
   static isEditableTarget(target) {
@@ -483,6 +500,21 @@ class MapEngineCyberia {
         }
       }
     }
+
+    const ghost = MapEngineCyberia.ghost;
+    if (ghost) {
+      const [x, y, w, h] = [ghost.col * cellW, ghost.row * cellH, ghost.dimX * cellW, ghost.dimY * cellH];
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = ghost.color;
+      ctx.fillRect(x, y, w, h);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = '#ffcc00';
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+      ctx.restore();
+    }
   }
 
   static renderToOffscreenCanvas(cols, rows, cellW, cellH, { forceObjectLayers = false } = {}) {
@@ -530,15 +562,16 @@ class MapEngineCyberia {
           (id) =>
             html`<div
               class="badge inl"
-              style="background:${darkTheme ? '#335' : '#cde'};color:${darkTheme
-                ? '#adf'
-                : '#246'};border-radius:4px;font-size:11px;height:auto;min-width:auto;margin:1px 2px;"
+              style="background:var(--studio-tag);color:var(--studio-tag-ink);border-radius:4px;font-size:11px;height:auto;min-width:auto;margin:1px 2px;"
             >
               <div class="badge-text"><i class="fa-solid fa-tag" style="margin-right:3px;font-size:9px;"></i>${id}</div>
             </div>`,
         )
         .join('');
-      html += html`<div class="fl" style="border-bottom:1px solid #444; padding:4px 0; align-items:center;">
+      html += html`<div
+        class="fl"
+        style="border-bottom:1px solid var(--studio-subtle-border); padding:4px 0; align-items:center;"
+      >
         <div
           class="in fll"
           style="width:20px;height:20px;background:${entity.color};border:1px solid #888;margin-right:6px;"
@@ -572,7 +605,7 @@ class MapEngineCyberia {
     container.querySelectorAll('.btn-map-engine-remove-entity').forEach((btn) => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.index, 10);
-        MapEngineCyberia.commitEntityMutation(() => {
+        MapEngineCyberia.commitEntityMutation('DeleteEntity', () => {
           MapEngineCyberia.entities.splice(idx, 1);
         });
       };
@@ -610,6 +643,7 @@ class MapEngineCyberia {
         }
 
         MapEngineCyberia.syncObjectLayerDropdownSelection(itemIds);
+        Tabs.select(s('.map-engine-tabs'), 'paint');
       };
     });
   }
@@ -665,11 +699,18 @@ class MapEngineCyberia {
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     };
 
+    const resetDimensions = () => {
+      if (s(`.${idX}`)) s(`.${idX}`).value = DEFAULT_MAP_DIMENSIONS.gridX;
+      if (s(`.${idY}`)) s(`.${idY}`).value = DEFAULT_MAP_DIMENSIONS.gridY;
+      if (s(`.${idCellW}`)) s(`.${idCellW}`).value = DEFAULT_MAP_DIMENSIONS.cellWidth;
+      if (s(`.${idCellH}`)) s(`.${idCellH}`).value = DEFAULT_MAP_DIMENSIONS.cellHeight;
+    };
+
     const getCanvasParams = () => ({
-      cols: parseInt(s(`.${idX}`)?.value) || 16,
-      rows: parseInt(s(`.${idY}`)?.value) || 16,
-      cellW: parseInt(s(`.${idCellW}`)?.value) || 32,
-      cellH: parseInt(s(`.${idCellH}`)?.value) || 32,
+      cols: parseInt(s(`.${idX}`)?.value) || DEFAULT_MAP_DIMENSIONS.gridX,
+      rows: parseInt(s(`.${idY}`)?.value) || DEFAULT_MAP_DIMENSIONS.gridY,
+      cellW: parseInt(s(`.${idCellW}`)?.value) || DEFAULT_MAP_DIMENSIONS.cellWidth,
+      cellH: parseInt(s(`.${idCellH}`)?.value) || DEFAULT_MAP_DIMENSIONS.cellHeight,
     });
 
     const getFactorRange = () => {
@@ -717,9 +758,14 @@ class MapEngineCyberia {
       MapEngineCyberia.renderGrid(canvas, cols, rows, cellW, cellH, MapEngineCyberia.showGridBorders);
     };
 
+    // The size and color of the entity the form adds.
+    const formFootprint = () => ({
+      dimX: parseInt(s(`.${idDimX}`)?.value) || 1,
+      dimY: parseInt(s(`.${idDimY}`)?.value) || 1,
+      color: hexToRgba(s(`.${idColor}`)?.value || '#ff0000', parseFloat(s(`.${idAlpha}`)?.value)),
+    });
+
     const getEntityParams = () => {
-      const hex = s(`.${idColor}`)?.value || '#ff0000';
-      const alpha = parseFloat(s(`.${idAlpha}`)?.value);
       const rawLevel = s(`.${idLevel}`)?.value.trim();
       let level;
       try {
@@ -733,9 +779,7 @@ class MapEngineCyberia {
         entityType: MapEngineCyberia.getSelectedEntityType(),
         initCellX: parseInt(s(`.${idInitCellX}`)?.value) || 0,
         initCellY: parseInt(s(`.${idInitCellY}`)?.value) || 0,
-        dimX: parseInt(s(`.${idDimX}`)?.value) || 1,
-        dimY: parseInt(s(`.${idDimY}`)?.value) || 1,
-        color: hexToRgba(hex, alpha),
+        ...formFootprint(),
       };
     };
 
@@ -754,7 +798,7 @@ class MapEngineCyberia {
         ? [...DropDown.Tokens[idObjLayerDropdown].value]
         : [];
       applyRandomFactorsToDimensions(ep);
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('PlaceEntity', () => {
         MapEngineCyberia.entities.push(ep);
       });
     };
@@ -768,7 +812,7 @@ class MapEngineCyberia {
       const { cols, rows } = getCanvasParams();
       const dimX = ep.dimX || 1;
       const dimY = ep.dimY || 1;
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('BatchPlace', () => {
         for (let r = 0; r < rows; r += dimY) {
           for (let c = 0; c < cols; c += dimX) {
             const tile = {
@@ -788,7 +832,7 @@ class MapEngineCyberia {
       const { min, max } = getFactorRange();
       const preserveSet = getPreserveSet();
       const { cols, rows } = getCanvasParams();
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('GenerateVariation', () => {
         for (const entity of MapEngineCyberia.entities) {
           if (preserveSet.has((entity.entityType || '').toLowerCase())) continue;
           const dimFactor = min + Math.random() * (max - min);
@@ -802,8 +846,16 @@ class MapEngineCyberia {
     };
 
     const clearAllEntities = () => {
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('DeleteEntity', () => {
         MapEngineCyberia.entities = [];
+      });
+    };
+
+    // Deletes the entities the filters select: what the entity list shows.
+    const deleteFilteredEntities = () => {
+      const selected = new Set(MapEngineCyberia.getFilteredEntities().map(({ i }) => i));
+      MapEngineCyberia.commitEntityMutation('DeleteEntity', () => {
+        MapEngineCyberia.entities = MapEngineCyberia.entities.filter((_, i) => !selected.has(i));
       });
     };
 
@@ -815,7 +867,7 @@ class MapEngineCyberia {
       const shuffled = [...preserveIndices].sort(() => Math.random() - 0.5).slice(0, selectedCount);
       const swapCount = Math.max(1, Math.floor(shuffled.length / 2));
 
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('MoveEntities', () => {
         for (let i = 0; i < swapCount * 2; i += 2) {
           const firstIndex = shuffled[i];
           const secondIndex = shuffled[i + 1];
@@ -845,7 +897,7 @@ class MapEngineCyberia {
         ? [...DropDown.Tokens[idObjLayerDropdown].value]
         : [];
 
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('ReplaceEntities', () => {
         for (const index of selected) {
           const target = MapEngineCyberia.entities[index];
           const replacement = {
@@ -865,7 +917,7 @@ class MapEngineCyberia {
 
     const flipHorizontal = () => {
       const { cols } = getCanvasParams();
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('Flip', () => {
         for (const entity of MapEngineCyberia.entities) {
           entity.initCellX = cols - entity.initCellX - entity.dimX;
         }
@@ -874,7 +926,7 @@ class MapEngineCyberia {
 
     const flipVertical = () => {
       const { rows } = getCanvasParams();
-      MapEngineCyberia.commitEntityMutation(() => {
+      MapEngineCyberia.commitEntityMutation('Flip', () => {
         for (const entity of MapEngineCyberia.entities) {
           entity.initCellY = rows - entity.initCellY - entity.dimY;
         }
@@ -902,6 +954,19 @@ class MapEngineCyberia {
       };
       if (MapEngineCyberia.currentThumbnailId) payload.thumbnail = MapEngineCyberia.currentThumbnailId;
       return payload;
+    };
+
+    // Unsaved work stays in this browser until a save, one draft per map code.
+    const draftKey = () => `cyberia-map:${MapEngineCyberia.currentMapCode || 'new'}`;
+    let draft = EditorDraftStore.debounced(draftKey());
+    const followDraft = () => {
+      draft.cancel();
+      draft = EditorDraftStore.debounced(draftKey());
+    };
+    MapEngineCyberia.onCommand = () => draft.save(getMapPayload());
+    const dropDraft = async () => {
+      draft.cancel();
+      await EditorDraftStore.remove(draftKey());
     };
 
     // Render the current auto-captured Instance Map preview image (or an
@@ -946,10 +1011,7 @@ class MapEngineCyberia {
       // image was set.
       const thumbnailInput = s(`.${idThumbnail}`);
       const hasCustomThumbnail =
-        MapEngineCyberia.thumbnailDirty &&
-        thumbnailInput &&
-        thumbnailInput.files &&
-        thumbnailInput.files.length > 0;
+        MapEngineCyberia.thumbnailDirty && thumbnailInput && thumbnailInput.files && thumbnailInput.files.length > 0;
       if (hasCustomThumbnail) {
         const formData = new FormData();
         formData.append('file', thumbnailInput.files[0]);
@@ -976,25 +1038,15 @@ class MapEngineCyberia {
 
       const body = getMapPayload();
       if (previewId) body.preview = previewId;
-      let result;
-      if (MapEngineCyberia.currentMapId) {
-        result = await CyberiaMapService.put({ id: MapEngineCyberia.currentMapId, body });
-      } else {
-        result = await CyberiaMapService.post({ body });
-      }
-      NotificationManager.Push({
-        html:
-          result.status === 'error'
-            ? result.message
-            : MapEngineCyberia.currentMapId
-              ? Translate.instance('success-update-item')
-              : Translate.instance('success-create-item'),
-        status: result.status,
-      });
+      if (MapEngineCyberia.currentMapId) body.revision = MapEngineCyberia.currentRevision;
+      const result = await EditorCrud.save(CyberiaMapService, { id: MapEngineCyberia.currentMapId, body });
       if (result.status === 'success') {
+        await dropDraft();
         if (result.data?._id) MapEngineCyberia.currentMapId = result.data._id;
+        MapEngineCyberia.currentRevision = result.data?.revision ?? MapEngineCyberia.currentRevision;
         // A saved map becomes the one the URL points at.
         MapEngineCyberia.currentMapCode = body.code || null;
+        followDraft();
         setQueryParams({ mapCode: body.code || null }, { replace: true });
         renderPreviewImage();
         await DefaultManagement.loadTable(managementId, { force: true, reload: true });
@@ -1002,8 +1054,6 @@ class MapEngineCyberia {
     };
 
     const cloneMap = async () => {
-      if (!MapEngineCyberia.currentMapId) return;
-
       let cloneThumbnailId = null;
 
       // Same precedence as saveMap: a user-selected custom image wins; the
@@ -1030,17 +1080,16 @@ class MapEngineCyberia {
       // The clone always gets its own automatic Object Layer preview capture.
       const clonePreviewId = await captureObjectLayerUpload('map-preview.png');
 
-      const body = getMapPayload();
-      if (cloneThumbnailId) body.thumbnail = cloneThumbnailId;
-      if (clonePreviewId) body.preview = clonePreviewId;
-      const result = await CyberiaMapService.post({ body });
-      NotificationManager.Push({
-        html: result.status === 'error' ? result.message : Translate.instance('success-create-item'),
-        status: result.status,
-      });
+      const source = getMapPayload();
+      if (cloneThumbnailId) source.thumbnail = cloneThumbnailId;
+      if (clonePreviewId) source.preview = clonePreviewId;
+      const { result, body } = await EditorCrud.clone(CyberiaMapService, source, 'code');
       if (result.status === 'success') {
+        if (s(`.${idCode}`)) s(`.${idCode}`).value = body.code;
         if (result.data?._id) MapEngineCyberia.currentMapId = result.data._id;
+        MapEngineCyberia.currentRevision = result.data?.revision ?? 1;
         MapEngineCyberia.currentMapCode = body.code || null;
+        followDraft();
         setQueryParams({ mapCode: body.code || null }, { replace: true });
         if (cloneThumbnailId) MapEngineCyberia.currentThumbnailId = cloneThumbnailId;
         if (clonePreviewId) MapEngineCyberia.currentPreviewId = clonePreviewId;
@@ -1052,6 +1101,7 @@ class MapEngineCyberia {
     const loadMap = async (mapData) => {
       MapEngineCyberia.currentMapId = mapData._id || null;
       MapEngineCyberia.currentMapCode = mapData.code || null;
+      MapEngineCyberia.crud?.refresh();
       setQueryParams({ mapCode: mapData.code || null }, { replace: true });
       if (s(`.${idCode}`)) s(`.${idCode}`).value = mapData.code || '';
       if (s(`.${idName}`)) s(`.${idName}`).value = mapData.name || '';
@@ -1059,10 +1109,10 @@ class MapEngineCyberia {
       if (s(`.${idTags}`)) s(`.${idTags}`).value = (mapData.tags || []).join(', ');
 
       // Restore grid dimensions
-      if (s(`.${idX}`)) s(`.${idX}`).value = mapData.gridX || 16;
-      if (s(`.${idY}`)) s(`.${idY}`).value = mapData.gridY || 16;
-      if (s(`.${idCellW}`)) s(`.${idCellW}`).value = mapData.cellWidth || 32;
-      if (s(`.${idCellH}`)) s(`.${idCellH}`).value = mapData.cellHeight || 32;
+      if (s(`.${idX}`)) s(`.${idX}`).value = mapData.gridX || DEFAULT_MAP_DIMENSIONS.gridX;
+      if (s(`.${idY}`)) s(`.${idY}`).value = mapData.gridY || DEFAULT_MAP_DIMENSIONS.gridY;
+      if (s(`.${idCellW}`)) s(`.${idCellW}`).value = mapData.cellWidth || DEFAULT_MAP_DIMENSIONS.cellWidth;
+      if (s(`.${idCellH}`)) s(`.${idCellH}`).value = mapData.cellHeight || DEFAULT_MAP_DIMENSIONS.cellHeight;
       const statusValue = mapData.status || 'unlisted';
       if (DropDown.Tokens[idStatus]) {
         const statusIndex = statusOptions.findIndex((opt) => opt.value === statusValue);
@@ -1123,24 +1173,45 @@ class MapEngineCyberia {
         }
       }
 
-      const nextEntities = (mapData.entities || []).map((e) => ({
-        entityType: e.entityType,
-        level: e.level,
-        initCellX: e.initCellX,
-        initCellY: e.initCellY,
-        dimX: e.dimX,
-        dimY: e.dimY,
-        color: e.color,
-        objectLayerItemIds: e.objectLayerItemIds || [],
+      // Every field travels: the editor places and paints entities, and never drops what they are.
+      const nextEntities = (mapData.entities || []).map(({ _id, ...entity }) => ({
+        ...entity,
+        objectLayerItemIds: entity.objectLayerItemIds || [],
       }));
       MapEngineCyberia.setEntities(nextEntities, { clearHistory: true });
+      MapEngineCyberia.currentRevision = mapData.revision ?? 1;
+      followDraft();
+      await Promise.all([MapStudioCyberia.loadContext(mapData.code), MapAudioCyberia.load(mapData.code)]);
+
+      // A draft newer than the stored map is offered back, as one command.
+      const stored = await EditorDraftStore.get(draftKey());
+      if (stored && stored.savedAt > (Date.parse(mapData.updatedAt ?? '') || 0)) {
+        const answer = await Modal.RenderConfirm({
+          html: async () => html`
+            <div class="in section-mp" style="text-align: center">
+              Recover the unsaved work of ${new Date(stored.savedAt).toLocaleString()}?
+            </div>
+          `,
+          id: 'map-engine-draft-recover-confirm',
+        });
+        if (answer.status === 'confirm')
+          MapEngineCyberia.commitEntityMutation('RecoverDraft', () => {
+            MapEngineCyberia.entities = MapEngineCyberia.cloneEntities(stored.value.entities);
+          });
+        else await dropDraft();
+      }
     };
 
     MapEngineCyberia.loadMap = loadMap;
 
-    const resetForm = () => {
+    const newMap = () => {
       MapEngineCyberia.currentMapId = null;
       MapEngineCyberia.currentMapCode = null;
+      MapEngineCyberia.currentRevision = null;
+      MapEngineCyberia.crud?.refresh();
+      followDraft();
+      MapStudioCyberia.loadContext(null);
+      MapAudioCyberia.load(null);
       setQueryParams({ mapCode: null }, { replace: true });
       MapEngineCyberia.currentThumbnailId = null;
       MapEngineCyberia.currentPreviewId = null;
@@ -1162,10 +1233,7 @@ class MapEngineCyberia {
       }
       const creatorDisplay = s(`.map-engine-creator-display`);
       if (creatorDisplay) creatorDisplay.innerHTML = '<span style="color:#888;font-size:12px;">—</span>';
-      if (s(`.${idX}`)) s(`.${idX}`).value = 16;
-      if (s(`.${idY}`)) s(`.${idY}`).value = 16;
-      if (s(`.${idCellW}`)) s(`.${idCellW}`).value = 32;
-      if (s(`.${idCellH}`)) s(`.${idCellH}`).value = 32;
+      resetDimensions();
       if (s(`.${idLevel}`)) s(`.${idLevel}`).value = '';
       if (s(`.${idVariationPreserve}`)) s(`.${idVariationPreserve}`).value = '';
       if (s(`.${idRenameSourceObjectLayer}`)) s(`.${idRenameSourceObjectLayer}`).value = '';
@@ -1180,16 +1248,41 @@ class MapEngineCyberia {
       }
     };
 
-    // ?mapCode=<code> loads that map into the form on arrival.
+    const deleteMap = async () => {
+      const result = await EditorCrud.remove(CyberiaMapService, {
+        id: MapEngineCyberia.currentMapId,
+        subject: 'map',
+        name: MapEngineCyberia.currentMapCode,
+      });
+      if (result?.status !== 'success') return;
+      await dropDraft();
+      newMap();
+      await DefaultManagement.loadTable(managementId, { force: true, reload: true });
+    };
+
+    const resetMap = async () => {
+      await dropDraft();
+      const { status, data, message } = await CyberiaMapService.get({ id: MapEngineCyberia.currentMapId });
+      if (status === 'success' && data) await loadMap(data);
+      else NotificationManager.Push({ html: message, status: 'error' });
+    };
+
+    // ?mapCode=<code> loads that map into the form on arrival, once however many events ask.
+    let loadingCode = null;
     const loadMapByCode = async (code) => {
-      if (!code || code === MapEngineCyberia.currentMapCode) return;
-      const { status, data } = await CyberiaMapService.get({ id: code });
-      if (status !== 'success' || !data?._id) {
-        NotificationManager.Push({ html: `No map answers to the code "${code}"`, status: 'error' });
-        return;
+      if (!code || code === MapEngineCyberia.currentMapCode || code === loadingCode) return;
+      loadingCode = code;
+      try {
+        const { status, data } = await CyberiaMapService.get({ id: code });
+        if (status !== 'success' || !data?._id) {
+          NotificationManager.Push({ html: `No map answers to the code "${code}"`, status: 'error' });
+          return;
+        }
+        await loadMap(data);
+        NotificationManager.Push({ html: `Map "${data.name || data.code}" loaded`, status: 'success' });
+      } finally {
+        loadingCode = null;
       }
-      await loadMap(data);
-      NotificationManager.Push({ html: `Map "${data.name || data.code}" loaded`, status: 'success' });
     };
 
     listenQueryParamsChange({
@@ -1198,7 +1291,7 @@ class MapEngineCyberia {
         if (!s(`.${idCode}`)) return;
         const code = queryParams.mapCode || null;
         if (code) await loadMapByCode(code);
-        else if (MapEngineCyberia.currentMapCode) resetForm();
+        else if (MapEngineCyberia.currentMapCode) newMap();
       },
     });
 
@@ -1208,6 +1301,7 @@ class MapEngineCyberia {
 
       MapEngineCyberia.setEntityHistorySync(() => {
         MapEngineCyberia.renderEntityList(entityListId);
+        MapStudioCyberia.refresh();
         rerenderCanvas();
       });
       MapEngineCyberia.bindEntityHistoryHotkeys();
@@ -1256,14 +1350,32 @@ class MapEngineCyberia {
       );
       MapEngineCyberia.refreshEntityEditor();
 
-      canvas.onclick = (e) => {
+      const cellOf = (e) => {
         const rect = canvas.getBoundingClientRect();
         const { cellW, cellH } = getCanvasParams();
-        const col = Math.floor(((e.clientX - rect.left) * (canvas.width / rect.width)) / cellW);
-        const row = Math.floor(((e.clientY - rect.top) * (canvas.height / rect.height)) / cellH);
-        console.log(`Cell clicked: (${col}, ${row})`);
+        return [
+          Math.floor(((e.clientX - rect.left) * (canvas.width / rect.width)) / cellW),
+          Math.floor(((e.clientY - rect.top) * (canvas.height / rect.height)) / cellH),
+        ];
+      };
+      // The ghost shows the entity the form adds at the cell under the pointer.
+      canvas.onpointermove = (e) => {
+        const [col, row] = cellOf(e);
+        const footprint = formFootprint();
+        const ghost = MapEngineCyberia.ghost;
+        if (ghost?.col === col && ghost.row === row && ghost.dimX === footprint.dimX && ghost.dimY === footprint.dimY)
+          return;
+        MapEngineCyberia.ghost = { col, row, ...footprint };
+        htmls('.map-engine-cell-coords', `Cell: (${col}, ${row}) · ${footprint.dimX}×${footprint.dimY}`);
+        rerenderCanvas();
+      };
+      canvas.onpointerleave = () => {
+        MapEngineCyberia.ghost = null;
+        rerenderCanvas();
+      };
 
-        if (s('.map-engine-cell-coords')) htmls('.map-engine-cell-coords', `Cell: (${col}, ${row})`);
+      canvas.onclick = (e) => {
+        const [col, row] = cellOf(e);
 
         if (s(`.${idInitCellX}`)) s(`.${idInitCellX}`).value = col;
         if (s(`.${idInitCellY}`)) s(`.${idInitCellY}`).value = row;
@@ -1271,12 +1383,41 @@ class MapEngineCyberia {
         if (MapEngineCyberia.addOnClick) {
           addEntityLocally();
         } else if (MapEngineCyberia.removeOnClick) {
-          MapEngineCyberia.commitEntityMutation(() => {
+          MapEngineCyberia.commitEntityMutation('DeleteEntity', () => {
             MapEngineCyberia.entities = MapEngineCyberia.entities.filter(
               (entity) => !(entity.initCellX === col && entity.initCellY === row),
             );
           });
         }
+      };
+      MapStudioCyberia.mount({
+        entities: () => MapEngineCyberia.entities,
+        load: ({ entityType, objectLayerItemIds }) => {
+          MapEngineCyberia.setDropdownValue(MapEngineCyberia.entityTypeDropdownId, entityType);
+          MapEngineCyberia.syncObjectLayerDropdownSelection(objectLayerItemIds);
+          Tabs.select(s('.map-engine-tabs'), 'paint');
+        },
+      });
+      MapAudioCyberia.mount();
+      const container = s('.map-engine-container');
+      EditorLayout.bind(container);
+      EditorLayout.pin(container, 'map-engine-stage');
+      Tabs.bind(container.querySelector('.map-engine-tabs'));
+      const stageControls = container.querySelectorAll('[data-map-toggle]');
+      for (const button of stageControls) {
+        button.onclick = () => {
+          const key = button.dataset.mapToggle;
+          MapEngineCyberia[key] = !MapEngineCyberia[key];
+          if (MapEngineCyberia[key] && key === 'addOnClick') MapEngineCyberia.removeOnClick = false;
+          if (MapEngineCyberia[key] && key === 'removeOnClick') MapEngineCyberia.addOnClick = false;
+          for (const control of stageControls)
+            control.setAttribute('aria-pressed', String(MapEngineCyberia[control.dataset.mapToggle]));
+          rerenderCanvas();
+        };
+      }
+      container.querySelector('.btn-map-engine-reset-dimensions').onclick = () => {
+        resetDimensions();
+        rerenderCanvas();
       };
 
       if (s(`.btn-map-engine-add-entity`)) s(`.btn-map-engine-add-entity`).onclick = () => addEntityLocally();
@@ -1301,19 +1442,18 @@ class MapEngineCyberia {
           rerenderCanvas();
         };
 
-      if (s(`.btn-map-engine-save-map`)) s(`.btn-map-engine-save-map`).onclick = () => saveMap();
-
-      if (s(`.btn-map-engine-clone-map`))
-        s(`.btn-map-engine-clone-map`).onclick = () => {
-          if (!MapEngineCyberia.currentMapId) return;
-          cloneMap();
-        };
-
-      if (s(`.btn-map-engine-new-map`)) s(`.btn-map-engine-new-map`).onclick = () => resetForm();
-
-      ThemeEvents['map-engine-theme'] = () => {
-        MapEngineCyberia.renderEntityList(entityListId);
-      };
+      MapEngineCyberia.crud = EditorCrud.bind(container.querySelector('.map-engine-crud'), () => ({
+        subject: 'map',
+        id: MapEngineCyberia.currentMapId,
+        name: MapEngineCyberia.currentMapCode,
+        new: async () => {
+          await dropDraft();
+          newMap();
+          Tabs.select(s('.map-engine-tabs'), 'map');
+        },
+        reset: resetMap,
+        ...(canMutate && { save: saveMap, clone: cloneMap, delete: deleteMap }),
+      }));
 
       if (s(`.btn-map-engine-capture-thumbnail`))
         s(`.btn-map-engine-capture-thumbnail`).onclick = () => {
@@ -1388,6 +1528,9 @@ class MapEngineCyberia {
       if (s('.btn-map-engine-clear-all-entities'))
         s('.btn-map-engine-clear-all-entities').onclick = () => clearAllEntities();
 
+      if (s('.btn-map-engine-delete-filtered-entities'))
+        s('.btn-map-engine-delete-filtered-entities').onclick = () => deleteFilteredEntities();
+
       if (s('.btn-map-engine-rename-filtered-object-layer-item-id'))
         s('.btn-map-engine-rename-filtered-object-layer-item-id').onclick = () => {
           MapEngineCyberia.renameFilteredObjectLayerItemId();
@@ -1406,13 +1549,18 @@ class MapEngineCyberia {
 
     const managementTableHtml = await CyberiaMapManagement.instance({
       idModal: managementId,
-      loadMapCallback: loadMap,
+      loadMapCallback: async (map) => {
+        await loadMap(map);
+        Tabs.select(s('.map-engine-tabs'), 'map');
+      },
       appStore,
       readyRowDataEvent: {
         'map-engine-check-deleted': (rowData) => {
           if (MapEngineCyberia.currentMapId) {
             const stillExists = rowData.some((row) => row._id === MapEngineCyberia.currentMapId);
-            if (!stillExists) MapEngineCyberia.currentMapId = null;
+            if (stillExists) return;
+            MapEngineCyberia.currentMapId = null;
+            MapEngineCyberia.crud?.refresh();
           }
         },
       },
@@ -1427,633 +1575,633 @@ class MapEngineCyberia {
     const dcCellPos = 'map-engine-dc-cell-pos';
     const dcDim = 'map-engine-dc-dim';
     const dcFactors = 'map-engine-dc-factors';
-    const dcSaveNew = 'map-engine-dc-save-new';
     const dcEntityFilter = 'map-engine-dc-entity-filter';
-    const dcCanvasOpts = 'map-engine-dc-canvas-opts';
     const idFilterEntityType = 'map-engine-filter-entity-type';
     const idFilterInitX = 'map-engine-filter-init-x';
     const idFilterInitY = 'map-engine-filter-init-y';
     const idFilterObjectLayerItemIds = 'map-engine-filter-object-layer-item-ids';
 
-    return html`<div class="in section-mp map-engine-container">
-      ${dynamicCol({ containerSelector: 'map-engine-container', id: dcMapFields, type: 'search-inputs' })}
-      <div class="fl">
-        <div class="in fll ${dcMapFields}-col-a">
-          ${await Input.instance({
-            id: idCode,
-            label: html`Code`,
-            containerClass: 'inl',
-            type: 'text',
-          })}
-        </div>
-        <div class="in fll ${dcMapFields}-col-b">
-          ${await Input.instance({
-            id: idName,
-            label: html`Name`,
-            containerClass: 'inl',
-            type: 'text',
-          })}
-        </div>
-        <div class="in fll ${dcMapFields}-col-c">
-          ${await Input.instance({
-            id: idDescription,
-            label: html`Description`,
-            containerClass: 'inl',
-            type: 'text',
-          })}
-        </div>
-      </div>
-      ${dynamicCol({ containerSelector: 'map-engine-container', id: dcMetaFields, type: 'search-inputs' })}
-      <div class="fl">
-        <div class="in fll ${dcMetaFields}-col-a">
-          ${await Input.instance({
-            id: idTags,
-            label: html`Tags (comma separated)`,
-            containerClass: 'inl',
-            type: 'text',
-          })}
-        </div>
-        <div class="in fll ${dcMetaFields}-col-b">
-          ${await DropDown.instance({
-            id: idStatus,
-            label: html`Status`,
-            data: statusOptions.map((opt) => ({ ...opt })),
-            value: 'unlisted',
-            containerClass: 'inl',
-          })}
-        </div>
-        <div class="in fll ${dcMetaFields}-col-c">
-          <div class="inl">
-            <div class="in input-label">Creator</div>
-            <div class="in map-engine-creator-display">
-              <span style="color:#888;font-size:12px;">—</span>
-            </div>
+    const stageToggle = (key, icon, label) =>
+      html`<button
+        type="button"
+        class="map-engine-stage-button"
+        data-map-toggle="${key}"
+        aria-pressed="${MapEngineCyberia[key]}"
+        title="${label}"
+        aria-label="${label}"
+      >
+        <i class="${icon}" aria-hidden="true"></i>
+      </button>`;
+
+    return html`<div class="in section-mp studio-editor map-engine-container">
+      <style>
+        .map-engine-stage-controls {
+          display: inline-flex;
+          gap: 2px;
+          padding-right: 6px;
+          border-right: 1px solid var(--studio-subtle-border, #8885);
+        }
+        .map-engine-stage-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          padding: 0;
+          margin: 0;
+          border: 1px solid transparent;
+          border-radius: 6px;
+          background: transparent;
+          color: inherit;
+          font-size: 13px;
+          cursor: pointer;
+        }
+        .map-engine-stage-button:hover {
+          background: #8882;
+        }
+        .map-engine-stage-button[aria-pressed='true'] {
+          border-color: var(--studio-positive, #2196f3);
+          background: #8882;
+        }
+        .map-engine-stage-button:focus-visible {
+          outline: 2px solid currentColor;
+          outline-offset: 2px;
+        }
+        .map-engine-tool-hint {
+          font-size: 13px;
+          opacity: 0.75;
+          margin: 0 0 12px;
+        }
+      </style>
+      ${EditorLayout.render({
+        subject: 'map',
+        readout: html`<div class="map-engine-stage-controls" role="group" aria-label="Click Action">
+            ${stageToggle('addOnClick', 'fa-solid fa-plus', 'Add on click')}
+            ${stageToggle('removeOnClick', 'fa-solid fa-eraser', 'Remove on click')}
           </div>
-        </div>
-      </div>
-      <div class="in section-mp" style="margin-top: 5px;">
-        <div class="in map-engine-thumbnail-preview" style="margin-bottom: 5px;"></div>
-        ${await BtnIcon.instance({
-          class: 'wfa btn-map-engine-capture-thumbnail',
-          label: html`<i class="fa-solid fa-camera"></i> Capture Thumbnail`,
-        })}
-        <div class="fl" style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin: 5px 0;">
-          ${await ToggleSwitch.instance({
-            id: 'map-engine-capture-obj-layer-thumb',
-            type: 'checkbox',
-            displayMode: 'checkbox',
-            containerClass: 'in fll',
-            checked: true,
-            on: {
-              checked: () => {
-                MapEngineCyberia.captureObjLayerThumbnail = true;
+          <div class="map-engine-stage-controls" role="group" aria-label="View Options">
+            ${stageToggle('showGridBorders', 'fa-solid fa-border-all', 'Show grid')}
+            ${stageToggle('showObjectLayers', 'fa-solid fa-layer-group', 'Show object layers')}
+          </div>
+          <button
+            type="button"
+            class="map-engine-stage-button btn-map-engine-reset-dimensions"
+            title="Restore grid ${DEFAULT_MAP_DIMENSIONS.gridX} × ${DEFAULT_MAP_DIMENSIONS.gridY}, cells ${DEFAULT_MAP_DIMENSIONS.cellWidth} × ${DEFAULT_MAP_DIMENSIONS.cellHeight}px"
+            aria-label="Restore default map dimensions"
+          >
+            <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i>
+          </button>
+          <div class="map-engine-cell-coords" style="font-family:monospace;font-size:12px;opacity:.7;">
+            Cell: (0, 0)
+          </div>`,
+        stage: html`<canvas
+          class="${canvasId}"
+          width="${DEFAULT_MAP_DIMENSIONS.gridX * DEFAULT_MAP_DIMENSIONS.cellWidth}"
+          height="${DEFAULT_MAP_DIMENSIONS.gridY * DEFAULT_MAP_DIMENSIONS.cellHeight}"
+          style="border: 1px solid #555;"
+        ></canvas>`,
+        tools: html`<div class="in map-engine-tools">
+          ${EditorCrud.render({ id: 'map-engine-crud', label: 'Map' })}
+          ${Tabs.render({
+            id: 'map-engine-tabs',
+            label: 'Map tools',
+            selected: 'paint',
+            tabs: [
+              {
+                id: 'map',
+                label: 'Map',
+                icon: 'fa-solid fa-map',
+                content: html`${dynamicCol({ containerSelector: 'map-engine-tools', id: dcMapFields, type: 'search-inputs' })}
+                  <div class="fl">
+                    <div class="in fll ${dcMapFields}-col-a">
+                      ${await Input.instance({
+                        id: idCode,
+                        label: html`Code`,
+                        containerClass: 'inl',
+                        type: 'text',
+                      })}
+                    </div>
+                    <div class="in fll ${dcMapFields}-col-b">
+                      ${await Input.instance({
+                        id: idName,
+                        label: html`Name`,
+                        containerClass: 'inl',
+                        type: 'text',
+                      })}
+                    </div>
+                    <div class="in fll ${dcMapFields}-col-c">
+                      ${await Input.instance({
+                        id: idDescription,
+                        label: html`Description`,
+                        containerClass: 'inl',
+                        type: 'text',
+                      })}
+                    </div>
+                  </div>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcMetaFields, type: 'search-inputs' })}
+                  <div class="fl">
+                    <div class="in fll ${dcMetaFields}-col-a">
+                      ${await Input.instance({
+                        id: idTags,
+                        label: html`Tags (comma separated)`,
+                        containerClass: 'inl',
+                        type: 'text',
+                      })}
+                    </div>
+                    <div class="in fll ${dcMetaFields}-col-b">
+                      ${await DropDown.instance({
+                        id: idStatus,
+                        label: html`Status`,
+                        data: statusOptions.map((opt) => ({ ...opt })),
+                        value: 'unlisted',
+                        containerClass: 'inl',
+                      })}
+                    </div>
+                    <div class="in fll ${dcMetaFields}-col-c">
+                      <div class="inl">
+                        <div class="in input-label">Creator</div>
+                        <div class="in map-engine-creator-display">
+                          <span style="color:#888;font-size:12px;">—</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcGridSize, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcGridSize}-col-a">
+                      ${await Input.instance({
+                        id: idX,
+                        label: html`X`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 1,
+                        value: DEFAULT_MAP_DIMENSIONS.gridX,
+                      })}
+                    </div>
+                    <div class="in fll ${dcGridSize}-col-b">
+                      ${await Input.instance({
+                        id: idY,
+                        label: html`Y`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 1,
+                        value: DEFAULT_MAP_DIMENSIONS.gridY,
+                      })}
+                    </div>
+                  </div>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcCellSize, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcCellSize}-col-a">
+                      ${await Input.instance({
+                        id: idCellW,
+                        label: html`Cell Width (px)`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 1,
+                        value: DEFAULT_MAP_DIMENSIONS.cellWidth,
+                      })}
+                    </div>
+                    <div class="in fll ${dcCellSize}-col-b">
+                      ${await Input.instance({
+                        id: idCellH,
+                        label: html`Cell Height (px)`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 1,
+                        value: DEFAULT_MAP_DIMENSIONS.cellHeight,
+                      })}
+                    </div>
+                  </div>
+                  <div class="fl">
+                    <div class="in wfa" style="padding: 10px; max-width: 200px; margin: auto;">
+                      ${await BtnIcon.instance({
+                        class: 'wfa btn-map-engine-generate',
+                        label: html`<i class="fa-solid fa-arrows-rotate"></i> Generate`,
+                      })}
+                    </div>
+                  </div>`,
               },
-              unchecked: () => {
-                MapEngineCyberia.captureObjLayerThumbnail = false;
+              {
+                id: 'paint',
+                label: 'Paint',
+                icon: 'fa-solid fa-paintbrush',
+                content: html`${MapStudioCyberia.renderPanel()}
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcEntityType, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcEntityType}-col-a">
+                      ${await DropDown.instance({
+                        id: idEntityType,
+                        label: html`Entity Type`,
+                        data: MapEngineCyberia.getEntityTypeDropdownOptions(),
+                        value: DEFAULT_ENTITY_TYPE,
+                        containerClass: 'inl',
+                      })}
+                      ${await Input.instance({
+                        id: idLevel,
+                        label: html`Level (empty uses instance default)`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: ENTITY_LEVEL_MIN,
+                        max: ENTITY_LEVEL_MAX,
+                        value: '',
+                      })}
+                    </div>
+                    <div class="in fll ${dcEntityType}-col-b">
+                      ${await Input.instance({
+                        id: idColor,
+                        label: html`Color`,
+                        containerClass: 'inl',
+                        type: 'color',
+                        value: '#ff0000',
+                      })}
+                    </div>
+                  </div>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcAlpha, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcAlpha}-col-a">
+                      <div class="inl input-container-${idAlpha}">
+                        <div class="in">
+                          <div class="in input-label">Alpha</div>
+                          <label for="${idAlpha}-name">
+                            <span class="hide">Alpha</span>
+                            <input
+                              type="range"
+                              class="in wfa ${idAlpha}"
+                              min="0"
+                              max="1"
+                              step="0.01"
+                              value="1"
+                              name="${idAlpha}-name"
+                              id="${idAlpha}-name"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="in fll ${dcAlpha}-col-b" style="line-height: 40px;">
+                      <div class="in input-label">RGBA</div>
+                      <div class="in ${rgbaDisplayId}" style="font-family: monospace; font-size: 13px;"></div>
+                    </div>
+                  </div>
+                  <div class="in section-mp-border" style="margin-top: 10px;">
+                    <div class="in input-label">Color Palette</div>
+                    <color-palette class="${idColorPalette}" value="#FF0000"></color-palette>
+                  </div>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcCellPos, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcCellPos}-col-a">
+                      ${await Input.instance({
+                        id: idInitCellX,
+                        label: html`initCellX`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 0,
+                        value: 0,
+                      })}
+                    </div>
+                    <div class="in fll ${dcCellPos}-col-b">
+                      ${await Input.instance({
+                        id: idInitCellY,
+                        label: html`initCellY`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 0,
+                        value: 0,
+                      })}
+                    </div>
+                  </div>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcDim, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcDim}-col-a">
+                      ${await Input.instance({
+                        id: idDimX,
+                        label: html`dimX`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 1,
+                        value: 1,
+                      })}
+                    </div>
+                    <div class="in fll ${dcDim}-col-b">
+                      ${await Input.instance({
+                        id: idDimY,
+                        label: html`dimY`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        min: 1,
+                        value: 1,
+                      })}
+                    </div>
+                  </div>
+                  <div class="in" style="margin: 10px;">
+                    <div class="${idObjLayerDropdownHost}">${await MapEngineCyberia.buildObjectLayerDropdown()}</div>
+                  </div>
+                  <div class="in">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-add-entity',
+                      label: html`<i class="fa-solid fa-plus"></i> Add Entity`,
+                    })}
+                  </div>`,
               },
-            },
-          })}
-          <div class="section-mp">&nbsp &nbsp Capture Object Layer Map Thumbnail on Save/Update/Clone</div>
-        </div>
-        ${await BtnIcon.instance({
-          class: 'wfa btn-map-engine-toggle-thumbnail',
-          label: html`<i class="fa-solid fa-caret-right map-engine-thumbnail-caret"></i> Thumbnail`,
-        })}
-        <div class="in map-engine-thumbnail-body hide">
-          ${await InputFile.instance(
-            {
-              id: idThumbnail,
-              multiple: false,
-              extensionsAccept: ['image/png', 'image/jpeg'],
-            },
-            {
-              change: (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                  MapEngineCyberia.thumbnailDirty = true;
-                  const url = URL.createObjectURL(file);
-                  const preview = s('.map-engine-thumbnail-preview');
-                  if (preview)
-                    preview.innerHTML = html`<img
-                      src="${url}"
-                      class="in"
-                      style="max-width:300px;height:auto;border:1px solid #555;margin:auto"
-                    />`;
-                }
-              },
-              clear: () => {
-                MapEngineCyberia.thumbnailDirty = true;
-                MapEngineCyberia.currentThumbnailId = null;
-                const preview = s('.map-engine-thumbnail-preview');
-                if (preview) preview.innerHTML = '';
-              },
-            },
-          )}
-        </div>
-        ${await BtnIcon.instance({
-          class: 'wfa btn-map-engine-toggle-preview',
-          label: html`<i class="fa-solid fa-caret-right map-engine-preview-caret"></i> Instance Map Preview`,
-        })}
-        <div class="in map-engine-preview-body hide">
-          <div class="in map-engine-preview-image" style="margin: 5px 0; text-align: center;"></div>
-          <div class="in" style="color:#888;font-size:12px;">
-            Auto-captured Object Layer render on Save/Update/Clone — used as this map's node background in the
-            Instance Map.
-          </div>
-        </div>
-      </div>
-      ${dynamicCol({ containerSelector: 'map-engine-container', id: dcGridSize, type: 'a-50-b-50' })}
-      <div class="fl">
-        <div class="in fll ${dcGridSize}-col-a">
-          ${await Input.instance({
-            id: idX,
-            label: html`X`,
-            containerClass: 'inl',
-            type: 'number',
-            min: 1,
-            value: 16,
-          })}
-        </div>
-        <div class="in fll ${dcGridSize}-col-b">
-          ${await Input.instance({
-            id: idY,
-            label: html`Y`,
-            containerClass: 'inl',
-            type: 'number',
-            min: 1,
-            value: 16,
-          })}
-        </div>
-      </div>
-      ${dynamicCol({ containerSelector: 'map-engine-container', id: dcCellSize, type: 'a-50-b-50' })}
-      <div class="fl">
-        <div class="in fll ${dcCellSize}-col-a">
-          ${await Input.instance({
-            id: idCellW,
-            label: html`Cell Width (px)`,
-            containerClass: 'inl',
-            type: 'number',
-            min: 1,
-            value: 32,
-          })}
-        </div>
-        <div class="in fll ${dcCellSize}-col-b">
-          ${await Input.instance({
-            id: idCellH,
-            label: html`Cell Height (px)`,
-            containerClass: 'inl',
-            type: 'number',
-            min: 1,
-            value: 32,
-          })}
-        </div>
-      </div>
-      <div class="fl">
-        <div class="in wfa" style="padding: 10px; max-width: 200px; margin: auto;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-generate',
-            label: html`<i class="fa-solid fa-arrows-rotate"></i> Generate`,
-          })}
-        </div>
-      </div>
-      <div class="in" style="text-align: center; margin-top: 10px;">
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcCanvasOpts, type: 'search-inputs' })}
-        <div class="fl" style="margin-bottom: 5px;">
-          <div class="in fll ${dcCanvasOpts}-col-a">
-            <div class="in section-mp-border" style="padding: 10px;">
-              <div class="in input-label" style="margin-bottom: 6px; font-size: 14px;">Click Action</div>
-              <div class="fl" style="align-items: center; gap: 8px; font-size: 20px; text-align: left;">
-                ${await ToggleSwitch.instance({
-                  id: 'map-engine-add-on-click',
-                  type: 'checkbox',
-                  displayMode: 'checkbox',
-                  containerClass: 'in fll',
-                  checked: true,
-                  on: {
-                    checked: () => {
-                      MapEngineCyberia.addOnClick = true;
-                      MapEngineCyberia.removeOnClick = false;
-                      const removeToken = ToggleSwitch.Tokens['map-engine-remove-on-click'];
-                      if (removeToken) {
-                        const removeCheckbox = s('.map-engine-remove-on-click-checkbox');
-                        if (removeCheckbox && removeCheckbox.checked) removeToken.click();
-                      }
-                    },
-                    unchecked: () => {
-                      MapEngineCyberia.addOnClick = false;
-                    },
-                  },
-                })}
-                <div class="section-mp">&nbsp &nbsp Add on Click</div>
-              </div>
-              <div
-                class="fl"
-                style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin-top: 4px;"
-              >
-                ${await ToggleSwitch.instance({
-                  id: 'map-engine-remove-on-click',
-                  type: 'checkbox',
-                  displayMode: 'checkbox',
-                  containerClass: 'in fll',
-                  checked: false,
-                  on: {
-                    checked: () => {
-                      MapEngineCyberia.removeOnClick = true;
-                      MapEngineCyberia.addOnClick = false;
-                      const addToken = ToggleSwitch.Tokens['map-engine-add-on-click'];
-                      if (addToken) {
-                        const addCheckbox = s('.map-engine-add-on-click-checkbox');
-                        if (addCheckbox && addCheckbox.checked) addToken.click();
-                      }
-                    },
-                    unchecked: () => {
-                      MapEngineCyberia.removeOnClick = false;
-                    },
-                  },
-                })}
-                <div class="section-mp">&nbsp &nbsp Remove on Click</div>
-              </div>
-            </div>
-          </div>
-          <div class="in fll ${dcCanvasOpts}-col-b">
-            <div class="in section-mp-border" style="padding: 10px;">
-              <div class="in input-label" style="margin-bottom: 6px; font-size: 14px;">View Options</div>
-              <div class="fl" style="align-items: center; gap: 8px; font-size: 20px; text-align: left;">
-                ${await ToggleSwitch.instance({
-                  id: 'map-engine-show-grid',
-                  type: 'checkbox',
-                  displayMode: 'checkbox',
-                  containerClass: 'in fll',
-                  checked: true,
-                  on: {
-                    checked: () => {
-                      MapEngineCyberia.showGridBorders = true;
-                      rerenderCanvas();
-                    },
-                    unchecked: () => {
-                      MapEngineCyberia.showGridBorders = false;
-                      rerenderCanvas();
-                    },
-                  },
-                })}
-                <div class="section-mp">&nbsp &nbsp Show Grid</div>
-              </div>
-              <div
-                class="fl"
-                style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin-top: 4px;"
-              >
-                ${await ToggleSwitch.instance({
-                  id: 'map-engine-show-object-layers',
-                  type: 'checkbox',
-                  displayMode: 'checkbox',
-                  containerClass: 'in fll',
-                  checked: false,
-                  on: {
-                    checked: () => {
-                      MapEngineCyberia.showObjectLayers = true;
-                      rerenderCanvas();
-                    },
-                    unchecked: () => {
-                      MapEngineCyberia.showObjectLayers = false;
-                      rerenderCanvas();
-                    },
-                  },
-                })}
-                <div class="section-mp">&nbsp &nbsp Object Layers</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <canvas class="${canvasId}" width="512" height="512" style="border: 1px solid #555;"></canvas>
-        <div class="in map-engine-cell-coords" style="font-family:monospace;font-size:13px;color:#888;margin-top:4px;">
-          Cell: (0, 0)
-        </div>
-      </div>
-      <div class="in section-mp" style="margin-top: 10px;">
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcEntityType, type: 'a-50-b-50' })}
-        <div class="fl">
-          <div class="in fll ${dcEntityType}-col-a">
-            ${await DropDown.instance({
-              id: idEntityType,
-              label: html`Entity Type`,
-              data: MapEngineCyberia.getEntityTypeDropdownOptions(),
-              value: DEFAULT_ENTITY_TYPE,
-              containerClass: 'inl',
-            })}
-            ${await Input.instance({
-              id: idLevel,
-              label: html`Level (empty uses instance default)`,
-              containerClass: 'inl', type: 'number', min: ENTITY_LEVEL_MIN, max: ENTITY_LEVEL_MAX, value: '',
-            })}
-          </div>
-          <div class="in fll ${dcEntityType}-col-b">
-            ${await Input.instance({
-              id: idColor,
-              label: html`Color`,
-              containerClass: 'inl',
-              type: 'color',
-              value: '#ff0000',
-            })}
-          </div>
-        </div>
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcAlpha, type: 'a-50-b-50' })}
-        <div class="fl">
-          <div class="in fll ${dcAlpha}-col-a">
-            <div class="inl input-container-${idAlpha}">
-              <div class="in">
-                <div class="in input-label">Alpha</div>
-                <label for="${idAlpha}-name">
-                  <span class="hide">Alpha</span>
-                  <input
-                    type="range"
-                    class="in wfa ${idAlpha}"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value="1"
-                    name="${idAlpha}-name"
-                    id="${idAlpha}-name"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="in fll ${dcAlpha}-col-b" style="line-height: 40px;">
-            <div class="in input-label">RGBA</div>
-            <div class="in ${rgbaDisplayId}" style="font-family: monospace; font-size: 13px;"></div>
-          </div>
-        </div>
-        <div class="in section-mp-border" style="margin-top: 10px;">
-          <div class="in input-label">Color Palette</div>
-          <color-palette class="${idColorPalette}" value="#FF0000"></color-palette>
-        </div>
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcCellPos, type: 'a-50-b-50' })}
-        <div class="fl">
-          <div class="in fll ${dcCellPos}-col-a">
-            ${await Input.instance({
-              id: idInitCellX,
-              label: html`initCellX`,
-              containerClass: 'inl',
-              type: 'number',
-              min: 0,
-              value: 0,
-            })}
-          </div>
-          <div class="in fll ${dcCellPos}-col-b">
-            ${await Input.instance({
-              id: idInitCellY,
-              label: html`initCellY`,
-              containerClass: 'inl',
-              type: 'number',
-              min: 0,
-              value: 0,
-            })}
-          </div>
-        </div>
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcDim, type: 'a-50-b-50' })}
-        <div class="fl">
-          <div class="in fll ${dcDim}-col-a">
-            ${await Input.instance({
-              id: idDimX,
-              label: html`dimX`,
-              containerClass: 'inl',
-              type: 'number',
-              min: 1,
-              value: 1,
-            })}
-          </div>
-          <div class="in fll ${dcDim}-col-b">
-            ${await Input.instance({
-              id: idDimY,
-              label: html`dimY`,
-              containerClass: 'inl',
-              type: 'number',
-              min: 1,
-              value: 1,
-            })}
-          </div>
-        </div>
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcFactors, type: 'a-50-b-50' })}
-        <div class="fl">
-          <div class="in fll ${dcFactors}-col-a">
-            ${await Input.instance({
-              id: idFactorA,
-              label: html`factorA`,
-              containerClass: 'inl',
-              type: 'number',
-              step: 0.01,
-              value: 0.5,
-            })}
-          </div>
-          <div class="in fll ${dcFactors}-col-b">
-            ${await Input.instance({
-              id: idFactorB,
-              label: html`factorB`,
-              containerClass: 'inl',
-              type: 'number',
-              step: 0.01,
-              value: 1.5,
-            })}
-          </div>
-        </div>
-        ${await Input.instance({
-          id: idVariationPreserve,
-          label: html`Variation Preserve List`,
-          containerClass: 'inl',
-          type: 'text',
-          placeholder: true,
-        })}
-        <div class="fl" style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin: 5px 0;">
-          ${await ToggleSwitch.instance({
-            id: 'map-engine-random-dim',
-            type: 'checkbox',
-            displayMode: 'checkbox',
-            containerClass: 'in fll',
-            checked: false,
-            on: {
-              checked: () => {
-                MapEngineCyberia.enableRandomFactors = true;
-              },
-              unchecked: () => {
-                MapEngineCyberia.enableRandomFactors = false;
-              },
-            },
-          })}
-          <div class="section-mp">&nbsp &nbsp Enable Random Factors</div>
-        </div>
-        <div class="in" style="margin: 10px;">
-          <div class="${idObjLayerDropdownHost}">${await MapEngineCyberia.buildObjectLayerDropdown()}</div>
-        </div>
-        <div class="in section-mp-border" style="margin: 10px; padding: 10px;">
-          <div class="in input-label">Rename Object Layer ItemId on Filtered Entities</div>
-          <div class="in" style="font-size:12px;color:#888;margin-bottom:8px;">
-            Replaces only exact source ItemId matches inside entities currently visible through the filters. Both
-            fields take comma-separated lists: several targets expand one source into all of them, one target
-            renames every source onto it, and equal counts pair off in the order typed.
-          </div>
-          <div class="fl">
-            <div class="in fll" style="flex:1;padding-right:5px;">
-              ${await Input.instance({
-                id: idRenameSourceObjectLayer,
-                label: html`Source ItemIds`,
-                containerClass: 'inl',
-                type: 'text',
-                placeholder: true,
-              })}
-            </div>
-            <div class="in fll" style="flex:1;padding-left:5px;">
-              ${await Input.instance({
-                id: idRenameTargetObjectLayer,
-                label: html`Target ItemIds`,
-                containerClass: 'inl',
-                type: 'text',
-                placeholder: true,
-              })}
-            </div>
-          </div>
-          <div class="in" style="margin-top: 5px;">
-            ${await BtnIcon.instance({
-              class: 'wfa btn-map-engine-rename-filtered-object-layer-item-id',
-              label: html`<i class="fa-solid fa-arrow-right-arrow-left"></i> Rename Filtered ItemId`,
-            })}
-          </div>
-        </div>
-        <div class="in">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-add-entity',
-            label: html`<i class="fa-solid fa-plus"></i> Add Entity`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 5px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-fill-map',
-            label: html`<i class="fa-solid fa-fill-drip"></i> Map Fill`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 5px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-generate-variation',
-            label: html`<i class="fa-solid fa-shuffle"></i> Generate Variation`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 5px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-swap-preserve-entities',
-            label: html`<i class="fa-solid fa-arrows-rotate"></i> Swap Preserve Positions`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 5px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-replace-preserve-entities',
-            label: html`<i class="fa-solid fa-wand-magic-sparkles"></i> Replace Preserve Entities`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 5px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-flip-horizontal',
-            label: html`<i class="fa-solid fa-arrows-left-right"></i> Flip Horizontal`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 5px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-flip-vertical',
-            label: html`<i class="fa-solid fa-arrows-up-down"></i> Flip Vertical`,
-          })}
-        </div>
-        <div class="in" style="margin-top: 10px;">
-          ${await BtnIcon.instance({
-            class: 'wfa btn-map-engine-toggle-entity-filter',
-            label: html`<i class="fa-solid fa-caret-right map-engine-entity-filter-caret"></i> Filters`,
-          })}
-          <div class="in map-engine-entity-filter-body hide">
-            ${dynamicCol({ containerSelector: 'map-engine-container', id: dcEntityFilter, type: 'search-inputs' })}
-            <div class="fl">
-              <div class="in fll ${dcEntityFilter}-col-a">
-                ${await Input.instance({
-                  id: idFilterEntityType,
-                  label: html`Entity Type`,
-                  containerClass: 'inl',
-                  type: 'text',
-                  placeholder: true,
-                })}
-              </div>
-              <div class="in fll ${dcEntityFilter}-col-b">
-                ${await Input.instance({
-                  id: idFilterInitX,
-                  label: html`initCellX`,
-                  containerClass: 'inl',
-                  type: 'text',
-                  placeholder: true,
-                })}
-              </div>
-              <div class="in fll ${dcEntityFilter}-col-c">
-                ${await Input.instance({
-                  id: idFilterInitY,
-                  label: html`initCellY`,
-                  containerClass: 'inl',
-                  type: 'text',
-                  placeholder: true,
-                })}
-              </div>
-            </div>
-            <div class="in" style="margin-top:5px;">
-              ${await Input.instance({
-                id: idFilterObjectLayerItemIds,
-                label: html`Object Layer ItemIds`,
-                containerClass: 'inl',
-                type: 'text',
-                placeholder: true,
-              })}
-              <div class="in" style="font-size:12px;color:#888;margin-top:3px;">
-                Comma separated, matched exactly. Keeps only entities carrying all of them.
-              </div>
-            </div>
-            <div
-              class="in map-engine-entity-filter-count"
-              style="margin-top:5px;font-size:12px;color:#888;font-family:monospace;"
-            >
-              Showing 0 of 0 entities
-            </div>
-            <div class="in" style="margin-top:5px;">
-              ${await BtnIcon.instance({
-                class: 'wfa btn-map-engine-clear-entity-filter',
-                label: html`<i class="fa-solid fa-broom"></i> Clear Filters`,
-              })}
-            </div>
-            <div class="in" style="margin-top:5px;">
-              ${await BtnIcon.instance({
-                class: 'wfa btn-map-engine-clear-all-entities',
-                label: html`<i class="fa-solid fa-trash-can"></i> Delete All Entities`,
-              })}
-            </div>
-          </div>
-        </div>
-        <div class="in ${entityListId}" style="margin-top: 10px; max-height: 200px; overflow-y: auto;"></div>
-        ${dynamicCol({ containerSelector: 'map-engine-container', id: dcSaveNew, type: 'search-inputs' })}
-        <div class="fl" style="margin-top: 10px;">
-          ${canMutate
-            ? html`<div class="in fll ${dcSaveNew}-col-a" style="padding: 5px;">
-                  ${await BtnIcon.instance({
-                    class: 'wfa btn-map-engine-save-map',
-                    label: html`<i class="fa-solid fa-floppy-disk"></i> Save Map`,
+              {
+                id: 'transform',
+                label: 'Transform',
+                icon: 'fa-solid fa-wand-magic-sparkles',
+                content: html`<p class="map-engine-tool-hint">
+                    Apply the entity settings from Paint to these map operations.
+                  </p>
+                  ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcFactors, type: 'a-50-b-50' })}
+                  <div class="fl">
+                    <div class="in fll ${dcFactors}-col-a">
+                      ${await Input.instance({
+                        id: idFactorA,
+                        label: html`factorA`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        step: 0.01,
+                        value: 0.5,
+                      })}
+                    </div>
+                    <div class="in fll ${dcFactors}-col-b">
+                      ${await Input.instance({
+                        id: idFactorB,
+                        label: html`factorB`,
+                        containerClass: 'inl',
+                        type: 'number',
+                        step: 0.01,
+                        value: 1.5,
+                      })}
+                    </div>
+                  </div>
+                  ${await Input.instance({
+                    id: idVariationPreserve,
+                    label: html`Variation Preserve List`,
+                    containerClass: 'inl',
+                    type: 'text',
+                    placeholder: true,
                   })}
-                </div>
-                <div class="in fll ${dcSaveNew}-col-b" style="padding: 5px;">
+                  <div
+                    class="fl"
+                    style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin: 5px 0;"
+                  >
+                    ${await ToggleSwitch.instance({
+                      id: 'map-engine-random-dim',
+                      type: 'checkbox',
+                      displayMode: 'checkbox',
+                      containerClass: 'in fll',
+                      checked: false,
+                      on: {
+                        checked: () => {
+                          MapEngineCyberia.enableRandomFactors = true;
+                        },
+                        unchecked: () => {
+                          MapEngineCyberia.enableRandomFactors = false;
+                        },
+                      },
+                    })}
+                    <div class="section-mp">&nbsp &nbsp Enable Random Factors</div>
+                  </div>
+                  <div class="in" style="margin-top: 5px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-fill-map',
+                      label: html`<i class="fa-solid fa-fill-drip"></i> Map Fill`,
+                    })}
+                  </div>
+                  <div class="in" style="margin-top: 5px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-generate-variation',
+                      label: html`<i class="fa-solid fa-shuffle"></i> Generate Variation`,
+                    })}
+                  </div>
+                  <div class="in" style="margin-top: 5px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-swap-preserve-entities',
+                      label: html`<i class="fa-solid fa-arrows-rotate"></i> Swap Preserve Positions`,
+                    })}
+                  </div>
+                  <div class="in" style="margin-top: 5px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-replace-preserve-entities',
+                      label: html`<i class="fa-solid fa-wand-magic-sparkles"></i> Replace Preserve Entities`,
+                    })}
+                  </div>
+                  <div class="in" style="margin-top: 5px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-flip-horizontal',
+                      label: html`<i class="fa-solid fa-arrows-left-right"></i> Flip Horizontal`,
+                    })}
+                  </div>
+                  <div class="in" style="margin-top: 5px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-flip-vertical',
+                      label: html`<i class="fa-solid fa-arrows-up-down"></i> Flip Vertical`,
+                    })}
+                  </div>`,
+              },
+              {
+                id: 'entities',
+                label: 'Entities',
+                icon: 'fa-solid fa-layer-group',
+                content: html`<div class="in" style="margin-top: 10px;">
+                    ${await BtnIcon.instance({
+                      class: 'wfa btn-map-engine-toggle-entity-filter',
+                      label: html`<i class="fa-solid fa-caret-right map-engine-entity-filter-caret"></i> Filters`,
+                    })}
+                    <div class="in map-engine-entity-filter-body hide">
+                      ${dynamicCol({ containerSelector: 'map-engine-tools', id: dcEntityFilter, type: 'search-inputs' })}
+                      <div class="fl">
+                        <div class="in fll ${dcEntityFilter}-col-a">
+                          ${await Input.instance({
+                            id: idFilterEntityType,
+                            label: html`Entity Type`,
+                            containerClass: 'inl',
+                            type: 'text',
+                            placeholder: true,
+                          })}
+                        </div>
+                        <div class="in fll ${dcEntityFilter}-col-b">
+                          ${await Input.instance({
+                            id: idFilterInitX,
+                            label: html`initCellX`,
+                            containerClass: 'inl',
+                            type: 'text',
+                            placeholder: true,
+                          })}
+                        </div>
+                        <div class="in fll ${dcEntityFilter}-col-c">
+                          ${await Input.instance({
+                            id: idFilterInitY,
+                            label: html`initCellY`,
+                            containerClass: 'inl',
+                            type: 'text',
+                            placeholder: true,
+                          })}
+                        </div>
+                      </div>
+                      <div class="in" style="margin-top:5px;">
+                        ${await Input.instance({
+                          id: idFilterObjectLayerItemIds,
+                          label: html`Object Layer ItemIds`,
+                          containerClass: 'inl',
+                          type: 'text',
+                          placeholder: true,
+                        })}
+                        <div class="in" style="font-size:12px;color:#888;margin-top:3px;">
+                          Comma separated, matched exactly. Keeps only entities carrying all of them.
+                        </div>
+                      </div>
+                      <div
+                        class="in map-engine-entity-filter-count"
+                        style="margin-top:5px;font-size:12px;color:#888;font-family:monospace;"
+                      >
+                        Showing 0 of 0 entities
+                      </div>
+                      <div class="in" style="margin-top:5px;">
+                        ${await BtnIcon.instance({
+                          class: 'wfa btn-map-engine-clear-entity-filter',
+                          label: html`<i class="fa-solid fa-broom"></i> Clear Filters`,
+                        })}
+                      </div>
+                      <div class="in" style="margin-top:5px;">
+                        ${await BtnIcon.instance({
+                          class: 'wfa btn-map-engine-delete-filtered-entities',
+                          label: html`<i class="fa-solid fa-filter-circle-xmark"></i> Delete Filtered Entities`,
+                        })}
+                      </div>
+                      <div class="in" style="margin-top:5px;">
+                        ${await BtnIcon.instance({
+                          class: 'wfa btn-map-engine-clear-all-entities',
+                          label: html`<i class="fa-solid fa-trash-can"></i> Delete All Entities`,
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="in ${entityListId}" style="margin-top: 10px; max-height: 200px; overflow-y: auto;"></div>
+                  <div class="in section-mp-border" style="margin: 10px; padding: 10px;">
+                    <div class="in input-label">Rename Object Layer ItemId on Filtered Entities</div>
+                    <div class="in" style="font-size:12px;color:#888;margin-bottom:8px;">
+                      Replaces only exact source ItemId matches inside entities currently visible through the filters.
+                      Both fields take comma-separated lists: several targets expand one source into all of them, one
+                      target renames every source onto it, and equal counts pair off in the order typed.
+                    </div>
+                    <div class="fl">
+                      <div class="in fll" style="flex:1;padding-right:5px;">
+                        ${await Input.instance({
+                          id: idRenameSourceObjectLayer,
+                          label: html`Source ItemIds`,
+                          containerClass: 'inl',
+                          type: 'text',
+                          placeholder: true,
+                        })}
+                      </div>
+                      <div class="in fll" style="flex:1;padding-left:5px;">
+                        ${await Input.instance({
+                          id: idRenameTargetObjectLayer,
+                          label: html`Target ItemIds`,
+                          containerClass: 'inl',
+                          type: 'text',
+                          placeholder: true,
+                        })}
+                      </div>
+                    </div>
+                    <div class="in" style="margin-top: 5px;">
+                      ${await BtnIcon.instance({
+                        class: 'wfa btn-map-engine-rename-filtered-object-layer-item-id',
+                        label: html`<i class="fa-solid fa-arrow-right-arrow-left"></i> Rename Filtered ItemId`,
+                      })}
+                    </div>
+                  </div>`,
+              },
+              {
+                id: 'media',
+                label: 'Media',
+                icon: 'fa-solid fa-photo-film',
+                content: html`<div class="in section-mp" style="margin-top: 5px;">
+                  <div class="in map-engine-thumbnail-preview" style="margin-bottom: 5px;"></div>
                   ${await BtnIcon.instance({
-                    class: 'wfa btn-map-engine-clone-map',
-                    label: html`<i class="fa-solid fa-clone"></i> Clone Map`,
+                    class: 'wfa btn-map-engine-capture-thumbnail',
+                    label: html`<i class="fa-solid fa-camera"></i> Capture Thumbnail`,
                   })}
-                </div>`
-            : ''}
-          <div class="in fll ${dcSaveNew}-col-c" style="padding: 5px;">
-            ${await BtnIcon.instance({
-              class: 'wfa btn-map-engine-new-map',
-              label: html`<i class="fa-solid fa-file"></i> New Map`,
-            })}
-          </div>
-        </div>
-        <div class="in" style="margin-top: 10px;">${managementTableHtml}</div>
-      </div>
+                  <div
+                    class="fl"
+                    style="align-items: center; gap: 8px; font-size: 20px; text-align: left; margin: 5px 0;"
+                  >
+                    ${await ToggleSwitch.instance({
+                      id: 'map-engine-capture-obj-layer-thumb',
+                      type: 'checkbox',
+                      displayMode: 'checkbox',
+                      containerClass: 'in fll',
+                      checked: true,
+                      on: {
+                        checked: () => {
+                          MapEngineCyberia.captureObjLayerThumbnail = true;
+                        },
+                        unchecked: () => {
+                          MapEngineCyberia.captureObjLayerThumbnail = false;
+                        },
+                      },
+                    })}
+                    <div class="section-mp">&nbsp &nbsp Capture Object Layer Map Thumbnail on Save/Update/Clone</div>
+                  </div>
+                  ${await BtnIcon.instance({
+                    class: 'wfa btn-map-engine-toggle-thumbnail',
+                    label: html`<i class="fa-solid fa-caret-right map-engine-thumbnail-caret"></i> Thumbnail`,
+                  })}
+                  <div class="in map-engine-thumbnail-body hide">
+                    ${await InputFile.instance(
+                      {
+                        id: idThumbnail,
+                        multiple: false,
+                        extensionsAccept: ['image/png', 'image/jpeg'],
+                      },
+                      {
+                        change: (e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            MapEngineCyberia.thumbnailDirty = true;
+                            const url = URL.createObjectURL(file);
+                            const preview = s('.map-engine-thumbnail-preview');
+                            if (preview)
+                              preview.innerHTML = html`<img
+                                src="${url}"
+                                class="in"
+                                style="max-width:300px;height:auto;border:1px solid #555;margin:auto"
+                              />`;
+                          }
+                        },
+                        clear: () => {
+                          MapEngineCyberia.thumbnailDirty = true;
+                          MapEngineCyberia.currentThumbnailId = null;
+                          const preview = s('.map-engine-thumbnail-preview');
+                          if (preview) preview.innerHTML = '';
+                        },
+                      },
+                    )}
+                  </div>
+                  ${await BtnIcon.instance({
+                    class: 'wfa btn-map-engine-toggle-preview',
+                    label: html`<i class="fa-solid fa-caret-right map-engine-preview-caret"></i> Instance Map Preview`,
+                  })}
+                  <div class="in map-engine-preview-body hide">
+                    <div class="in map-engine-preview-image" style="margin: 5px 0; text-align: center;"></div>
+                    <div class="in" style="color:#888;font-size:12px;">
+                      Auto-captured Object Layer render on Save/Update/Clone — used as this map's node background in the
+                      Instance Map.
+                    </div>
+                  </div>
+                  ${await MapAudioCyberia.renderPanel()}
+                </div>`,
+              },
+              {
+                id: 'library',
+                label: 'Library',
+                icon: 'fa-solid fa-folder-open',
+                content: html`${managementTableHtml}`,
+              },
+            ],
+          })}
+        </div>`,
+      })}
     </div>`;
   }
 }

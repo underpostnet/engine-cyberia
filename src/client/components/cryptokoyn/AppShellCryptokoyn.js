@@ -181,7 +181,7 @@ class AppShellCryptokoyn {
       mode: 'slide-menu',
       barMode,
       RouterInstance,
-      htmlMainBody: async () => await MainBodyDocument.instance({ domain: 'cryptokoyn' }),
+      htmlMainBody: async () => await MainBodyDocument.instance({ path: 'cryptokoyn/explanation/white-paper' }),
       searchCustomImgClass: 'cryptokoyn-menu-icon',
     });
 
@@ -380,7 +380,6 @@ class AppShellCryptokoyn {
           await Docs.instance({
             idModal: 'modal-docs',
             ...Docs.uiIcons({ iconClass: 'cryptokoyn-menu-icon' }),
-            domain: 'cryptokoyn',
             disabled: ['demo'],
             lastReleaseUrl: deployPackageReleaseUrl,
           }),

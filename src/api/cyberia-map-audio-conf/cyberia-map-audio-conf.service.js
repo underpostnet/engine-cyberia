@@ -6,6 +6,12 @@
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../server/ops/logger.js';
 import { DataQuery } from '../../server/storage/data-query.js';
+import {
+  DEFAULT_AUDIO_SETTINGS,
+  DEFAULT_MAP_MUSIC,
+  audioEventRouting,
+  buildAudioEventBindings,
+} from '../cyberia-server-defaults/cyberia-server-defaults.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -45,13 +51,14 @@ const mergeEventBindings = (current = [], incoming = []) => {
   for (const binding of incoming) {
     const index = merged.findIndex((entry) => entry.logicEventId === binding.logicEventId);
     if (index === -1) merged.push(binding);
-    else {
-      const settings = binding.settings ?? merged[index].settings;
-      merged[index] = { ...binding, ...(settings ? { settings } : {}) };
-    }
+    else merged[index] = binding;
   }
   return merged;
 };
+
+/** The settings of a binding stated without any: its stored settings, or the natural routing of its event. */
+const bindingSettings = (stored = [], logicEventId) =>
+  stored.find((binding) => binding.logicEventId === logicEventId)?.settings ?? audioEventRouting(logicEventId);
 
 /** Accepts a bare asset code or an object carrying one. */
 const readAudioCode = (input) => {
@@ -95,8 +102,8 @@ class CyberiaMapAudioConfService {
   /**
    * Bulk-assigns map audio rules, upserting the map's configuration document.
    *
-   * Two callers with two intents share this: the CLI amends one binding at a time and must leave
-   * the others alone, while a seed states the whole configuration and must converge on it —
+   * Two intents share this: the CLI amends one binding at a time and must leave the others alone,
+   * while a seed or the Studio map editor states the whole configuration and must converge on it —
    * otherwise a binding whose logic event was renamed or dropped lives on forever, and the client
    * keeps asking for an asset nothing declares any more. `replaceEvents` is which of the two
    * this call is.
@@ -105,6 +112,7 @@ class CyberiaMapAudioConfService {
    * @param {string} rules.mapCode - Target CyberiaMap code.
    * @param {string|null} [rules.defaultMusic] - Default music asset code, or '' / null to clear it.
    * @param {Array<{logicEventId: string, audioCode: string, settings?: object}>} [rules.events] - Bindings.
+   *   A binding without settings keeps its stored settings, or takes the natural routing of its event.
    * @param {boolean} [rules.replaceEvents=false] - Make `events` the map's complete binding set.
    * @param {object} [rules.settings] - Map-wide volume/loop/crossfade defaults.
    * @param {{host: string, path: string}} options - Provider context.
@@ -113,22 +121,22 @@ class CyberiaMapAudioConfService {
   static assign = async ({ mapCode, defaultMusic, events = [], replaceEvents = false, settings }, options) => {
     if (!mapCode) throw new Error('mapCode is required to assign map audio rules');
     const CyberiaMapAudioConf = getConfModel(options);
+    const conf = (await CyberiaMapAudioConf.findOne({ mapCode })) || new CyberiaMapAudioConf({ mapCode });
 
     const bindings = await Promise.all(
       events.map(async ({ logicEventId, settings: entrySettings, ...reference }) => {
         if (!logicEventId) throw new Error(`Missing logicEventId for an audio binding on map "${mapCode}"`);
+        const id = `${logicEventId}`.trim();
         return {
-          logicEventId: `${logicEventId}`.trim(),
+          logicEventId: id,
           audioCode: await CyberiaMapAudioConfService.assertAudioCode(readAudioCode(reference), options),
-          ...(entrySettings ? { settings: entrySettings } : {}),
+          settings: entrySettings ?? bindingSettings(conf.events, id),
         };
       }),
     );
 
     const defaultMusicCode = defaultMusic === undefined ? undefined : readAudioCode(defaultMusic);
     if (defaultMusicCode) await CyberiaMapAudioConfService.assertAudioCode(defaultMusicCode, options);
-
-    const conf = (await CyberiaMapAudioConf.findOne({ mapCode })) || new CyberiaMapAudioConf({ mapCode });
 
     if (defaultMusicCode !== undefined) conf.defaultMusic = defaultMusicCode;
     if (settings) conf.settings = { ...(conf.settings?.toObject?.() ?? conf.settings ?? {}), ...settings };
@@ -149,6 +157,27 @@ class CyberiaMapAudioConfService {
     });
     return conf;
   };
+
+  /**
+   * Writes the default audio configuration of one map: the default bed, the map-wide settings and
+   * every default binding, in place of the bindings the map had. `run-workflow seed-audio` writes
+   * it to each map of an instance.
+   *
+   * @param {string} mapCode - CyberiaMap code.
+   * @param {{host: string, path: string}} options - Provider context.
+   * @returns {Promise<object>} The configuration document.
+   */
+  static seedDefault = async (mapCode, options) =>
+    await CyberiaMapAudioConfService.assign(
+      {
+        mapCode,
+        defaultMusic: DEFAULT_MAP_MUSIC,
+        settings: DEFAULT_AUDIO_SETTINGS,
+        events: buildAudioEventBindings(),
+        replaceEvents: true,
+      },
+      options,
+    );
 
   static post = async (req, res, options) => {
     /** @type {import('./cyberia-map-audio-conf.model.js').CyberiaMapAudioConfModel} */

@@ -23,23 +23,23 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">95.65% </span>
+                <span class="strong">96.52% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>110/115</span>
+                <span class='fraction'>111/115</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">86.25% </span>
+                <span class="strong">87.02% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>113/131</span>
+                <span class='fraction'>114/131</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">87.5% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>7/8</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
@@ -257,7 +257,10 @@
 <a name='L192'></a><a href='#L192'>192</a>
 <a name='L193'></a><a href='#L193'>193</a>
 <a name='L194'></a><a href='#L194'>194</a>
-<a name='L195'></a><a href='#L195'>195</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -320,8 +323,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2550x</span>
-<span class="cline-any cline-yes">116x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2588x</span>
+<span class="cline-any cline-yes">190x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -413,27 +419,27 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">100x</span>
 <span class="cline-any cline-yes">100x</span>
-<span class="cline-any cline-yes">80x</span>
-<span class="cline-any cline-yes">160x</span>
+<span class="cline-any cline-yes">100x</span>
+<span class="cline-any cline-yes">200x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">100x</span>
 <span class="cline-any cline-yes">80x</span>
 <span class="cline-any cline-yes">80x</span>
-<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">100x</span>
 <span class="cline-any cline-yes">99x</span>
 <span class="cline-any cline-yes">99x</span>
-<span class="cline-any cline-yes">140x</span>
-<span class="cline-any cline-yes">140x</span>
-<span class="cline-any cline-yes">39x</span>
-<span class="cline-any cline-yes">39x</span>
+<span class="cline-any cline-yes">178x</span>
+<span class="cline-any cline-yes">178x</span>
+<span class="cline-any cline-yes">76x</span>
+<span class="cline-any cline-yes">76x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">99x</span>
-<span class="cline-any cline-yes">40x</span>
-<span class="cline-any cline-yes">40x</span>
+<span class="cline-any cline-yes">78x</span>
+<span class="cline-any cline-yes">78x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -500,18 +506,21 @@ export const STALE_DOMAINS = Object.freeze([/itemledger\.org/, /object-layer\.or
 /** Client components each client must carry, and the ones it must not. */
 export const CLIENT_COMPONENTS = Object.freeze({
   objectlayer: {
-    required: { 'object-layer': ['ObjectLayerProtocol', 'ObjectLayerEngine', 'ObjectLayerEngineViewer'] },
+    required: { 'objectlayer-studio': ['ObjectLayerProtocol', 'ObjectLayerEngine', 'ObjectLayerEngineViewer'] },
   },
-  // ItemLedger projects ownership of a definition; the definition itself is read at its authority.
-  itemledger: { forbidden: { 'object-layer': ['*'] } },
+  // ItemLedger views a definition read at its authority, and never authors one.
+  itemledger: {
+    required: { 'objectlayer-studio': ['ObjectLayerProtocol', 'ObjectLayerEngineViewer'] },
+    forbidden: { 'objectlayer-studio': ['ObjectLayerEngine', 'ObjectLayerEngineModal'] },
+  },
   cryptokoyn: {
     required: { wallet: ['WalletProvider', 'EmbeddedWallet', 'WalletView'] },
-    forbidden: { 'object-layer': ['*'] },
+    forbidden: { 'objectlayer-studio': ['*'] },
   },
   'cyberia-portal': {
-    required: { cyberia: ['ObjectLayerProfileCyberia'], 'object-layer': ['ObjectLayerEngineViewer'] },
+    required: { cyberia: ['ObjectLayerProfileCyberia'], 'objectlayer-studio': ['ObjectLayerEngineViewer'] },
   },
-  underpost: { forbidden: { 'object-layer': ['*'], wallet: ['*'] } },
+  underpost: { forbidden: { 'objectlayer-studio': ['*'], wallet: ['*'] } },
 });
 &nbsp;
 const ownerDomainOf = (api) =&gt; Object.keys(DOMAIN_APIS).find((domain) =&gt; DOMAIN_APIS[domain].includes(api)) ?? '';
@@ -612,7 +621,7 @@ export function validateDomainConf({ confServer, confClient, env = 'development'
     }
     for (const [group, names] of Object.entries(rules.forbidden ?? {})) {
       const present = client.components?.[group] ?? [];
-      for (const name of names.includes('*') ? present : <span class="branch-1 cbranch-no" title="branch not covered" >names.filter(<span class="fstat-no" title="function not covered" >(n</span>ame) =&gt; <span class="cstat-no" title="statement not covered" >present.includes(name))</span>)</span>
+      for (const name of names.includes('*') ? present : names.filter((name) =&gt; present.includes(name)))
         errors.push(`${clientId}: carries component ${group}/${name} it does not use`);
     }
 &nbsp;
@@ -652,7 +661,7 @@ export function validateDomainConf({ confServer, confClient, env = 'development'
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-25T15:06:08.886Z
+                at 2026-10-02T22:16:57.453Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

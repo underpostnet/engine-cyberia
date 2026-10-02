@@ -8,10 +8,11 @@
 import { Jimp, rgbaToInt } from 'jimp';
 import sharp from 'sharp';
 import { loggerFactory } from '../../server/ops/logger.js';
+import { hexToRgba } from '../../client/components/objectlayer-studio/RenderSource.js';
 import {
   OBJECT_LAYER_DIRECTION_CODES,
   getKeyframeDirectionsByCode,
-} from '../../client/components/object-layer/ObjectLayerProtocol.js';
+} from '../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -32,7 +33,7 @@ export const DEFAULT_ATLAS_UPSCALE_FACTOR = 20;
 export const PRIMARY_CELL_PIXEL_DIM = 1;
 
 /**
- * Side, in pixels, of the square idle preview every client shows as an item's picture.
+ * Longer side, in pixels, of the idle preview every client shows as an item's picture.
  * @memberof CyberiaAtlasSpriteSheetGenerator
  */
 export const IDLE_PREVIEW_SIZE = 300;
@@ -54,44 +55,25 @@ export const IDLE_PREVIEW_SIZE = 300;
  */
 export class AtlasSpriteSheetGenerator {
   /**
-   * Converts frame matrix and color palette to a Jimp image
+   * The image of one frame of a render source, each cell `cellPixelDim` pixels wide.
    * @static
-   * @param {number[][]} frameMatrix - The frame matrix
-   * @param {number[][]} colors - Color palette
+   * @param {Object} source - Render source.
+   * @param {Uint8Array} pixels - The frame's palette indexes.
    * @param {number} cellPixelDim - Pixel dimension per cell
-   * @returns {Promise<Jimp>} The generated image
+   * @returns {Jimp} The generated image
    * @memberof CyberiaAtlasSpriteSheetGenerator
    */
-  static async frameMatrixToImage(frameMatrix, colors, cellPixelDim = 1) {
-    if (!frameMatrix || frameMatrix.length === 0 || frameMatrix[0].length === 0) {
-      throw new Error('Invalid frame matrix');
-    }
-
-    const width = cellPixelDim * frameMatrix[0].length;
-    const height = cellPixelDim * frameMatrix.length;
-
-    const image = new Jimp({ width, height, color: 0x00000000 });
-
-    for (let y = 0; y < frameMatrix.length; y++) {
-      for (let x = 0; x < frameMatrix[y].length; x++) {
-        const colorIndex = frameMatrix[y][x];
-        if (colorIndex === null || colorIndex === undefined) continue;
-
-        const color = colors[colorIndex];
-        if (!color) continue;
-
-        const rgbaColor = color.length === 4 ? color : [...color, 255];
-
-        for (let dy = 0; dy < cellPixelDim; dy++) {
-          for (let dx = 0; dx < cellPixelDim; dx++) {
-            const pixelX = x * cellPixelDim + dx;
-            const pixelY = y * cellPixelDim + dy;
-            image.setPixelColor(rgbaToInt(...rgbaColor), pixelX, pixelY);
-          }
-        }
+  static frameImage(source, pixels, cellPixelDim = 1) {
+    if (!source.width || !source.height) throw new Error('Invalid frame dimensions');
+    const colors = source.palette.map((hex) => rgbaToInt(...hexToRgba(hex)));
+    const image = new Jimp({ width: cellPixelDim * source.width, height: cellPixelDim * source.height, color: 0 });
+    for (let y = 0; y < source.height; y++)
+      for (let x = 0; x < source.width; x++) {
+        const color = colors[pixels[y * source.width + x]];
+        for (let dy = 0; dy < cellPixelDim; dy++)
+          for (let dx = 0; dx < cellPixelDim; dx++)
+            image.setPixelColor(color, x * cellPixelDim + dx, y * cellPixelDim + dy);
       }
-    }
-
     return image;
   }
 
@@ -122,14 +104,14 @@ export class AtlasSpriteSheetGenerator {
   }
 
   /**
-   * Consolidates all frames of an ObjectLayerRenderFrames into one atlas sprite sheet.
+   * Consolidates all frames of a render source into one atlas sprite sheet.
    *
    * One packing produces the primary render at {@link PRIMARY_CELL_PIXEL_DIM} pixels per cell,
    * and `metadata`, which describes it. `upscaleFactor` is recorded for the upscaled render
    * {@link AtlasSpriteSheetGenerator.upscaledFromRender} derives from it.
    *
    * @static
-   * @param {Object} objectLayerRenderFrames - The ObjectLayerRenderFrames document
+   * @param {Object} objectLayerRenderFrames - The render source
    * @param {string} itemKey - The item label the render is generated for
    * @param {number} [upscaleFactor=DEFAULT_ATLAS_UPSCALE_FACTOR] - Pixels per cell of the upscaled render
    * @param {number} [maxAtlasDim=null] - Maximum atlas dimension (auto-calculated if null)
@@ -143,8 +125,8 @@ export class AtlasSpriteSheetGenerator {
     maxAtlasDim = null,
   ) {
     if (!Number.isInteger(upscaleFactor) || upscaleFactor < 1) throw new Error('Invalid pixel scale');
-    const { frames, colors } = objectLayerRenderFrames;
-    const frameDuration = Number(objectLayerRenderFrames?.frame_duration);
+    const { frames } = objectLayerRenderFrames;
+    const frameDuration = Number(objectLayerRenderFrames.frameDurationMs);
 
     // Direction order for consistent packing
     const directionOrder = [
@@ -176,17 +158,15 @@ export class AtlasSpriteSheetGenerator {
       if (!directionFrames || directionFrames.length === 0) continue;
 
       for (let frameIndex = 0; frameIndex < directionFrames.length; frameIndex++) {
-        const frameMatrix = directionFrames[frameIndex];
         try {
-          const frameImage = await AtlasSpriteSheetGenerator.frameMatrixToImage(
-            frameMatrix,
-            colors,
+          const frameImage = AtlasSpriteSheetGenerator.frameImage(
+            objectLayerRenderFrames,
+            directionFrames[frameIndex],
             PRIMARY_CELL_PIXEL_DIM,
           );
 
           frameImages.push({
             image: frameImage,
-            frameMatrix,
             direction,
             frameIndex,
             width: frameImage.bitmap.width,
@@ -468,8 +448,8 @@ export class AtlasSpriteSheetGenerator {
   }
 
   /**
-   * The idle preview of a render: its preview frame on a transparent {@link IDLE_PREVIEW_SIZE}
-   * square, centred, each cell a block of the largest whole size that fits.
+   * The idle preview of a render: its preview frame scaled nearest-neighbour until its longer side
+   * is {@link IDLE_PREVIEW_SIZE}, with no margin.
    * @static
    * @param {Buffer} render - PNG bytes of a render of the layout.
    * @param {Object} metadata - Atlas metadata as {@link generateAtlas} returns it.
@@ -480,28 +460,10 @@ export class AtlasSpriteSheetGenerator {
     const frame = AtlasSpriteSheetGenerator.idlePreviewFrame(metadata);
     if (!frame) return null;
     const cells = await AtlasSpriteSheetGenerator.cellBox(render, metadata, frame);
-    const factor = Math.floor(IDLE_PREVIEW_SIZE / Math.max(cells.width, cells.height));
-    const still = AtlasSpriteSheetGenerator.repeatPixels(cells, Math.max(1, factor));
-    const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
-    const image = sharp(still.data, { raw: { width: still.width, height: still.height, channels: 4 } });
-    if (factor < 1)
-      image.resize(IDLE_PREVIEW_SIZE, IDLE_PREVIEW_SIZE, {
-        kernel: 'nearest',
-        fit: 'contain',
-        background: transparent,
-      });
-    else {
-      const left = Math.floor((IDLE_PREVIEW_SIZE - still.width) / 2);
-      const top = Math.floor((IDLE_PREVIEW_SIZE - still.height) / 2);
-      image.extend({
-        left,
-        top,
-        right: IDLE_PREVIEW_SIZE - still.width - left,
-        bottom: IDLE_PREVIEW_SIZE - still.height - top,
-        background: transparent,
-      });
-    }
-    return await image.png().toBuffer();
+    return await sharp(cells.data, { raw: { width: cells.width, height: cells.height, channels: 4 } })
+      .resize(IDLE_PREVIEW_SIZE, IDLE_PREVIEW_SIZE, { kernel: 'nearest', fit: 'inside' })
+      .png()
+      .toBuffer();
   }
 
   /**

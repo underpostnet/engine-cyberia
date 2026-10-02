@@ -4,26 +4,24 @@
  *
  * MapEngineCyberia.renderToOffscreenCanvas() composites, per entity, every
  * `objectLayerItemIds` frame at (initCellX, initCellY) sized (dimX, dimY).
- * This module reproduces that with sharp so worlds that never pass through the
- * browser editor — the procedural fallback world — still get a `preview`
- * image for the client's Instance Map node backgrounds.
+ * This module reproduces that with sharp so maps that never pass through the
+ * browser editor still get a `preview` image for the client's Instance Map node
+ * backgrounds.
  *
  * Every entity is drawn by its items' idle-preview stills, the same picture the
  * editors show, read from the atlas of the definition each label is bound to.
- *
- * Previews are pure functions of the map's entity list and of the idle previews its labels
- * resolve to, so results are cached in memory keyed by a content hash of both — the fallback
- * world is regenerated (and re-randomised) on every call, and only a changed layout or a
- * changed item picture re-renders.
+ * `refreshMapPreview` stores that picture as the map's preview.
  *
  * @module src/projects/cyberia/map-preview-generator.js
  */
 
-import crypto from 'crypto';
 import sharp from 'sharp';
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../server/ops/logger.js';
+import { CacheService } from '../../server/storage/cache.js';
 import { renderFileBytes } from '../../api/atlas-sprite-sheet/atlas-sprite-sheet.service.js';
+import { mapCache } from '../../api/cyberia-map/cyberia-map.service.js';
+import { FileFactory } from '../../api/file/file.service.js';
 import { catalogModels, catalogMounted } from './object-layer-catalog.js';
 
 const logger = loggerFactory(import.meta);
@@ -140,23 +138,6 @@ async function solidFrame(color, width, height) {
   return buffer;
 }
 
-/** Stable content hash of everything that affects the rendered pixels. */
-function mapPreviewHash(map, cellPx, previews) {
-  const layout = (map.entities || []).map((e) => [
-    e.initCellX,
-    e.initCellY,
-    e.dimX,
-    e.dimY,
-    (e.objectLayerItemIds || []).join(','),
-    // The colour is the render fallback for an entity whose items have no still.
-    e.color || '',
-  ]);
-  return crypto
-    .createHash('sha1')
-    .update(JSON.stringify({ code: map.code, g: [map.gridX, map.gridY], cellPx, layout, previews: [...previews] }))
-    .digest('hex');
-}
-
 /**
  * Render one CyberiaMap-shaped object to a PNG buffer.
  *
@@ -164,10 +145,9 @@ function mapPreviewHash(map, cellPx, previews) {
  * @param {object} [opts]
  * @param {number} [opts.cellPx=8]   Pixels per grid cell in the output.
  * @param {object} [opts.options]    Router options ({ host, path }) the stills are read with.
- * @param {Map<string, string|null>} [opts.previews] - Idle preview File ids by label, when already resolved.
  * @returns {Promise<Buffer|null>}   PNG buffer, or null when nothing rendered.
  */
-async function renderMapPreviewPng(map, { cellPx = DEFAULT_CELL_PX, options, previews } = {}) {
+async function renderMapPreviewPng(map, { cellPx = DEFAULT_CELL_PX, options } = {}) {
   const gridX = map?.gridX || 0;
   const gridY = map?.gridY || 0;
   if (gridX <= 0 || gridY <= 0) return null;
@@ -177,14 +157,14 @@ async function renderMapPreviewPng(map, { cellPx = DEFAULT_CELL_PX, options, pre
   const cell = Math.max(1, Math.floor(cellPx * scale));
   const width = gridX * cell;
   const height = gridY * cell;
-  const fileIds = previews ?? (await idlePreviewFileIds(map, options));
+  const fileIds = await idlePreviewFileIds(map, options);
 
-  // Every entity of every entityType in the array renders something: its items'
+  // Every entity of every entityType renders something: its items'
   // stills when the atlases hold them, otherwise a flat fill of its colour.
   const composites = [];
   for (const entity of map.entities || []) {
-    const left = Math.round((entity.initCellX || 0) * cell);
-    const top = Math.round((entity.initCellY || 0) * cell);
+    const left = Math.round(entity.initCellX * cell);
+    const top = Math.round(entity.initCellY * cell);
     const w = Math.max(1, Math.round((entity.dimX || 1) * cell));
     const h = Math.max(1, Math.round((entity.dimY || 1) * cell));
     if (left >= width || top >= height || left + w <= 0 || top + h <= 0) continue;
@@ -214,60 +194,63 @@ async function renderMapPreviewPng(map, { cellPx = DEFAULT_CELL_PX, options, pre
 }
 
 /**
- * Rendered-preview cache: `${instanceCode}:${mapCode}` → { hash, png }.
- * Only the latest render per map is retained — the fallback world is
- * regenerated per request and old layouts are unreachable.
+ * Draws a stored map again and makes the picture its preview. A picture its stored File already
+ * holds writes nothing, so a rerun changes nothing. The replaced File goes once no map names it,
+ * and a map that draws nothing keeps no preview: no map names a missing File, and no preview File
+ * outlives its references. A map another write moved on keeps its own preview.
+ *
+ * @param {object} map - A stored map: `_id`, `code`, `gridX`, `gridY`, `preview` and `entities`.
+ * @param {object} options - Router options ({ host, path }).
+ * @returns {Promise<Buffer|null>} The stored picture, or null when none was stored.
  */
-const previewCache = new Map();
-
-const cacheKey = (instanceCode, mapCode) => `${instanceCode}:${mapCode}`;
-
-/**
- * Render (or reuse) the preview for one map and cache it under the instance.
- * @returns {Promise<Buffer|null>}
- */
-async function cacheMapPreview(instanceCode, map, opts = {}) {
-  const key = cacheKey(instanceCode, map.code);
-  const previews = await idlePreviewFileIds(map, opts.options);
-  const hash = mapPreviewHash(map, opts.cellPx ?? DEFAULT_CELL_PX, previews);
-  const hit = previewCache.get(key);
-  if (hit && hit.hash === hash) return hit.png;
-
-  const png = await renderMapPreviewPng(map, { ...opts, previews });
-  if (!png) return null;
-  previewCache.set(key, { hash, png });
+async function refreshMapPreview(map, options) {
+  const CyberiaMap = DataBaseProviderService.getModel('CyberiaMap', options);
+  const File = DataBaseProviderService.getModel('File', options);
+  const png = await renderMapPreviewPng(map, { options });
+  const picture = png ? FileFactory.create(png, `${map.code}-preview.png`) : null;
+  if (picture && map.preview && (await File.exists({ _id: map.preview, md5: picture.md5 }))) return png;
+  const file = picture ? await new File(picture).save() : null;
+  const { matchedCount } = await CyberiaMap.updateOne(
+    { _id: map._id, preview: map.preview ?? null },
+    file ? { $set: { preview: file._id } } : { $unset: { preview: 1 } },
+    { timestamps: false },
+  );
+  if (matchedCount === 0) {
+    if (file) await File.deleteOne({ _id: file._id });
+    return null;
+  }
+  if (map.preview && !(await CyberiaMap.exists({ $or: [{ preview: map.preview }, { thumbnail: map.preview }] })))
+    await File.deleteOne({ _id: map.preview });
+  await CacheService.invalidate(mapCache(options));
   return png;
 }
 
-/** Cached PNG for a map, or null when it was never rendered. */
-function getCachedMapPreview(instanceCode, mapCode) {
-  return previewCache.get(cacheKey(instanceCode, mapCode))?.png ?? null;
-}
-
 /**
- * Render + cache previews for every map of a freshly generated world. Failures
- * are logged and skipped so a missing asset never breaks the world payload.
+ * Draws again the preview of every stored map that places one of the labels, one map at a time:
+ * a map that fails is reported and the others go on.
  *
- * @param {string} instanceCode
- * @param {object[]} maps  CyberiaMap-shaped objects.
- * @returns {Promise<string[]>} map codes that now have a cached preview.
+ * @param {Object} params
+ * @param {string[]|null} params.itemIds - The labels whose pictures changed; null draws every map.
+ * @param {Object} params.options - Router options ({ host, path }).
+ * @returns {Promise<{drawn:number,empty:number,failed:string[]}>} Maps drawn, maps left without a
+ *   picture, and the codes of the maps that failed.
  */
-async function cacheWorldMapPreviews(instanceCode, maps, opts = {}) {
-  const rendered = [];
-  for (const map of maps || []) {
+async function refreshMapPreviews({ itemIds, options }) {
+  const maps = await DataBaseProviderService.getModel('CyberiaMap', options)
+    .find(itemIds ? { 'entities.objectLayerItemIds': { $in: itemIds } } : {})
+    .select('code gridX gridY preview entities')
+    .lean();
+  const tally = { drawn: 0, empty: 0, failed: [] };
+  for (const map of maps) {
     try {
-      if (await cacheMapPreview(instanceCode, map, opts)) rendered.push(map.code);
+      if (await refreshMapPreview(map, options)) tally.drawn++;
+      else tally.empty++;
     } catch (error) {
-      logger.warn(`map preview: "${map?.code}" failed: ${error.message}`);
+      logger.error(`map preview: "${map.code}" failed: ${error.message}`);
+      tally.failed.push(map.code);
     }
   }
-  return rendered;
+  return tally;
 }
 
-export {
-  renderMapPreviewPng,
-  cacheMapPreview,
-  cacheWorldMapPreviews,
-  getCachedMapPreview,
-  mapPreviewHash,
-};
+export { renderMapPreviewPng, refreshMapPreview, refreshMapPreviews };

@@ -13,13 +13,14 @@ node bin/cyberia.js <command> [subcommand] [options]
 cyberia <command> [subcommand] [options]
 ```
 
-| Command        | Purpose                                                               |
-| -------------- | --------------------------------------------------------------------- |
-| `ol`           | object-layer content import, procedural generation, atlas/sprite work |
-| `instance`     | export / import / drop a Cyberia instance and its related documents   |
-| `client-hints` | per-instance presentation hints (palette, camera, status icons)       |
-| `chain`        | Hyperledger Besu network + ERC-1155 `ObjectLayerToken` lifecycle      |
-| `run-workflow` | named operational scripts (seed defaults, build manifests/dashboard)  |
+| Command        | Purpose                                                             |
+| -------------- | ------------------------------------------------------------------- |
+| `ol`           | object-layer content import, atlas/sprite work                      |
+| `instance`     | export / import / drop a Cyberia instance and its related documents |
+| `client-hints` | per-instance presentation hints (palette, camera, status icons)     |
+| `chain`        | Hyperledger Besu network + ERC-1155 `ObjectLayerToken` lifecycle    |
+| `release`      | product repositories: build, lock and publish them                  |
+| `run-workflow` | named operational scripts (seed defaults, dashboard, status pages)  |
 
 Most data commands resolve the target DB from `DEFAULT_DEPLOY_ID` / `DEFAULT_DEPLOY_HOST` /
 `DEFAULT_DEPLOY_PATH` in the `--env-path` file (default `./.env`). Without that file, they come from the
@@ -30,49 +31,40 @@ process environment, as in a pod, which receives its environment from a Secret. 
 
 ## `cyberia ol` — object layer
 
-Import PNG assets, generate procedural layers, build atlas sprite sheets, push to IPFS + MongoDB.
+Import, rebuild and drop object layers in MongoDB and IPFS; `--client-public` keeps the asset tree in step.
 
 ```bash
 cyberia ol [item-id] [options]
 ```
 
-| Option                                                | Description                                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `--import`                                            | Import specific item-id(s), comma-separated; needs one source below            |
-| `--instance <code>`                                   | Source `--import` from that instance backup under `engine-private`             |
-| `--from-directory`                                    | Source `--import` / `--import-types` from the asset directory                  |
-| `--import-types [types]`                              | Batch import by type (e.g. `skin,floors`) or `all`; needs `--from-directory`   |
-| `--generate`                                          | Generate procedural layers from a semantic item-id (e.g. `floor-desert`)       |
-| `--count <n>` / `--density <0..1>`                    | Shape count multiplier (default `3`) / density (default `0.5`)                 |
-| `--seed <seed>`                                       | Deterministic seed for `--generate` (e.g. `fx-42`)                             |
-| `--frame-index <n>` / `--frame-count <n>`             | Start frame (default `0`) / frame count (default `1`)                          |
-| `--to-atlas-sprite-sheet [dim]`                       | Rebuild the render and publish the definitions that name it                    |
-| `--sync-derived`                                      | Derive the upscaled render and the idle preview again; `--instance` narrows it |
-| `--upscale <px-factor>`                               | Pixels per cell of the upscaled derived render; alone, rebuilds the render     |
-| `--normalize-stats`                                   | Clamp the stats of every layer the action writes to its item type's bounds     |
-| `--random-stats`                                      | Regenerate the stats of every layer the action writes at random                |
-| `--min-stat <n>` / `--max-stat <n>`                   | Narrow the range the two flags above may leave (default `-100`/`100`)          |
-| `--show-frame [dir_frame]`                            | View one frame (e.g. `08_0`; default `08_0`)                                   |
-| `--show-atlas-sprite-sheet`                           | Save and open the primary render of the bound definition                       |
-| `--drop` `--confirm <deploy-id>`                      | Bootstrap only: drop existing data before importing (or standalone)            |
-| `--release <release-id>`                              | Work on one candidate release database instead of the workspace                |
-| `--client-public` / `--git-clean`                     | With `--drop`: also remove static asset folders / run clean                    |
-| `--env-path <path>` · `--mongo-host <host>` · `--dev` | env / DB / dev overrides                                                       |
+| Option                                                | Description                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `--import`                                            | Import item-id(s), comma-separated: from `--instance`, else from the asset tree |
+| `--instance <code>`                                   | Source `--import` from that instance backup of the content artifact             |
+| `--import-types [types]`                              | Batch import by type (e.g. `skin,floors`) or `all` from the asset tree          |
+| `--to-atlas-sprite-sheet [dim]`                       | Rebuild the render and publish the definitions that name it                     |
+| `--sync`                                              | Bring stored layers in line with the profile; derive their renders again        |
+| `--upscale <px-factor>`                               | Pixels per cell of the upscaled derived render; alone, rebuilds the render      |
+| `--normalize-stats`                                   | Clamp the stats of every layer the action writes to its item type's bounds      |
+| `--random-stats`                                      | Regenerate the stats of every layer the action writes at random                 |
+| `--min-stat <n>` / `--max-stat <n>`                   | Narrow the range the two flags above may leave (default `-100`/`100`)           |
+| `--show-frame [dir_frame]`                            | View one frame (e.g. `08_0`; default `08_0`)                                    |
+| `--show-atlas-sprite-sheet`                           | Save and open the primary render of the bound definition                        |
+| `--drop` `--confirm <deploy-id>`                      | Bootstrap only: drop existing data before importing (or standalone)             |
+| `--release <release-id>`                              | Work on one candidate release database instead of the workspace                 |
+| `--client-public`                                     | Keep the asset tree consistent with the action (see below)                      |
+| `--env-path <path>` · `--mongo-host <host>` · `--dev` | env / DB / dev overrides                                                        |
 
 ```bash
 # Restore specific items from an instance backup: the backup is the authority for the item
 cyberia ol hatchet,sword --instance FOREST --import
 
-# Import specific items from the asset directory
-cyberia ol hatchet,sword --from-directory --import --env-path ./engine-private/conf/dd-cyberia/.env.development
+# Import specific items from the asset tree
+cyberia ol hatchet,sword --client-public --import --env-path ./engine-private/conf/dd-cyberia/.env.development
 
-# Batch import by type, or everything, from the asset directory
-cyberia ol --from-directory --import-types skin,floors
-cyberia ol --from-directory --import-types all
-
-# Procedural generation
-cyberia ol floor-desert --generate --seed fx-42
-cyberia ol floor-grass  --generate --frame-count 4 --count 5 --density 0.7
+# Batch import by type, or everything, from the asset tree
+cyberia ol --client-public --import-types skin,floors
+cyberia ol --client-public --import-types all
 
 # Atlas / inspect
 cyberia ol hatchet --to-atlas-sprite-sheet
@@ -84,23 +76,38 @@ cyberia ol hatchet --to-atlas-sprite-sheet --upscale 40
 cyberia ol --instance TEST --upscale 20
 cyberia ol --to-atlas-sprite-sheet
 
-# Derive the upscaled render and the idle preview again from the primary render
-cyberia ol hatchet --sync-derived
-cyberia ol --sync-derived --instance FOREST
+# Bring stored items in line with the current profile, stats and schema, and derive their
+# upscaled render and idle preview again from the primary render
+cyberia ol hatchet --sync
+cyberia ol --sync --instance FOREST
+cyberia ol --sync
 
 # Balance stats on every layer an action writes
-cyberia ol --sync-derived --instance FOREST --normalize-stats
-cyberia ol hatchet --from-directory --import --random-stats --normalize-stats --max-stat 10
+cyberia ol --sync --instance FOREST --normalize-stats
+cyberia ol hatchet --client-public --import --random-stats --normalize-stats --max-stat 10
 
-# Bootstrap only: drop + re-import a single item, including static folders
-cyberia ol hatchet --drop --confirm dd-cyberia --client-public --from-directory --import
+# Bootstrap only: drop an item from MongoDB, then import it again from the asset tree
+cyberia ol hatchet --drop --confirm dd-cyberia
+cyberia ol hatchet --client-public --import
+
+# Bootstrap only: drop an item and its asset folders
+cyberia ol hatchet --drop --confirm dd-cyberia --client-public
 ```
 
 `--drop` runs the same purge as the Object Layer management view's purge action
 (`src/api/object-layer/object-layer.purge.js`): the definition, its render frames, its atlas and
-render files, its IPFS pin records and MFS paths, and the labels bound to it. The asset tree is
-the source a re-import reads, so only `--client-public` takes it too. A definition ItemLedger
-registers is kept and reported.
+render files, its IPFS pin records and MFS paths, and the labels bound to it. A definition
+ItemLedger registers is kept and reported. When ItemLedger does not answer, the drop removes
+nothing and names the registration-safety policy.
+
+MongoDB holds every frame: the Object Layer editor and every `ol` action write there only.
+`--client-public` keeps `src/client/public/cyberia/assets/<type>/<item-id>/` and the host's built
+copy consistent with the action:
+
+- `--import` without `--instance`, and `--import-types`, read the asset tree.
+- Each item the action writes (an import, `--sync`, `--to-atlas-sprite-sheet`) has its folder
+  replaced with its stored frames and `metadata.json`.
+- `--drop` removes the folder of each dropped item.
 
 An item id names the definition the Cyberia item catalog binds it to (`CyberiaItemCatalog`,
 resolved through `src/projects/cyberia/object-layer-catalog.js`). Definitions are immutable: a
@@ -113,6 +120,31 @@ Every writing flow first runs the idempotent identity migration, which moves a l
 has one published definition; a label with several definitions and no binding must be bound
 explicitly (`POST /api/v1/cyberia-item-catalog { itemId, objectLayerCid }`).
 
+`--sync` works on the definitions the catalog binds, in scope: an item-id, an instance, or every
+label. For each one it:
+
+1. Composes the definition again under the current Cyberia profile, stat contract and Object
+   Layer schema, with `--normalize-stats` or `--random-stats` applied. A definition whose identity
+   changes is written and its label rebinds; its render frames and atlas carry over. An unchanged
+   definition writes nothing.
+2. Derives the upscaled render and the idle preview again from the primary render.
+3. With `--client-public`, writes the item's folder in the asset tree.
+
+Every flow that writes (`--import`, `--import-types`, `--sync`, `--to-atlas-sprite-sheet`,
+`--drop`) then reaches what draws and serves the written labels:
+
+- It connects to the host's Valkey, so each write invalidates the engine caches it changes. A
+  running engine serves the new labels, atlases and map previews at once.
+- It draws again the preview of each map that places a written label. A new picture replaces the
+  preview File and a replaced File no map names is deleted; an unchanged picture keeps its File,
+  so a rerun writes nothing.
+- It asks each registered game server to reload its object layers (`incremental`), when the
+  runtime serves the content database the write went to. A workspace write behind an active
+  release reaches no reader: the runtime serves the release.
+
+Pinned quest and action references keep the definition they name: a rebind never moves them. A
+browser keeps the item pictures it loaded until the page reloads.
+
 ---
 
 ## `cyberia instance` — instance data
@@ -121,24 +153,28 @@ Export / import / drop a game instance and its related maps, entities, actions, 
 layers and map audio in MongoDB.
 
 ```bash
-cyberia instance [instance-code] [options]
+cyberia instance <instance-code> [options]
 ```
 
-| Option                                                | Description                                                                              |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `--export [path]`                                     | Export instance and related documents to a backup directory                              |
-| `--import [path]`                                     | Import from a backup directory (upsert, preserves UUIDs)                                 |
-| `--conf`                                              | With `--export`/`--import`: only `cyberia-instance.json` + `-conf.json`; leaves the rest |
-| `--drop` `--confirm <deploy-id>`                      | Bootstrap only: drop all documents associated with the instance code                     |
-| `--release <release-id>`                              | Import into, or export from, one content release database                                |
-| `--sync-entities`                                     | Sync the conf's entity-type default references and skill config                          |
-| `--export-current-fallbackworld`                      | Capture the in-memory procedural fallback world, then export it                          |
-| `--keep-fallback-codes`                               | Capture using the raw `fallback-map-*` / canonical action-quest codes                    |
-| `--fallback-url <url>`                                | Capture the world a running engine serves instead of regenerating it                     |
-| `--env-path <path>` · `--mongo-host <host>` · `--dev` | env / DB / dev overrides                                                                 |
+| Option                                                | Description                                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `--export [path]`                                     | Export to a backup directory; `./cyberia-content/src/content/instances/<code>` by default |
+| `--import [path]`                                     | Import from a backup directory (upsert, preserves UUIDs); the artifact backup by default  |
+| `--client-public`                                     | With `--import`: also write the frames and metadata of each item to the asset tree        |
+| `--conf`                                              | With `--export`/`--import`: only `cyberia-instance.json` + `-conf.json`; leaves the rest  |
+| `--drop` `--confirm <deploy-id>`                      | Bootstrap only: drop all documents associated with the instance code                      |
+| `--release <release-id>`                              | Import into, or export from, one content release database                                 |
+| `--sync-entities`                                     | Sync the conf's entity-type default references and skill config                           |
+| `--env-path <path>` · `--mongo-host <host>` · `--dev` | env / DB / dev overrides                                                                  |
+
+The command works on the one instance it names. The default export writes into the instance
+sources of the `cyberia-content` checkout; the command fails when the content root is a packed
+artifact and no path is given.
 
 ```bash
-cyberia instance FOREST --export ./backups/FOREST
+cyberia instance FOREST --import
+cyberia instance FOREST --import --client-public
+cyberia instance FOREST --export
 cyberia instance FOREST --import ./backups/FOREST
 cyberia instance FOREST --import --release v3-4-0-8b4d643
 cyberia instance FOREST --drop --confirm dd-cyberia
@@ -160,8 +196,14 @@ render from the backup's render frames and publishes the definition that names i
 action references to the backup definition move to the rebuilt one. An item with neither a valid
 atlas nor render frames fails.
 
-`instance --import`, `ol --instance --import` and `run-workflow import-default-items` use the same
-restore. Every write is a no-op when the database already holds it, so the round trip is stable:
+The restored definition binds its label. No other definition of the label is removed: content
+that pins another cid keeps it, so two instances can run two definitions of one label. The import
+reads no ItemLedger.
+
+`instance --import`, `ol --instance --import` and `run-workflow import-content` use the same
+restore. It keeps the render frames in MongoDB only. With `--client-public`, `instance --import`
+and `ol --instance --import` also write the frames and `metadata.json` of each item to
+`src/client/public/cyberia/` and `public/<host><path>`. Every write is a no-op when the database already holds it, so the round trip is stable:
 export, import and export again write the same bytes. A backup of an older shape (`ledger`,
 `sha256`, raw IPFS payloads, an atlas the render contract does not describe, parent references to
 render frames and atlases) migrates in one import and one export. One more import and export sets
@@ -254,41 +296,9 @@ different answers.
 no item list of its own: it names entity-type defaults, and the items follow from them, so there is
 exactly one place to read or change a starting kit.
 
-To point a world at the seeded collection, name it:
-
-```bash
-cyberia run-workflow seed-entities --instance FOREST --dev
-```
-
-`seed-entities` upserts `ENTITY_TYPE_DEFAULTS` into the collection; `--instance` then makes that
-instance's conf reference exactly those documents, replacing whatever it referenced before, so
-re-running converges rather than accumulating.
-
-### Capturing the procedural fallback world
-
-The fallback world is never persisted: every engine process rebuilds it from the code defaults at
-boot and serves it whenever a requested instance is absent. `--export-current-fallbackworld` freezes
-that in-memory world into MongoDB under a real instance code — maps and portal topology, the
-instance conf, and the content collections the fallback path serves from code rather than the DB
-(skills, entity-type defaults, dialogues, actions, quests) — and then exports it like any other
-instance. It writes each captured map's audio configuration too, under the captured map code,
-binding only the codes an imported `CyberiaAudio` actually carries and reporting the rest: the
-client asks for audio by map code, so a namespaced capture would otherwise play nothing.
-
-```bash
-# Freeze the current fallback world as PROC-1 and back it up
-cyberia instance PROC-1 --export-current-fallbackworld --dev
-
-# Restore it later as an ordinary persisted instance
-cyberia instance PROC-1 --import --dev
-```
-
-Map, action and quest codes are namespaced under the instance code (`fallback-map-0` →
-`PROC-1-map-0`) so successive captures never overwrite each other; `--keep-fallback-codes` writes
-the canonical codes verbatim instead. Sprites are the one thing a capture cannot synthesise: when a
-referenced item id has no `ObjectLayer` document the command aborts and names the ids to import with
-`cyberia ol <ids> --from-directory --import`. Staged fallback default items live only in the serving engine process,
-so pass `--fallback-url http://localhost:4001` to capture a live world rather than regenerating it.
+A world that references no document runs on the foundation baseline for every entity type
+([Content artifact](../explanation/content-artifact.md#document-families)). To change a baseline row
+for one world, author a document in the Entity engine and reference it from that instance.
 
 ---
 
@@ -370,7 +380,7 @@ bank (`DEFAULT_AUDIO_BANK`) and its bindings (`DEFAULT_AUDIO_BINDINGS`, expanded
 and `cyberia-client/src/audio/audio_events.h` holds the same ids for the emitting side. A binding naming an
 unknown event, or an asset the bank does not carry, throws at import rather than playing silence.
 
-The fallback bank binds `projectile`, `coin_drop_or_transaction`, `drop`, `item-pickup`, `victory`, `level-up`,
+The default bank binds `projectile`, `coin_drop_or_transaction`, `drop`, `item-pickup`, `victory`, `level-up`,
 `death`, `heal`, `hit`, `portal`, `ui-click` and `footsteps` as one-shots, and `combat`, `boss`, `portal-cooldown` and
 `craft` as music. `victory` is a cue rather than a bed: completing a quest is an event, and holding the
 bus for it would take the map's music away for the length of a flourish. `hit` follows the server's damage events, so it sounds for any entity in view rather than
@@ -403,33 +413,35 @@ an unimported one is rejected rather than stored as a dangling name. Bindings me
 event replaces that binding and leaves the others in place. `--map` on its own prints the current configuration
 and writes nothing.
 
-The fallback seed is the exception, and deliberately so: it states a map's complete binding set, so re-running it
+The seed is the exception, and deliberately so: it states a map's complete binding set, so re-running it
 converges. A binding whose logic event the bank no longer declares — a renamed cue, for instance — is dropped and
 logged, instead of surviving as a name the client would keep asking the engine to resolve.
 
 `settings.bus` selects `music` or `sfx` on the binding. It does not classify the asset.
-Omitted settings inherit client or map defaults. Supported overrides include volume, loop, crossfadeMs, pitch, pan, and priority.
-Set music event routing through the map configuration API or the fallback seed workflow.
-Changing only an event's audio code preserves its existing settings.
+A binding stated without settings keeps the settings it has, or takes the natural routing of its event: a music
+event loops on the music bus, and a one-shot plays once with no crossfade. Other omitted settings inherit client or
+map defaults. Supported overrides include volume, loop, crossfadeMs, pitch, pan, and priority.
 
-Record and seed the complete fallback bank from the engine repository root:
+Record the bank and seed one instance from the engine repository root:
 
 ```bash
 cyberia run-workflow seed-audio --records-only
-cyberia run-workflow seed-audio --dev --mongo-host 127.0.0.1
 cyberia run-workflow seed-audio --instance my-instance --dev --mongo-host 127.0.0.1
 ```
 
 The first command records thirteen WAV and manifest pairs and touches no database.
-The second also upserts generic File references, CyberiaAudio metadata, and audio configuration for the fallback maps.
-The third configures one instance's maps instead: `--instance <instance-code>` reads that instance's own
-`cyberiaMapCodes` and scores every one of them with the same bank, bindings and default bed the fallback world
-uses, so a world built on that topology sounds the way the fallback world does. Every map falls back to the
-`exploration` bed; what makes a place sound different is the event that fires there. The instance must exist and
-declare at least one map, or the run fails without writing anything.
+The second also upserts generic File references, CyberiaAudio metadata, and the audio configuration of one
+instance's maps: it reads that instance's own `cyberiaMapCodes` and scores every one of them with the same bank,
+bindings and default bed. `--instance <instance-code>` is required unless `--records-only` is set. Every map falls
+back to the `exploration` bed; what makes a place sound different is the event that fires there. The instance must
+exist and declare at least one map, or the run fails without writing anything.
 
-Every form states each map's whole configuration, so re-running converges rather than accumulating: a bed is
+The seed states each map's whole configuration, so re-running converges rather than accumulating: a bed is
 reassigned and a binding the bank no longer declares is dropped.
+
+The Studio map editor edits the same configuration. Its Audio section picks one asset per event, with `idle` as the
+default music, and saves the complete binding set of the map. **Seed default** writes to one map what the seed writes
+to each map of an instance. It does not record or import the bank, so an asset the collection does not hold is refused.
 It reuses the existing engine environment resolution. Full seeding requires that deployment configuration and MongoDB.
 Use `--records-path` to select the output directory.
 An asset's generic File `_id` is derived from its code and the bytes themselves, so re-importing an unchanged
@@ -444,7 +456,6 @@ Recording produces nothing for the client to ship: `cyberia-client` bundles no W
 engine-cyberia by code, so an asset is reachable only once it is seeded.
 
 The client resolves `logicEventId → audioCode → fileId → /api/v1/file/blob/:fileId` and caches decoded WAVs.
-Fallback maps use exploration, combat, boss, and exploration music in order.
 Missing remote content uses the generated local bank. Unknown effects become silence.
 Regenerate the local bank before building the client after changing audio content.
 
@@ -511,29 +522,81 @@ against the chain.
 
 ## `cyberia content-release` — versioned content
 
-A deploy never drops content. It builds a candidate release into its own database, validates it,
-and promotes it by pointer. [Content releases](../explanation/content-releases.md) holds the model;
+The data release of `cyberia-content`. A deploy never drops content: it builds a candidate release
+into its own database, validates it, and promotes it by pointer.
+[Content releases](../explanation/content-releases.md) holds the model;
 [Local content development](../how-to/develop-content-locally.md) the daily workflow around it.
 
-| Subcommand              | Description                                                                                                                                                              |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `build <release-id>`    | Fill the release database `--from backups` (`--instances`) or `--from workspace`, publish its definitions, validate it; `--bootstrap` promotes when no release is active |
-| `validate [release-id]` | Run every check again and record the report; with no release named, check the workspace                                                                                  |
-| `promote <release-id>`  | Serve a validated release; running engines rebind and reload the game servers                                                                                            |
-| `rollback`              | Serve the release that was active before the current one                                                                                                                 |
-| `retire`                | Stop serving the active release: the workspace serves again; `rollback` re-promotes it                                                                                   |
-| `status`                | List the ledger and the active release                                                                                                                                   |
-| `prune [--keep n]`      | Drop retired release databases beyond `n`; never the active one or the rollback target                                                                                   |
-| `activate`              | Bind this process to the active release                                                                                                                                  |
+| Subcommand                                 | Description                                                                                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `prepare <release-id> --channel <channel>` | On the host: fetch the revision the deployment lock pins, from the channel's repository, into a read-only workspace (`--store`)                                                      |
+| `build <release-id>`                       | Build, ingest (the foundation, the release sagas, then each instance) and validate a release `--from source` (the prepared workspace), `backups` (the local artifact) or `workspace` |
+| `validate [release-id]`                    | Run every check again and record the report; with no release named, check the workspace                                                                                              |
+| `promote <release-id>`                     | Serve a validated release; running engines rebind and reload the game servers                                                                                                        |
+| `rollback`                                 | Serve the release that was active before the current one                                                                                                                             |
+| `retire`                                   | Stop serving the active release: the workspace serves again; `rollback` re-promotes it                                                                                               |
+| `status`                                   | List the ledger and the active release                                                                                                                                               |
+| `prune [--keep n]`                         | Drop old releases: their databases and ledger entries; never a building, validated or active release, or the rollback target                                                         |
+| `activate`                                 | Bind this process to the active release                                                                                                                                              |
 
 ```bash
-cyberia content-release build v3-4-0-8b4d643 --instances amethyst-strata-expansion,FOREST,TEST
-cyberia content-release build v3-4-1-studio --from workspace
+cyberia content-release prepare v3-4-5-8b4d643-04f978b0 --channel private
+cyberia content-release build v3-4-5-8b4d643-04f978b0 --from source        # in the Release Job
+cyberia content-release build local-1 --from backups --instances test --dev
+cyberia content-release build local-2 --from workspace --dev
 cyberia content-release validate                      # the workspace, before any build
 cyberia content-release retire                        # back to the workspace after a local rehearsal
-cyberia content-release promote v3-4-0-8b4d643
+cyberia content-release promote v3-4-5-8b4d643-04f978b0
 cyberia content-release rollback
 ```
+
+`build --from source` runs the repository's own `npm ci`, `npm test` and `npm pack` on a copy of
+the workspace, with no Secret in their environment, then checks that the artifact has the locked
+digest and revision. A release carries the worlds the deploy serves: one instance per variant of
+`conf.instances.json`. `/` serves `amethyst-strata-expansion`, and `/test` serves `test`. A
+production runtime promotes only a release built from an exact source revision.
+
+## `cyberia release` — product repositories
+
+Builds the product repositories, pins them in the deployment lock and publishes them. Each
+repository and its release profile come from `releaseRepositories` in
+`src/projects/cyberia/catalog-cyberia.js`.
+
+| Repository           | Profile             | `release build` writes                                                                                     |
+| -------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `cyberia-content`    | `data-release`      | `dist/` and `artifacts/cyberia-content-<version>.tgz`, with its own `pack`                                 |
+| `cyberia-audio`      | `source-sync`       | nothing                                                                                                    |
+| `cyberia-deployment` | `source-sync`       | the `dd-cyberia` conf and package manifest, the runtime images and the manifests                           |
+| `cyberia-server`     | `container-release` | status pages, instance manifests, the dashboard, deploy scripts, `README.md`, Dockerfiles, the CD workflow |
+| `cyberia-client`     | `container-release` | status pages, instance manifests, deploy scripts, `README.md`, Dockerfiles, the CD workflow                |
+
+| Subcommand                        | Description                                                                                                                                                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list [--profile <p>] [--locked]` | Print `<name> <repository> <profile>`; `--locked` prints only the repositories the lock pins, with the revision as a fourth field                                                                                                                            |
+| `build [names...]`                | Set the [release instances](../how-to/run-the-docker-stack-locally.md#release-instances) in `conf.instances.json`, then build the named repositories (`--dev`, `--node-name`). With no names: the runtime contract, every repository, then the secret scan   |
+| `lock`                            | Pin the committed revision of every repository but the deployment, and the content artifact, in `underpost.lock.json` of the deployment                                                                                                                      |
+| `verify`                          | Exit non-zero unless the installed content artifact is the one the lock pins                                                                                                                                                                                 |
+| `publish [names...]`              | Push the named checkouts (default: all of them) to the public repository, or with `--private` to the private mirror, and track it as origin; the deployment goes last. `--dry-run` tracks each target as origin and lists the commits it lacks, with no push |
+| `clean [names...]`                | Discard every change not committed in the checkouts a build writes: the game and deployment checkouts. Commits stay                                                                                                                                          |
+
+```bash
+cyberia release build --commit                        # the contract, every repository, the secret scan
+cyberia release lock --commit                         # pin what the build committed
+cyberia release publish --private                     # to the private mirrors
+cyberia release publish cyberia-server                 # one checkout, to its public repository
+cyberia release -f publish cyberia-server --private     # force push: it can rewrite the history
+cyberia release list --locked                         # <name> <repository> <profile> <revision>
+cyberia release build cyberia-server cyberia-client   # what a deploy node builds
+cyberia release verify                                # the content check of the image build
+```
+
+`-f`, before or after the subcommand, forces the operation; only `publish` reads it, and pushes with
+`-f`. `--commit` commits what a build or a lock writes. `lock` refuses a checkout with changes that are
+not committed, and a content artifact built at another revision than its checkout. The deployment
+holds the lock and pins no revision of its own: a deploy takes it at its branch tip, and every
+other repository at the revision it pins. `publish` pushes the deployment only after every
+other checkout it publishes. The lock format is the platform
+[source lock](../../nexodev/explanation/source-releases.md#the-source-lock).
 
 ## `cyberia catalog` — item bindings
 
@@ -545,6 +608,36 @@ Asks the Object Layer authority about every binding of the item catalog and unbi
 definition it no longer offers: archived, a draft, or unknown. Idempotent; an authority that does
 not answer fails the run and changes nothing. The same reconciliation is served over REST
 (`POST /api/v1/cyberia-item-catalog/reconcile`, moderator).
+
+## `cyberia content` — content artifact
+
+The artifact of the content root (`CYBERIA_CONTENT_ROOT`, the `cyberia-content` checkout by default)
+is the only content source. These commands show its identity, audit serialized content against it,
+and import it. See [Content artifact](../explanation/content-artifact.md). Content is
+authored, generated, validated, built and packed in the `cyberia-content` repository, with its own
+CLI. A command that needs no content never resolves the content root.
+
+```bash
+cyberia content status
+cyberia content audit --dev
+cyberia content audit --backup ./backups/FOREST,./backups/TEST
+cyberia content import --dev --dry-run
+cyberia content import --dev
+cyberia content import --saga amethyst-strata-expansion --dev
+```
+
+| Subcommand | Description                                                                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`   | Print the artifact identity                                                                                                                                    |
+| `audit`    | Classify every label the database (or `--backup <dirs>`) names or stores, and plan each artifact label                                                         |
+| `import`   | Insert every absent document of the foundation families; `--saga <code>` imports one saga and its instance; `--release <id>` writes into that release database |
+
+`import` writes Object Layer definitions and their catalog bindings, entity-type defaults, skills,
+maps, quests, dialogues and actions, in that order. An Object Layer item is planned by identity
+against the definition its label is bound to: absent, in sync, or differs. A label or a document
+that differs is reported and kept; `--rebind` moves it to the artifact, and a rebound label gets a
+new definition beside the earlier one. Render, quest and action sources, and placed maps stay as
+Studio set them. `--dry-run` plans only.
 
 ## `cyberia cache` — platform cache
 
@@ -559,24 +652,26 @@ See [the development cache](../how-to/develop-content-locally.md#cache).
 
 Named scripts from the `scripts/` directory for seeding and build maintenance.
 
-| Subcommand                   | Description                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `import-default-items`       | Import the saga, then the backups of `amethyst-strata-expansion`, `FOREST` and `TEST`; `--clean --confirm <deploy-id>` drops instead |
-| `seed-skills`                | Upsert `DefaultSkillConfig` into the `cyberia-skill` collection (full records)                                                       |
-| `seed-dialogues`             | Upsert `DefaultCyberiaDialogues` into the `cyberia-dialogue` collection                                                              |
-| `generate-semantic-examples` | Generate one procedural example per registered semantic prefix                                                                       |
-| `build-manifest`             | Build K8s Deployment + Service manifests for mmo-client / mmo-server                                                                 |
-| `validate-domains`           | Check API ownership, content partitions, views and components (`--env production`)                                                   |
-| `drop-db`                    | Bootstrap only: drop the content collections; needs `--confirm <deploy-id>`                                                          |
-| `build-server-dashboard`     | Build the static cyberia-server metrics/status dashboard (`--dev`, `--output-path`)                                                  |
+| Subcommand               | Description                                                                                                                                                     |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import-content`         | Import the release content of the artifact: its foundation, the release sagas, then the release instance backups; `--clean --confirm <deploy-id>` drops instead |
+| `validate-domains`       | Check API ownership, content partitions, views and components (`--env production`)                                                                              |
+| `drop-db`                | Bootstrap only: drop the content collections; needs `--confirm <deploy-id>`                                                                                     |
+| `build-server-dashboard` | Build the static cyberia-server metrics/status dashboard (`--dev`, `--output-path`)                                                                             |
+| `dev-env [images...]`    | Reset the Docker stack, build its images from `--source local` or `clone`, then run it; `--test`, `--reset`, `--no-build`                                       |
+| `docker:<action>`        | The compose action on the Cyberia stack: `generate`, `up`, `down`, `restart`, `logs`, `status`, `reset` and more                                                |
+
+`import-content --clean` runs `drop-db`, then `ol --drop`. Both steps run even if one fails.
+If either step fails, the command exits with code 1 and lists each failed command to rerun.
 
 ```bash
-cyberia run-workflow import-default-items --dev
-cyberia run-workflow seed-skills
-cyberia run-workflow generate-semantic-examples
-cyberia run-workflow build-manifest
+cyberia run-workflow import-content --clean --dev --confirm dd-cyberia
+cyberia run-workflow import-content --dev
 cyberia run-workflow build-server-dashboard
+cyberia run-workflow dev-env --source clone --channel private
 ```
+
+`dev-env` is described in [Run the Cyberia Docker stack locally](../how-to/run-the-docker-stack-locally.md).
 
 ---
 
@@ -605,7 +700,7 @@ node bin run cluster --deploy-id dd-cyberia --instance-id mmo-server --dev
 node bin run cluster --deploy-id dd-cyberia --instance-id mmo-server,mmo-client --dev
 ```
 
-Each id runs only where `dd-cyberia` declares it, and only once the portal workload has rolled out — `cyberia-server` dials the engine's gRPC ClusterIP for its world configuration at boot, so the content authority has to be serving first. `mmo-server` names the whole variant family (`amethyst-strata-expansion`, `FOREST`, `TEST`); `mmo-server-forest` names one variant.
+Each id runs only where `dd-cyberia` declares it, and only once the portal workload has rolled out — `cyberia-server` dials the engine's gRPC ClusterIP for its world configuration at boot, so the content authority has to be serving first. `mmo-server` names the whole variant family (`amethyst-strata-expansion`, `test`); `mmo-server-test` names one variant.
 
 `server.cyberiaonline.com` and `client.cyberiaonline.com` are issued the same self-signed certificates as the portal hosts and written into the same `/etc/hosts` pass, so the three services are reachable over TLS from a local browser without further setup. In production the same flag issues cert-manager certificates instead.
 

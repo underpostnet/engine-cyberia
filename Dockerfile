@@ -44,14 +44,6 @@ RUN set -eux; \
 
 WORKDIR /home/dd
 
-# Comma-separated instance codes to provision (backup dir + optional saga).
-# `node bin/cyberia run-workflow build-manifest` rewrites this default from the
-# conf.instances.json multiInstance variants; override at build with
-# `--build-arg INSTANCE_CODES=...`. Declared as an ARG (not a marker-wrapped
-# shell string) so the value is clean — a `/** … */` literal in the shell would
-# glob-expand in the `for` loop below.
-ARG INSTANCE_CODES="amethyst-strata-expansion,FOREST,TEST"
-
 RUN --mount=type=secret,id=github_username \
     # --mount=type=secret,id=github_token \
     set -eu; \
@@ -64,39 +56,25 @@ RUN --mount=type=secret,id=github_username \
     cp -a ./"$ENGINE_CYBERIA_REPO"/. /home/dd/engine/; \
     rm -rf ./"$ENGINE_CYBERIA_REPO"; \
     cd /home/dd; \
-    underpost clone "$GITHUB_USERNAME/cyberia-instances"; \
+    underpost clone "$GITHUB_USERNAME/cyberia-deployment"; \
     rm -rf /home/dd/engine/engine-private; \
     mkdir -p /home/dd/engine/engine-private/conf/dd-cyberia; \
-    cp -a ./cyberia-instances/conf/dd-cyberia/. /home/dd/engine/engine-private/conf/dd-cyberia/.; \
+    cp -a ./cyberia-deployment/conf/dd-cyberia/. /home/dd/engine/engine-private/conf/dd-cyberia/.; \
     cp -a /home/dd/engine/engine-private/conf/dd-cyberia/package.json /home/dd/engine/package.json; \
-    # Per instance code: copy its backup dir and, when present, its top-level
-    # saga (cyberia-instances/sagas/<code>.json). `content-release build` imports
-    # the backup dirs; `run-workflow import-default-items` also reads the saga.
-    mkdir -p /home/dd/engine/engine-private/cyberia-instances; \
-    mkdir -p /home/dd/engine/engine-private/cyberia-sagas; \
-    for _ic in $(echo "$INSTANCE_CODES" | tr ',' ' '); do \
-      cp -a ./cyberia-instances/instances/"$_ic" /home/dd/engine/engine-private/cyberia-instances/"$_ic"; \
-      if [ -f ./cyberia-instances/sagas/"$_ic".json ]; then \
-        cp -a ./cyberia-instances/sagas/"$_ic".json /home/dd/engine/engine-private/cyberia-sagas/"$_ic".json; \
-      fi; \
-    done; \
-    # The public tree of every served host: `cyberia instance --publish` writes them to the
-    # instances repository, and each client also fills its own gaps from `cyberia`
-    # (`publicCopyNonExistingFiles`), so they must all be in place before the client build.
-    # `cyberia` and `underpost` have no other source — git carries neither — while the rest
-    # keep the copy the checkout already holds when the instances repository has none.
-    for _pc in cyberia underpost; do \
-      mkdir -p /home/dd/engine/src/client/public/"$_pc"; \
-      cp -a ./cyberia-instances/public/"$_pc"/. /home/dd/engine/src/client/public/"$_pc"/.; \
-    done; \
-    for _pc in itemledger objectlayer cryptokoyn; do \
-      [ -d ./cyberia-instances/public/"$_pc" ] || continue; \
-      mkdir -p /home/dd/engine/src/client/public/"$_pc"; \
-      cp -a ./cyberia-instances/public/"$_pc"/. /home/dd/engine/src/client/public/"$_pc"/.; \
-    done; \
     cd /home/dd/engine; \
     # --- install deps + env, then replay build-safe itc provisioning ----------
     npm install; \
+    # The content artifact the deployment lock pins: cyberia-content at its locked revision, packed
+    # by cyberia-content itself, then checked against the lock. The packed copy holds data only.
+    CONTENT_REVISION="$(CYBERIA_DEPLOYMENT_ROOT=/home/dd/cyberia-deployment node bin/cyberia release list --locked \
+      | awk '$1 == "cyberia-content" { print $4 }')"; \
+    ( cd /home/dd && underpost clone "$GITHUB_USERNAME/cyberia-content" \
+      && git -C ./cyberia-content checkout --detach "$CONTENT_REVISION" \
+      && cd ./cyberia-content && npm ci && node bin/cyberia-content.js pack ); \
+    mkdir -p /home/dd/engine/cyberia-content; \
+    tar -xzf /home/dd/cyberia-content/artifacts/cyberia-content-*.tgz -C /home/dd/engine/cyberia-content --strip-components=1; \
+    rm -rf /home/dd/cyberia-content; \
+    CYBERIA_DEPLOYMENT_ROOT=/home/dd/cyberia-deployment node bin/cyberia release verify; \
     node bin app load --env production --args deploy-id=dd-cyberia; \
     ( cd /home/dd/engine/hardhat && npm install --include=dev ); \
     # --- build the client bundle (assets are now in place) --------------------
@@ -104,7 +82,6 @@ RUN --mount=type=secret,id=github_username \
     node bin client dd-cyberia; \
     # --- CREDENTIAL SCRUB (defense in depth, while secrets are still in scope) -
     # 1) Redact every real secret value from any file it may have reached.
-    # for _secret in "$GITHUB_TOKEN" "$CLOUDINARY_API_SECRET" "$CLOUDINARY_API_KEY"; do \
     for _secret in "$GITHUB_USERNAME"; do \
     # for _secret in "$GITHUB_USERNAME" "$GITHUB_TOKEN"; do \
       [ -n "$_secret" ] || continue; \
@@ -112,7 +89,6 @@ RUN --mount=type=secret,id=github_username \
         | xargs -r sed -i "s#${_secret}#__REDACTED__#g" || true; \
     done; \
     # unset GITHUB_TOKEN GITHUB_USERNAME; \
-    # unset GITHUB_TOKEN GITHUB_USERNAME CLOUDINARY_CLOUD_NAME CLOUDINARY_API_KEY CLOUDINARY_API_SECRET; \
     unset GITHUB_USERNAME; \
 
     # 2) Every .git dir — clone URLs embed the token in .git/config, and the
@@ -127,7 +103,7 @@ RUN --mount=type=secret,id=github_username \
     #    build/CLI tooling (used only to build the coverage docs above); the
     #    runtime server never imports it, so its dev node_modules is pure bloat.
     npm cache clean --force 2>/dev/null || true; \
-    rm -rf /home/dd/cyberia-instances \
+    rm -rf /home/dd/cyberia-deployment \
            /home/dd/engine/hardhat/node_modules \
            /home/dd/engine/.npm /tmp/* /var/tmp/* /var/cache/dnf
 

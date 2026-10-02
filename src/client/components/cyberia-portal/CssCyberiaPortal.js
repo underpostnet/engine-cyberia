@@ -1,8 +1,7 @@
 import { AgGrid } from '../core/AgGrid.js';
-import { borderChar, subThemeManager } from '../core/Css.js';
+import { borderChar, renderRetroFontFaces, subThemeManager } from '../core/Css.js';
 import { LoadingAnimation } from '../core/LoadingAnimation.js';
 import { Modal } from '../core/Modal.js';
-import { getProxyPath } from '../core/Router.js';
 
 const CssCommonCyberia = async () => {
   LoadingAnimation.img.load({
@@ -24,7 +23,8 @@ const CssCommonCyberia = async () => {
     },
   });
 
-  return html`<style>
+  return html`${renderRetroFontFaces()}
+    <style>
       /* Core variables: override in each theme */
       :root {
         --cy-font-retro: 'retro-font';
@@ -33,22 +33,6 @@ const CssCommonCyberia = async () => {
         --cy-font-retro-cta: 'retro-font-cta';
       }
 
-      @font-face {
-        font-family: 'retro-font-title';
-        src: URL('${getProxyPath()}assets/fonts/EndlessBossBattleRegular-v7Ey.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font';
-        src: URL('${getProxyPath()}assets/fonts/Pixeboy-z8XGD.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font-sensitive';
-        src: URL('${getProxyPath()}assets/fonts/VT323-Regular.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font-cta';
-        src: URL('${getProxyPath()}assets/fonts/PressStart2P-Regular.ttf') format('truetype');
-      }
       .search-result-item {
         font-family: 'retro-font-sensitive';
       }
@@ -86,16 +70,16 @@ const CssCommonCyberia = async () => {
       }
 
       /* Docs section retro styling */
-      .docs-header h1 {
+      .submenu-landing-header h1 {
         font-family: var(--cy-font-retro-cta);
         color: #ffcc00;
         text-shadow: 2px 2px 0px #9e7b00;
       }
-      .docs-card {
+      .submenu-landing-card {
         border: 2px solid #ffcc00;
         transition: all 0.3s ease-in-out;
       }
-      .docs-card:hover {
+      .submenu-landing-card:hover {
         background: rgba(255, 204, 0, 0.08);
         box-shadow:
           0 0 10px rgba(255, 204, 0, 0.3),
@@ -166,6 +150,54 @@ const CssCommonCyberia = async () => {
         font-family: var(--cy-font-retro-sensitive);
       }
 
+      /* Studio editors and the foundation context panel show ids, labels and definitions, which are
+         case sensitive: they read in the sensitive face at the x-height of the display face. Titles
+         keep the display face. */
+      .studio-editor,
+      .studio-editor .section-mp,
+      .studio-editor button,
+      .studio-editor p,
+      .ol-context,
+      .ol-context p {
+        font-family: var(--cy-font-retro-sensitive);
+      }
+      .studio-editor,
+      .ol-context {
+        font-size-adjust: 0.5;
+      }
+      .studio-editor .sub-title-modal,
+      .studio-editor .studio-group-title {
+        font-family: var(--cy-font-retro);
+        font-size-adjust: none;
+      }
+      .studio-editor i,
+      .studio-editor .ag-root-wrapper {
+        font-size-adjust: none;
+      }
+      .saga-badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 15px;
+        font-weight: bold;
+        line-height: 20px;
+      }
+      .studio-group {
+        border: 1px solid var(--studio-border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 14px;
+      }
+      .studio-group-title {
+        font-size: 16px;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 10px;
+        opacity: 0.85;
+      }
+
       .btn-modal-default {
         width: 35px;
         height: 35px;
@@ -197,7 +229,11 @@ const CssCommonCyberia = async () => {
         color: #ffcc00 !important;
       }
     </style>
-    ${borderChar(1, `#010101`, ['.default-slide-menu-top-bar-fix-title-container-text'])}
+    ${borderChar(1, `#010101`, [
+      '.default-slide-menu-top-bar-fix-title-container-text',
+      '.saga-badge',
+      '.ol-context-badge',
+    ])}
 
     <div class="ag-grid-style"></div>`;
 };
@@ -207,7 +243,21 @@ class CssCyberiaDark {
   static dark = true;
   static barButtonsIconTheme = 'img';
   static render = async () => {
-    return (await CssCommonCyberia()) + html` <style></style> `;
+    return (
+      (await CssCommonCyberia()) +
+      html`<style>
+        :root {
+          --studio-border: #3a3a3a;
+          --studio-subtle-border: #444;
+          --studio-accent: #8cf;
+          --studio-accent-warm: #fc8;
+          --studio-positive: #9e9;
+          --studio-tag: #335;
+          --studio-tag-ink: #adf;
+          --studio-card: #2a2a2a;
+        }
+      </style>`
+    );
   };
 }
 
@@ -216,7 +266,21 @@ class CssCyberiaLight {
   static dark = false;
   static barButtonsIconTheme = 'img';
   static render = async () => {
-    return (await CssCommonCyberia()) + html` <style></style> `;
+    return (
+      (await CssCommonCyberia()) +
+      html`<style>
+        :root {
+          --studio-border: #d4d4d4;
+          --studio-subtle-border: #e0e0e0;
+          --studio-accent: #246;
+          --studio-accent-warm: #842;
+          --studio-positive: #383;
+          --studio-tag: #cde;
+          --studio-tag-ink: #246;
+          --studio-card: #fff;
+        }
+      </style>`
+    );
   };
 }
 

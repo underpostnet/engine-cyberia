@@ -38,18 +38,28 @@ may act on one resource.
 A purge is the operator's removal: it takes the definition and everything stored under it on one
 host — the document, its render frames, its atlas and every render File the atlas owns, the IPFS
 pin records, the pinned content and its MFS paths, and what the host's Studio keeps for it (the
-labels bound to the definition, and its frames in the asset tree). Nothing restores it.
+labels bound to the definition, and on request its frames in the asset tree). Nothing restores it.
 
 Definitions share content: two of one label can name one render. A purge keeps the render pins
 and the labels a remaining definition still names. The render frames and the atlas of a
 definition are its own, so they go with it; a render File another atlas still holds stays.
 
 `src/api/object-layer/object-layer.purge.js` is the one implementation: the admin route, the
-Object Layer management view's purge action, `cyberia ol --drop` and `cyberia instance --drop`
-all call it. It is rerunnable, and it reports what it removed.
+Object Layer management view's purge action, `cyberia ol --drop` and `cyberia instance --drop` all
+call it. It is rerunnable, and it reports what it removed. A purge selects definitions by an
+explicit filter: a label shared with another definition is never a reason to remove one.
+
+A Cyberia content release shares the File store and the IPFS node with every other release. A
+purge there removes the release's own documents and pin records only: the render Files, the pins
+and the MFS paths stay for the other releases, and `cyberia content-release prune` removes the
+renders no kept release holds.
 
 A definition ItemLedger registers is never purged: a token type names content that must stay
-resolvable. The purge reports it as kept and the route refuses.
+resolvable. The purge reports it as kept and the route refuses. This registration-safety check is
+the one place a removal depends on ItemLedger. When ItemLedger does not answer, the purge and the
+delete route remove nothing and fail with status 503 and an error that names the policy. Reads,
+imports and the runtime never need ItemLedger: without it, a definition shows as unregistered or
+its ledger state as unavailable.
 
 Each host purges what it stores, and no purge reaches another host: a consumer that cached the
 definition unbinds it on its next reconciliation (`cyberia catalog reconcile`).

@@ -26,6 +26,7 @@ import { parseIdentityJson, renderContractOf } from '../../api/object-layer/obje
 import { repinCanonical } from '../../api/object-layer/object-layer.publication.js';
 import { ObjectLayerEngine } from './object-layer.js';
 import { catalogModels, findBoundDefinition } from './object-layer-catalog.js';
+import { fromWire, toWire } from '../../client/components/objectlayer-studio/RenderSource.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -86,6 +87,7 @@ const readIdentityDocument = (file) => (fs.existsSync(file) ? parseIdentityJson(
  *
  * @param {{backupDir: string, itemId: string}} params
  * @returns {{objectLayer: object, renderFrames: object|null, atlas: object|null, files: object[]}}
+ *   `renderFrames` is the render source.
  * @throws {Error} When the backup has no object layer for the item.
  * @memberof CyberiaInstanceBackup
  */
@@ -93,7 +95,8 @@ export function readObjectLayerBackup({ backupDir, itemId }) {
   const objectLayer = readIdentityDocument(path.join(backupDir, 'object-layers', `${itemId}.json`));
   if (!objectLayer) throw new Error(`Backup at ${backupDir} has no object layer '${itemId}'`);
 
-  const renderFrames = readIdentityDocument(path.join(backupDir, 'render-frames', `${itemId}.json`));
+  const renderFramesBackup = readIdentityDocument(path.join(backupDir, 'render-frames', `${itemId}.json`));
+  const renderFrames = renderFramesBackup && fromWire(renderFramesBackup);
   const atlas = readIdentityDocument(path.join(backupDir, 'atlas-sprite-sheets', `${itemId}.json`));
 
   const wanted = new Set(documentFileIds(atlas ? [atlas] : [], ATLAS_FILE_FIELDS));
@@ -154,11 +157,12 @@ export async function exportObjectLayerBackup({ backupDir, definition, options }
   const itemId = definition.data.item.id;
   const write = (dir, value) => fs.outputJsonSync(path.join(backupDir, dir, `${itemId}.json`), value, { spaces: 2 });
 
-  const renderFrames = declared(
-    ObjectLayerRenderFrames,
-    await ObjectLayerRenderFrames.findOne({ objectLayerCid: definition.cid }).lean(),
-  );
-  if (renderFrames) write('render-frames', renderFrames);
+  const renderFrames = await ObjectLayerRenderFrames.findOne({ objectLayerCid: definition.cid }).lean();
+  if (renderFrames)
+    write('render-frames', {
+      ...declared(ObjectLayerRenderFrames, renderFrames),
+      ...toWire(ObjectLayerRenderFrames.sourceOf(renderFrames)),
+    });
 
   const atlas = declared(AtlasSpriteSheet, await AtlasSpriteSheet.findOne({ objectLayerCid: definition.cid }).lean());
   let files = 0;
@@ -196,10 +200,11 @@ const backedRender = async ({ objectLayer, atlas, files }) => {
 };
 
 /**
- * Restores one object layer from an instance backup, making the backup the authority for that
- * item id: its render frames, atlas, atlas render Files, render payloads on IPFS, and the static
- * frame PNGs, replacing whatever the database holds under that id. Idempotent: every write is an
- * upsert on the backup's File `_id`s, the restored definition's cid and content-addressed CIDs.
+ * Restores one object layer from an instance backup: the definition it holds, with its render
+ * frames, atlas, atlas render Files and render payloads on IPFS, and binds the label to it. Every
+ * other definition of the label stays: an item id is a label, and content that pins another
+ * definition keeps it. Idempotent: every write is an upsert on the backup's File `_id`s, the
+ * restored definition's cid and content-addressed CIDs.
  *
  * A backup atlas that is not the render the definition names is not restored: the render is
  * rebuilt from the backup's render frames, and the definition that names it replaces the
@@ -209,14 +214,18 @@ const backedRender = async ({ objectLayer, atlas, files }) => {
  * {@link repinCanonical}, which also repairs an MFS path an older restore overwrote.
  * Orphaned atlas renders are left for the caller to prune once, after its last item.
  *
- * @param {{backupDir: string, itemId: string, options: {host: string, path: string}}} params
+ * @param {Object} params
+ * @param {string} params.backupDir
+ * @param {string} params.itemId
+ * @param {{host: string, path: string}} params.options
+ * @param {boolean} [params.clientPublic=false] - Also write the item's frames and metadata to the asset tree.
  * @returns {Promise<{itemId: string, cid: string, replaced: string|null, rebuilt: boolean, files: number, renderFrames: boolean, atlas: boolean, pins: number, staticFiles: number}>}
  *   `replaced` is the backup cid the restored definition replaces, null when it is the same.
  * @throws {Error} When the backup holds neither the named render nor the frames to rebuild it,
  *   or the definition cannot be published.
  * @memberof CyberiaInstanceBackup
  */
-export async function restoreObjectLayerBackup({ backupDir, itemId, options }) {
+export async function restoreObjectLayerBackup({ backupDir, itemId, options, clientPublic = false }) {
   const { objectLayer, renderFrames, atlas, files } = readObjectLayerBackup({ backupDir, itemId });
   const models = catalogModels(options);
   const File = DataBaseProviderService.getModel('File', options);
@@ -277,16 +286,12 @@ export async function restoreObjectLayerBackup({ backupDir, itemId, options }) {
   // 5. The static frame PNGs the web client serves, from the same render frames.
   let staticFiles = 0;
   const itemType = objectLayer.data?.item?.type;
-  if (renderFrames && itemType) {
+  if (clientPublic && renderFrames && itemType) {
     const written = await ObjectLayerEngine.writeStaticFrameAssets({
-      basePaths: ['./src/client/public/cyberia/', `./public/${options.host}${options.path}`],
+      basePaths: ObjectLayerEngine.clientPublicPaths(options),
       itemType,
       itemId,
-      objectLayerRenderFramesData: {
-        frames: renderFrames.frames || {},
-        colors: renderFrames.colors || [],
-        frame_duration: renderFrames.frame_duration ?? 100,
-      },
+      objectLayerRenderFramesData: renderFrames,
       objectLayerData: objectLayer,
       cellPixelDim: DEFAULT_ATLAS_UPSCALE_FACTOR,
     });

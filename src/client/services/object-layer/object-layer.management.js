@@ -1,18 +1,71 @@
+import { getProxyPath } from '../../components/core/Router.js';
 import { DefaultManagement } from '../default/default.management.js';
 import { ObjectLayerService } from './object-layer.service.js';
 import { commonUserGuard, commonModeratorGuard, commonAdminGuard } from '../../components/core/CommonJs.js';
 import { AtlasSpriteSheetService } from '../atlas-sprite-sheet/atlas-sprite-sheet.service.js';
-import { ObjectLayerEngineViewer } from '../../components/object-layer/ObjectLayerEngineViewer.js';
+import { ObjectLayerEngineViewer } from '../../components/objectlayer-studio/ObjectLayerEngineViewer.js';
 import { s } from '../../components/core/VanillaJs.js';
 import { Modal } from '../../components/core/Modal.js';
 import { BtnIcon } from '../../components/core/BtnIcon.js';
 import { NotificationManager } from '../../components/core/NotificationManager.js';
-import { AgGrid } from '../../components/core/AgGrid.js';
+import { AgGrid, ValueListFilter } from '../../components/core/AgGrid.js';
 import { EventsUI } from '../../components/core/EventsUI.js';
+
+const SERVICE_ID = 'object-layer-engine-management';
+const gridIdOf = (idModal) => `${SERVICE_ID}-grid-${idModal}`;
+
+/**
+ * The column of a button that opens the definition a row names in its own view, for any table
+ * whose rows name one.
+ * @param {{ idModal: string, cidOf: (row: Object) => string }} params - The table's modal, and the
+ *   cid a row names.
+ * @returns {Object} An ag-grid column definition.
+ */
+const objectLayerViewColumn = ({ idModal, cidOf }) => ({
+  field: 'view',
+  headerName: '',
+  width: 100,
+  editable: false,
+  sortable: false,
+  filter: false,
+  cellRenderer: class {
+    eGui;
+
+    async init(params) {
+      this.eGui = document.createElement('div');
+      const { data } = params;
+      const cid = data ? cidOf(data) : '';
+      if (!cid) return;
+
+      this.eGui.innerHTML = html` ${await BtnIcon.instance({
+        label: html`<div class="abs center">
+          <i class="fas fa-eye"></i>
+        </div> `,
+        class: `in fll section-mp management-table-btn-mini btn-view-object-layer-${idModal}-${data._id}`,
+      })}`;
+
+      setTimeout(() =>
+        EventsUI.onClick(
+          `.btn-view-object-layer-${idModal}-${data._id}`,
+          async () => await ObjectLayerEngineViewer.open({ cid }),
+          { context: 'modal' },
+        ),
+      );
+    }
+
+    getGui() {
+      return this.eGui;
+    }
+
+    refresh() {
+      return true;
+    }
+  },
+});
 
 /** Opens the editor. Loaded on demand: a read-only host ships the list without it. */
 const openEngine = async (options) => {
-  const { ObjectLayerEngineModal } = await import('../../components/object-layer/ObjectLayerEngineModal.js');
+  const { ObjectLayerEngineModal } = await import('../../components/objectlayer-studio/ObjectLayerEngineModal.js');
   return ObjectLayerEngineModal.open(options);
 };
 
@@ -24,54 +77,27 @@ class ObjectLayerManagement {
    * @param {boolean} [options.readOnly=false] - Explorer mode: no add, edit or delete; the host has no editor route.
    * @param {boolean} [options.lifecycle=false] - The host is the Object Layer authority: a moderator archives a
    *   definition or offers it again.
+   * @param {Object} [options.profile] - The host's content profile: the Item Type column filters and edits by
+   *   its item types.
+   * @param {Object[]} [options.columns=[]] - Columns the host adds after the item columns.
    */
-  static instance = async ({ appStore, idModal: rawIdModal, readOnly = false, lifecycle = false }) => {
+  static instance = async ({
+    appStore,
+    idModal: rawIdModal,
+    readOnly = false,
+    lifecycle = false,
+    profile = null,
+    columns = [],
+  }) => {
     const idModal = rawIdModal || 'modal-object-layer-engine-management';
-    const serviceId = 'object-layer-engine-management';
-    const gridId = `${serviceId}-grid-${idModal}`;
+    const serviceId = SERVICE_ID;
+    const gridId = gridIdOf(idModal);
+    const itemTypes = profile?.itemTypes ?? [];
     const user = appStore.Data.user.main.model.user;
     const { role } = user;
     const canEdit = !readOnly && commonModeratorGuard(role);
     const canArchive = lifecycle && commonModeratorGuard(role);
     const canPurge = lifecycle && commonAdminGuard(role);
-
-    // Custom renderer for view button
-    class ViewButtonRenderer {
-      eGui;
-
-      async init(params) {
-        this.eGui = document.createElement('div');
-        const { data } = params;
-
-        if (!data?.cid) {
-          this.eGui.innerHTML = '';
-          return;
-        }
-
-        this.eGui.innerHTML = html` ${await BtnIcon.instance({
-          label: html`<div class="abs center">
-            <i class="fas fa-eye"></i>
-          </div> `,
-          class: `in fll section-mp management-table-btn-mini btn-view-object-layer-${idModal}-${data._id}`,
-        })}`;
-
-        setTimeout(() =>
-          EventsUI.onClick(
-            `.btn-view-object-layer-${idModal}-${data._id}`,
-            async () => await ObjectLayerEngineViewer.open({ appStore, cid: data.cid }),
-            { context: 'modal' },
-          ),
-        );
-      }
-
-      getGui() {
-        return this.eGui;
-      }
-
-      refresh(params) {
-        return true;
-      }
-    }
 
     // Custom renderer for edit button
     class EditButtonRenderer {
@@ -145,7 +171,11 @@ class ObjectLayerManagement {
             <div
               style="position: absolute; top: 0; left: 0; width: 100px; height: 100px; display: ${placeholder}; align-items: center; justify-content: center; "
             >
-              <i class="fas fa-image" style="font-size: 48px; color: #999;"></i>
+              <img
+                src="${getProxyPath()}assets/ui-icons/empty-render.png"
+                alt="No render"
+                style="width: 64px; height: 64px; object-fit: contain; image-rendering: pixelated;"
+              />
             </div>
           </div>
         `;
@@ -273,11 +303,9 @@ class ObjectLayerManagement {
                   <div class="in section-mp" style="text-align: center">
                     <p>${archived ? 'Offer' : 'Archive'} object layer <strong>"${itemId}"</strong>?</p>
                     <p style="font-size: 13px; margin-top: 8px;">
-                      ${
-                        archived
-                          ? 'The definition is offered again under its CID.'
-                          : 'The definition stays stored under its CID and is offered to no one. Cyberia unbinds its labels on reconciliation.'
-                      }
+                      ${archived
+                        ? 'The definition is offered again under its CID.'
+                        : 'The definition stays stored under its CID and is offered to no one. Cyberia unbinds its labels on reconciliation.'}
                     </p>
                   </div>
                 `,
@@ -425,8 +453,21 @@ class ObjectLayerManagement {
         headerName: 'Item ID',
         editable: canEdit,
       },
-      { field: 'data.item.type', headerName: 'Item Type', editable: canEdit },
+      {
+        field: 'data.item.type',
+        headerName: 'Item Type',
+        editable: canEdit,
+        ...(itemTypes.length > 0
+          ? {
+              cellEditor: 'agSelectCellEditor',
+              cellEditorParams: { values: itemTypes },
+              filter: ValueListFilter,
+              filterParams: { values: itemTypes },
+            }
+          : {}),
+      },
       { field: 'data.item.description', headerName: 'Description', flex: 1, editable: canEdit },
+      ...columns,
       {
         field: 'cid',
         headerName: 'Object Layer CID',
@@ -472,15 +513,7 @@ class ObjectLayerManagement {
         sortable: false,
         filter: false,
       },
-      {
-        field: 'view',
-        headerName: '',
-        width: 100,
-        cellRenderer: ViewButtonRenderer,
-        editable: false,
-        sortable: false,
-        filter: false,
-      },
+      objectLayerViewColumn({ idModal, cidOf: (row) => row.cid }),
       ...(canEdit
         ? [
             {
@@ -564,6 +597,11 @@ class ObjectLayerManagement {
       },
     });
   };
+  /** Reloads every object layer table on screen, after a change made outside them. */
+  static async reloadTables() {
+    for (const idModal of Object.keys(DefaultManagement.Tokens))
+      if (s(`.${gridIdOf(idModal)}`)) await DefaultManagement.loadTable(idModal);
+  }
   static async Reload(subModalId = 'management') {
     const idModal = `modal-object-layer-engine-${subModalId}`;
     if (s(`.modal-object-layer-engine-${subModalId}`))
@@ -574,4 +612,4 @@ class ObjectLayerManagement {
   }
 }
 
-export { ObjectLayerManagement };
+export { ObjectLayerManagement, objectLayerViewColumn };

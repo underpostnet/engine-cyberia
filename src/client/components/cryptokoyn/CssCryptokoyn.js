@@ -1,8 +1,7 @@
 import { AgGrid } from '../core/AgGrid.js';
-import { borderChar, subThemeManager } from '../core/Css.js';
+import { borderChar, renderRetroFontFaces, subThemeManager } from '../core/Css.js';
 import { LoadingAnimation } from '../core/LoadingAnimation.js';
 import { Modal } from '../core/Modal.js';
-import { getProxyPath } from '../core/Router.js';
 
 const CssCommonCryptokoyn = async () => {
   LoadingAnimation.img.load({
@@ -24,7 +23,8 @@ const CssCommonCryptokoyn = async () => {
     },
   });
 
-  return html`<style>
+  return html`${renderRetroFontFaces()}
+    <style>
       /* Core variables: override in each theme */
       :root {
         --cy-font-retro: 'retro-font';
@@ -33,22 +33,6 @@ const CssCommonCryptokoyn = async () => {
         --cy-font-retro-cta: 'retro-font-cta';
       }
 
-      @font-face {
-        font-family: 'retro-font-title';
-        src: URL('${getProxyPath()}assets/fonts/EndlessBossBattleRegular-v7Ey.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font';
-        src: URL('${getProxyPath()}assets/fonts/Pixeboy-z8XGD.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font-sensitive';
-        src: URL('${getProxyPath()}assets/fonts/VT323-Regular.ttf') format('truetype');
-      }
-      @font-face {
-        font-family: 'retro-font-cta';
-        src: URL('${getProxyPath()}assets/fonts/PressStart2P-Regular.ttf') format('truetype');
-      }
       .search-result-item {
         font-family: 'retro-font-sensitive';
       }
@@ -175,16 +159,16 @@ const CssCommonCryptokoyn = async () => {
       }
 
       /* Docs section retro styling */
-      .docs-header h1 {
+      .submenu-landing-header h1 {
         font-family: var(--cy-font-retro-cta);
         color: #ff0d0d;
         text-shadow: 2px 2px 0px #9e0808;
       }
-      .docs-card {
+      .submenu-landing-card {
         border: 2px solid #ff0d0d;
         transition: all 0.3s ease-in-out;
       }
-      .docs-card:hover {
+      .submenu-landing-card:hover {
         background: rgba(255, 13, 13, 0.08);
         box-shadow:
           0 0 10px rgba(255, 13, 13, 0.3),

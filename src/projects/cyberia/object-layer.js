@@ -8,22 +8,32 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { PNG } from 'pngjs';
-import sharp from 'sharp';
-import { Jimp, intToRGBA, rgbaToInt } from 'jimp';
+import { Jimp, intToRGBA } from 'jimp';
+import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { isObjectLayerAuthority, pinCanonical } from '../../api/object-layer/object-layer.publication.js';
 import { parseIdentityJson } from '../../api/object-layer/object-layer.identity.js';
 import { AtlasSpriteSheetStore } from '../../api/atlas-sprite-sheet/atlas-sprite-sheet.store.js';
+import { AtlasSpriteSheetGenerator } from '../../api/atlas-sprite-sheet/atlas-sprite-sheet.generator.js';
 import { findBoundDefinition, writeItemDefinition } from './object-layer-catalog.js';
 import { range } from '../../client/components/core/CommonJs.js';
 import {
   getKeyframeDirectionsByCode,
   OBJECT_LAYER_DIRECTION_NAME_TO_CODE,
-} from '../../client/components/object-layer/ObjectLayerProtocol.js';
+} from '../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
+import {
+  fromWire,
+  isRenderSource,
+  sourceFromIndexedFrames,
+  toWire,
+} from '../../client/components/objectlayer-studio/RenderSource.js';
 import { CyberiaObjectLayerProfile } from '../../client/components/cyberia/ObjectLayerProfileCyberia.js';
 import { loggerFactory } from '../../server/ops/logger.js';
 import { resolveObjectLayer } from '../../server/domain/object-layer-resolver.js';
 
 const logger = loggerFactory(import.meta);
+
+/** Frame duration of a render decoded from images, which state none. */
+const DEFAULT_FRAME_DURATION_MS = 250;
 
 /**
  * @typedef {Object} ObjectLayerCallbackPayload
@@ -36,10 +46,14 @@ const logger = loggerFactory(import.meta);
  */
 
 /**
+ * A render source (`RenderSource.js`): indexed frames, their palette and the frame duration.
  * @typedef {Object} ObjectLayerRenderFramesData
- * @property {Object<string, number[][][]>} frames - Map of direction names to arrays of frame matrices.
- * @property {Array<number[]>} colors - Global color palette shared across all frames.
- * @property {number} frame_duration - Duration of each frame in milliseconds.
+ * @memberof CyberiaObjectLayer
+ */
+
+/**
+ * Frames decoded from images: index rows by keyframe, and the rgba colors the indexes name.
+ * @typedef {{frames: Object<string, number[][][]>, colors: number[][]}} DecodedFrames
  * @memberof CyberiaObjectLayer
  */
 
@@ -202,112 +216,35 @@ export class ObjectLayerEngine {
   }
 
   /**
-   * Processes an image file through {@link ObjectLayerEngine.frameFactory} and adds the resulting frame to the render data structure.
-   * Updates the color palette and pushes the frame to all keyframe directions corresponding to the given direction code.
-   * Initializes colors array, frames object, and direction arrays if they don't exist.
+   * Decodes an image file through {@link ObjectLayerEngine.frameFactory} and adds the frame to
+   * every keyframe of the direction code.
    * @static
-   * @param {ObjectLayerRenderFramesData} objectLayerRenderFramesData - The render data object containing frames and colors.
+   * @param {DecodedFrames} decoded - The frames decoded so far.
    * @param {string} imagePath - The path to the image file to process.
    * @param {string} directionCode - The numerical direction code (e.g., '08', '14').
-   * @returns {Promise<ObjectLayerRenderFramesData>} The updated render data object.
+   * @returns {Promise<DecodedFrames>} The frames with this one added.
    * @memberof CyberiaObjectLayer
    */
-  static async processAndPushFrame(objectLayerRenderFramesData, imagePath, directionCode) {
-    // Initialize colors array if it doesn't exist
-    if (!objectLayerRenderFramesData.colors) {
-      objectLayerRenderFramesData.colors = [];
-    }
-
-    // Initialize frames object if it doesn't exist
-    if (!objectLayerRenderFramesData.frames) {
-      objectLayerRenderFramesData.frames = {};
-    }
-
-    // Process the image and extract frame matrix and updated colors
-    const processedObjectLayerRenderFramesData = await ObjectLayerEngine.frameFactory(
-      imagePath,
-      objectLayerRenderFramesData.colors,
-    );
-
-    // Update the colors palette
-    objectLayerRenderFramesData.colors = processedObjectLayerRenderFramesData.colors;
-
-    // Get all keyframe directions for this direction code
-    const keyframeDirections = getKeyframeDirectionsByCode(directionCode);
-
-    // Push the frame to all corresponding directions
-    for (const keyframeDirection of keyframeDirections) {
-      if (!objectLayerRenderFramesData.frames[keyframeDirection]) {
-        objectLayerRenderFramesData.frames[keyframeDirection] = [];
-      }
-      objectLayerRenderFramesData.frames[keyframeDirection].push(processedObjectLayerRenderFramesData.frame);
-    }
-
-    return objectLayerRenderFramesData;
+  static async processAndPushFrame(decoded, imagePath, directionCode) {
+    const { frame, colors } = await ObjectLayerEngine.frameFactory(imagePath, decoded.colors);
+    decoded.colors = colors;
+    for (const keyframe of getKeyframeDirectionsByCode(directionCode)) (decoded.frames[keyframe] ??= []).push(frame);
+    return decoded;
   }
 
   /**
-   * Builds a PNG image file from a tile matrix and color map using Jimp and Sharp.
+   * Writes one frame of a render source as a PNG file.
    * @static
-   * @param {Object} options - Options object.
-   * @param {Object} options.tile - The tile data.
-   * @param {Array<number[]>} options.tile.map_color - The color palette.
-   * @param {number[][]} options.tile.frame_matrix - The matrix of color indices.
-   * @param {string} options.imagePath - The output path for the generated image.
-   * @param {number} [options.cellPixelDim=20] - The pixel dimension of each cell in the matrix.
-   * @param {function(number, number, number[]): number} [options.opacityFilter] - Function to filter opacity (ignored in this implementation).
+   * @param {Object} params
+   * @param {ObjectLayerRenderFramesData} params.source - Render source.
+   * @param {Uint8Array} params.pixels - The frame's palette indexes.
+   * @param {string} params.imagePath - The output path.
+   * @param {number} [params.cellPixelDim=20] - Pixels per cell.
    * @returns {Promise<void>}
    * @memberof CyberiaObjectLayer
    */
-  static async buildImgFromTile(
-    options = {
-      tile: { map_color: null, frame_matrix: null },
-      imagePath: '',
-      cellPixelDim: 20,
-      opacityFilter: (x, y, color) => 255,
-    },
-  ) {
-    const { tile, imagePath, cellPixelDim } = options;
-    const frameMatrix = tile.frame_matrix;
-    if (!frameMatrix || frameMatrix.length === 0 || frameMatrix[0].length === 0) {
-      logger.error(`Cannot build image from empty or invalid frame_matrix for path: ${imagePath}`);
-      return;
-    }
-
-    const sharpOptions = {
-      create: {
-        width: cellPixelDim * frameMatrix[0].length,
-        height: cellPixelDim * frameMatrix.length,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 }, // transparent background
-      },
-    };
-
-    let image = await sharp(sharpOptions).png().toBuffer();
-    fs.writeFileSync(imagePath, image);
-    image = await Jimp.read(imagePath);
-
-    for (let y = 0; y < frameMatrix.length; y++) {
-      for (let x = 0; x < frameMatrix[y].length; x++) {
-        const colorIndex = frameMatrix[y][x];
-        if (colorIndex === null || colorIndex === undefined) continue;
-
-        const color = tile.map_color[colorIndex];
-        if (!color) continue;
-
-        const rgbaColor = color.length === 4 ? color : [...color, 255]; // Ensure alpha channel
-
-        for (let dy = 0; dy < cellPixelDim; dy++) {
-          for (let dx = 0; dx < cellPixelDim; dx++) {
-            const pixelX = x * cellPixelDim + dx;
-            const pixelY = y * cellPixelDim + dy;
-            image.setPixelColor(rgbaToInt(...rgbaColor), pixelX, pixelY);
-          }
-        }
-      }
-    }
-
-    await image.write(imagePath);
+  static async writeFrameImage({ source, pixels, imagePath, cellPixelDim = 20 }) {
+    await AtlasSpriteSheetGenerator.frameImage(source, pixels, cellPixelDim).write(imagePath);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -319,8 +256,7 @@ export class ObjectLayerEngine {
    * {@link ObjectLayerRenderFramesData} and {@link ObjectLayerData} from the directory contents
    * and an optional `metadata.json` file.
    *
-   * This is the shared first step consumed by both the Cyberia CLI `--import` flow
-   * and the REST API service `post` / `put` `/metadata` endpoints.
+   * The asset-tree source of `cyberia ol --import --client-public` and `--import-types`.
    *
    * @static
    * @param {Object} params - Parameters.
@@ -329,9 +265,6 @@ export class ObjectLayerEngine {
    *   direction sub-folders (`08`, `18`, …) with PNG frame files.
    * @param {string} params.objectLayerType - The item type string (e.g., 'skin', 'floor').
    * @param {string} params.objectLayerId - The item id string.
-   * @param {Object} [params.metadataOverride=null] - When provided, used as the authoritative
-   *   metadata instead of reading `metadata.json` from disk.  The REST API passes `req.body`
-   *   here; the CLI passes `null` so the file is read from disk.
    * @returns {Promise<BuildFromDirectoryResult>} The assembled render frames data and object layer data.
    * @memberof CyberiaObjectLayer
    */
@@ -347,51 +280,19 @@ export class ObjectLayerEngine {
     };
   }
 
-  static async buildObjectLayerDataFromDirectory({ folder, objectLayerType, objectLayerId, metadataOverride = null }) {
-    let metadata = metadataOverride;
-
-    // If no override was supplied, try to read metadata.json from the folder
-    if (!metadata) {
-      const metadataPath = `${folder}/metadata.json`;
-      if (fs.existsSync(metadataPath)) {
-        metadata = parseIdentityJson(fs.readFileSync(metadataPath, 'utf8'));
-      }
-    }
-
-    // Build objectLayerRenderFramesData
-    let objectLayerRenderFramesData;
-    if (metadata && metadata.objectLayerRenderFramesData) {
-      // The editor states each frame cell for cell, with its own width and height. The PNGs
-      // beside it are what the client serves, not a source to re-derive the cells from: a
-      // decode has to guess the cell size, and a guess resamples every frame it is wrong for.
-      const { frames, colors, frame_duration } = metadata.objectLayerRenderFramesData;
-      const authored = frames && colors && Object.values(frames).some((direction) => direction?.length > 0);
-      objectLayerRenderFramesData = {
-        frame_duration: frame_duration || 250,
-        frames: authored ? frames : {},
-        colors: authored ? colors : [],
-      };
-      if (authored)
-        return {
-          objectLayerRenderFramesData,
-          objectLayerData: ObjectLayerEngine.objectLayerDataFactory({ metadata, objectLayerType, objectLayerId }),
-        };
-    } else if (metadata && metadata.data && metadata.data.render) {
-      objectLayerRenderFramesData = {
-        frame_duration: metadata.data.render.frame_duration || 250,
-        frames: {},
-        colors: [],
-      };
-    } else {
-      objectLayerRenderFramesData = {
-        frame_duration: 250,
-        frames: {},
-        colors: [],
-      };
-    }
+  static async buildObjectLayerDataFromDirectory({ folder, objectLayerType, objectLayerId }) {
+    const metadataPath = `${folder}/metadata.json`;
+    const metadata = fs.existsSync(metadataPath) ? parseIdentityJson(fs.readFileSync(metadataPath, 'utf8')) : null;
 
     const objectLayerData = ObjectLayerEngine.objectLayerDataFactory({ metadata, objectLayerType, objectLayerId });
 
+    // The editor states each frame cell for cell. The PNGs beside it are what the client serves,
+    // not a source to re-derive the cells from: a decode guesses the cell size.
+    const authored = metadata?.objectLayerRenderFramesData;
+    if (isRenderSource(authored) && Object.keys(authored.frames).length > 0)
+      return { objectLayerRenderFramesData: fromWire(authored), objectLayerData };
+
+    const decoded = { frames: {}, colors: [] };
     // Process all PNG files from direction sub-folders
     if (fs.existsSync(folder)) {
       const directionFolders = await fs.readdir(folder);
@@ -419,19 +320,31 @@ export class ObjectLayerEngine {
           if (!frameFile.endsWith('.png')) continue;
 
           const framePath = `${directionPath}/${frameFile}`;
-          await ObjectLayerEngine.processAndPushFrame(objectLayerRenderFramesData, framePath, directionCode);
+          await ObjectLayerEngine.processAndPushFrame(decoded, framePath, directionCode);
         }
       }
     }
 
-    return { objectLayerRenderFramesData, objectLayerData };
+    return {
+      objectLayerRenderFramesData: sourceFromIndexedFrames({ ...decoded, frameDurationMs: DEFAULT_FRAME_DURATION_MS }),
+      objectLayerData,
+    };
   }
 
   /**
-   * Writes frame PNGs and an optional metadata.json to one or more base asset
-   * directories.  This is the shared write-to-disk step consumed by both the
-   * Cyberia CLI `--generate` / `--import` flows and the REST API service
-   * `post` / `put` `/metadata` endpoints.
+   * The asset trees `cyberia ol --client-public` keeps: the source tree and the host's built tree.
+   * @param {{host: string, path: string}} options
+   * @returns {string[]}
+   * @memberof CyberiaObjectLayer
+   */
+  static clientPublicPaths(options) {
+    return ['./src/client/public/cyberia/', `./public/${options.host}${options.path}`];
+  }
+
+  /**
+   * Replaces the folder of an item in one or more asset trees with its frame PNGs and an optional
+   * metadata.json: how `cyberia ol --client-public` keeps the asset tree consistent with each
+   * operation.
    *
    * For each base path the layout produced is:
    * ```
@@ -446,9 +359,7 @@ export class ObjectLayerEngine {
    *   The conventional `assets/` prefix is appended automatically.
    * @param {string} params.itemType - Object layer type ('floor', 'skin', …).
    * @param {string} params.itemId   - Unique item identifier.
-   * @param {ObjectLayerRenderFramesData} params.objectLayerRenderFramesData
-   *   - The render frames data containing `frames`, `colors`,
-   *     and `frame_duration`.
+   * @param {ObjectLayerRenderFramesData} params.objectLayerRenderFramesData - The render source.
    * @param {Object} [params.objectLayerData=null] - When provided, a
    *   `metadata.json` file is written alongside the frame PNGs.
    * @param {number} [params.cellPixelDim=20] - Pixel size per grid cell.
@@ -471,6 +382,7 @@ export class ObjectLayerEngine {
       // this basePath so duplicate direction names (e.g. down_idle,
       // none_idle, default_idle all map to '08') only write once.
       const written = new Set();
+      await fs.remove(path.join(basePath, 'assets', itemType, itemId));
 
       for (const [dirName, dirFrames] of Object.entries(objectLayerRenderFramesData.frames)) {
         const code = dirToCode[dirName];
@@ -486,14 +398,11 @@ export class ObjectLayerEngine {
 
           const filePath = path.join(dirFolder, `${fi}.png`);
 
-          await ObjectLayerEngine.buildImgFromTile({
-            tile: {
-              map_color: objectLayerRenderFramesData.colors,
-              frame_matrix: dirFrames[fi],
-            },
-            cellPixelDim,
-            opacityFilter: (x, y, color) => 255,
+          await ObjectLayerEngine.writeFrameImage({
+            source: objectLayerRenderFramesData,
+            pixels: dirFrames[fi],
             imagePath: filePath,
+            cellPixelDim,
           });
 
           writtenPaths.push(filePath);
@@ -510,9 +419,7 @@ export class ObjectLayerEngine {
           metadataPath,
           {
             data: objectLayerData.data,
-            objectLayerRenderFramesData: {
-              frame_duration: objectLayerRenderFramesData.frame_duration,
-            },
+            objectLayerRenderFramesData: toWire(objectLayerRenderFramesData),
             generated: true,
             generatorVersion: '1.0.0',
           },
@@ -592,6 +499,52 @@ export class ObjectLayerEngine {
   }
 
   /**
+   * Builds the render of a definition again from its stored render frames and publishes the
+   * definition that names it; the label rebinds to it. `revise` may change the payload first.
+   *
+   * @static
+   * @param {Object} params
+   * @param {import('./object-layer-catalog.js').CatalogModels} params.models
+   * @param {Object} params.objectLayer - A mongoose ObjectLayer document.
+   * @param {number} [params.upscaleFactor] - Pixels per cell of the upscaled render.
+   * @param {number|null} [params.maxAtlasDim=null] - Atlas dimension cap.
+   * @param {(payload:{data:Object})=>void} [params.revise] - Changes the payload in place.
+   * @param {Object} [params.options] - Router options ({ host, path }).
+   * @returns {Promise<{definition:Object,atlas:Object}|null>} Null when the definition has no render frames.
+   * @memberof CyberiaObjectLayer
+   */
+  static async rebuildItemRender({
+    models,
+    objectLayer,
+    upscaleFactor,
+    maxAtlasDim = null,
+    revise = () => {},
+    options,
+  }) {
+    const ObjectLayerRenderFrames = DataBaseProviderService.getModel('ObjectLayerRenderFrames', options);
+    const stored = await ObjectLayerRenderFrames.findOne({ objectLayerCid: objectLayer.cid }).lean();
+    if (!stored) return null;
+    const renderFrames = ObjectLayerRenderFrames.sourceOf(stored);
+    const rendered = await AtlasSpriteSheetStore.build({
+      itemKey: objectLayer.data.item.id,
+      objectLayerRenderFrames: renderFrames,
+      upscaleFactor,
+      maxAtlasDim,
+      options,
+    });
+    const payload = ObjectLayerEngine.payloadOf(objectLayer);
+    revise(payload);
+    const definition = await ObjectLayerEngine.publishItemDefinition({
+      models,
+      payload,
+      renderFrames,
+      rendered,
+      options,
+    });
+    return { definition, atlas: rendered.atlas };
+  }
+
+  /**
    * The payload of a definition with its content changed in memory, ready to publish as a new
    * definition.
    * @static
@@ -622,8 +575,14 @@ export class ObjectLayerEngine {
     const pinned = isObjectLayerAuthority(options)
       ? await pinCanonical({ ObjectLayer: models.ObjectLayer, definition: objectLayer, options })
       : Boolean((await resolveObjectLayer(objectLayer.cid, options))?.published);
-    if (!pinned) logger.warn(`Canonical bytes of "${itemId}" are not pinned; ${objectLayer.cid} will not resolve via gateway`);
-    return { cid: objectLayer.cid, contentHash: objectLayer.contentHash, objectLayerId: String(objectLayer._id), pinned };
+    if (!pinned)
+      logger.warn(`Canonical bytes of "${itemId}" are not pinned; ${objectLayer.cid} will not resolve via gateway`);
+    return {
+      cid: objectLayer.cid,
+      contentHash: objectLayer.contentHash,
+      objectLayerId: String(objectLayer._id),
+      pinned,
+    };
   }
 
   /**
@@ -641,18 +600,17 @@ export class ObjectLayerEngine {
   static selectAtlasRebuild(options = {}) {
     const namedAnAction = Boolean(
       options.import ||
-        options.syncDerived ||
-        options.importTypes ||
-        options.drop ||
-        options.generate ||
-        options.showAtlasSpriteSheet ||
-        options.showFrame !== undefined,
+      options.sync ||
+      options.importTypes ||
+      options.drop ||
+      options.showAtlasSpriteSheet ||
+      options.showFrame !== undefined,
     );
     return options.toAtlasSpriteSheet !== undefined || (options.upscale !== undefined && !namedAnAction);
   }
 
   /**
-   * Selects the item ids an `ol` action works on, such as `--sync-derived` or
+   * Selects the item ids an `ol` action works on, such as `--sync` or
    * `--to-atlas-sprite-sheet`.
    *
    * With no requested ids, every stored item id is taken. With requested ids,
@@ -696,7 +654,7 @@ export const pngDirectoryIteratorByObjectLayerType = ObjectLayerEngine.pngDirect
  * @function buildImgFromTile
  * @memberof CyberiaObjectLayer
  */
-export const buildImgFromTile = ObjectLayerEngine.buildImgFromTile;
+export const writeFrameImage = ObjectLayerEngine.writeFrameImage;
 
 /**
  * @see {@link ObjectLayerEngine.resolveItemIdentity}

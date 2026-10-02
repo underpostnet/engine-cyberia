@@ -1,10 +1,11 @@
-// Shared content, stat contract, and presentation defaults.
+// Shared runtime vocabulary, stat contract, and presentation defaults. Content lives in the
+// cyberia-content repository, which reads this vocabulary as its generated runtime contract.
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared content vocabulary
+// Shared runtime vocabulary
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Default instance code for the Cyberia engine
+ * Default instance code for the Cyberia engine: the world a release serves at `/`.
  */
 export const DEFAULT_INSTANCE_CODE = 'amethyst-strata-expansion';
 
@@ -69,31 +70,51 @@ export const ENTITY_TYPE_TO_ITEM_TYPES = Object.freeze({
 /** Quest step objective types accepted by the quest-progress engine. */
 export const QUEST_STEPS_TYPES = Object.freeze(['collect', 'talk', 'kill']);
 
+/** The table column the sagas of a row show in, and the filter key a table sends for them. */
+export const SAGA_FILTER_KEY = 'sagaCode';
+
+/** How a portal connects: to a portal or a random cell, on another map or the same one. */
+export const PORTAL_MODES = Object.freeze(['inter-portal', 'inter-random', 'intra-random', 'intra-portal']);
+
+/** Prefix of an item's dialogue code: its flavor text, and an NPC's greeting when the item is its skin. */
+export const ITEM_DIALOGUE_PREFIX = 'default-';
+
+/** The item a dialogue code belongs to, or '' when the code is not an item dialogue. */
+export const dialogueItemId = (code) =>
+  String(code ?? '').startsWith(ITEM_DIALOGUE_PREFIX) ? code.slice(ITEM_DIALOGUE_PREFIX.length) : '';
+
+/** Summoned-entity id the simulation resolves to the caster's active skin. */
+export const CASTER_SKIN_PLACEHOLDER = '$active_skin';
+
 /**
  * Canonical skill LogicId registry — the single source of truth for the
  * `logicEventId` handler keys the simulation skill dispatcher knows how to run.
  * MUST stay aligned with the handlers registered in cyberia-server
  * `game/skill_dispatcher.go#InitSkills`. The skill editor (ActionEngineCyberia)
- * offers ONLY these ids, and `DefaultSkillConfig` (cyberia-server-defaults.js)
- * draws its `logicEventId`s from here.
+ * offers ONLY these ids, and content abilities draw their `logicEventId` from here.
  *
- * @type {ReadonlyArray<{id:string,name:string,description:string}>}
+ * `summons` is the item type of the entity the handler spawns; null spawns the caster's skin.
+ *
+ * @type {ReadonlyArray<{id:string,name:string,description:string,summons:string|null}>}
  */
 export const SKILL_LOGIC_IDS = Object.freeze([
   Object.freeze({
     id: 'projectile',
     name: 'Projectile',
     description: 'Fires a projectile toward the tap. Spawn chance and lifetime scale with Intelligence and Range.',
+    summons: ITEM_TYPES.skill,
   }),
   Object.freeze({
     id: 'coin_drop_or_transaction',
     name: 'Coin Drop',
     description: 'Drops coins on kill; transfer amount follows the kill-percent economy rules.',
+    summons: ITEM_TYPES.coin,
   }),
   Object.freeze({
     id: 'doppelganger',
     name: 'Doppelganger',
     description: 'Summons a passive clone that wanders nearby. Spawn chance scales with Intelligence.',
+    summons: null,
   }),
 ]);
 
@@ -225,52 +246,67 @@ export const isCanonicalAudioLogicId = (logicEventId) =>
 
 /**
  * Canonical entity-behavior registry — the authoritative vocabulary for the
- * `behavior` an entity-type default may bind to its matched entities. The Go
- * simulation owns the runtime semantics; this registry is the shared label /
- * documentation source consumed by the editor (EntityEngineCyberia) and by
- * content-authority validation. MUST stay aligned with cyberia-server
- * `game/behavior.go`.
+ * `behavior` an entity-type default may bind to its matched entities. This
+ * registry is the shared label / documentation source consumed by the editor
+ * (EntityEngineCyberia) and by content-authority validation.
+ *
+ * `entityType` is the one entity type a behavior applies to. The Go simulation
+ * owns the semantics of bot behaviors and MUST stay aligned with cyberia-server
+ * `game/behavior.go`. The client owns the semantics of foreground behaviors.
  *
  * `selectable: false` marks behaviors the runtime assigns itself
  * (projectiles, coin drops) — they are not author-assignable to a default.
  *
- * @type {ReadonlyArray<{id:string,label:string,description:string,selectable:boolean}>}
+ * @type {ReadonlyArray<{id:string,label:string,description:string,entityType:string,selectable:boolean}>}
  */
 export const ENTITY_BEHAVIORS = Object.freeze([
   Object.freeze({
     id: 'passive',
     label: 'Passive',
     description: 'Wanders within its spawn radius; never aggroes. Default for unarmed entities.',
+    entityType: ENTITY_TYPES.bot,
     selectable: true,
   }),
   Object.freeze({
     id: 'hostile',
     label: 'Hostile',
     description: 'Pursues and attacks players within aggro range. Default for armed entities.',
+    entityType: ENTITY_TYPES.bot,
     selectable: true,
   }),
   Object.freeze({
     id: 'provider',
     label: 'Provider',
     description: 'Mission/action giver: barely moves from its spawn (sporadic short steps) and is immortal.',
+    entityType: ENTITY_TYPES.bot,
     selectable: true,
   }),
   Object.freeze({
     id: 'provider-static',
     label: 'Provider (Static)',
     description: 'Like provider but completely immobile, and immortal.',
+    entityType: ENTITY_TYPES.bot,
+    selectable: true,
+  }),
+  Object.freeze({
+    id: 'overhead-occlusion',
+    label: 'Overhead Occlusion',
+    description: 'Roof: fades out while the local player stands under it, and fades back in when the player leaves.',
+    entityType: ENTITY_TYPES.foreground,
     selectable: true,
   }),
   Object.freeze({
     id: 'skill',
     label: 'Skill',
     description: 'Runtime projectile entity — assigned by the skill engine, not author-selectable.',
+    entityType: ENTITY_TYPES.skill,
     selectable: false,
   }),
   Object.freeze({
     id: 'coin',
     label: 'Coin',
     description: 'Runtime coin entity — assigned by the economy engine, not author-selectable.',
+    entityType: ENTITY_TYPES.coin,
     selectable: false,
   }),
 ]);
@@ -384,63 +420,6 @@ export function generateRandomStats(min = STAT_MODIFIER_MIN, max = STAT_MODIFIER
   }));
 }
 
-/**
- * Canonical (itemId → itemType) registry shipped with the engine. Used
- * by the import-default-items seed, the on-chain ObjectLayerToken bridge,
- * the fallback world generator, the CLI tooling, and the browser editor.
- *
- * Adding a new item here is the **only** place it needs to be declared.
- */
-export const DefaultCyberiaItems = [
-  { item: { id: 'coin', type: ITEM_TYPES.coin } },
-  { item: { id: 'hatchet-skill', type: ITEM_TYPES.skill } },
-  { item: { id: 'atlas_pistol_mk2', type: ITEM_TYPES.weapon } },
-  { item: { id: 'atlas_pistol_mk2_bullet', type: ITEM_TYPES.skill } },
-  { item: { id: 'tim-knife', type: ITEM_TYPES.weapon } },
-  { item: { id: 'hatchet', type: ITEM_TYPES.weapon } },
-  { item: { id: 'wason', type: ITEM_TYPES.skin } },
-  { item: { id: 'kishins', type: ITEM_TYPES.skin } },
-  { item: { id: 'scp-2040', type: ITEM_TYPES.skin } },
-  { item: { id: 'purple', type: ITEM_TYPES.skin } },
-  { item: { id: 'punk', type: ITEM_TYPES.skin } },
-  { item: { id: 'lain', type: ITEM_TYPES.skin } },
-  { item: { id: 'kaneki', type: ITEM_TYPES.skin } },
-  { item: { id: 'junko', type: ITEM_TYPES.skin } },
-  { item: { id: 'ghost', type: ITEM_TYPES.skin } },
-  { item: { id: 'fragmentation', type: ITEM_TYPES.skin } },
-  { item: { id: 'eiri', type: ITEM_TYPES.skin } },
-  { item: { id: 'anon', type: ITEM_TYPES.skin } },
-  { item: { id: 'alex', type: ITEM_TYPES.skin } },
-  { item: { id: 'agent', type: ITEM_TYPES.skin } },
-  { item: { id: 'grass', type: ITEM_TYPES.floor } },
-  { item: { id: 'wood-1', type: ITEM_TYPES.resource } },
-  { item: { id: 'wood-2', type: ITEM_TYPES.resource } },
-  { item: { id: 'wood-extracted-1', type: ITEM_TYPES.resource } },
-  { item: { id: 'wood-extracted-2', type: ITEM_TYPES.resource } },
-  { item: { id: 'wood-drop-1', type: ITEM_TYPES.resource } },
-  { item: { id: 'wood-drop-2', type: ITEM_TYPES.resource } },
-];
-
-const _ITEM_BY_ID = Object.freeze(
-  DefaultCyberiaItems.reduce((acc, entry) => {
-    acc[entry.item.id] = entry;
-    return acc;
-  }, {}),
-);
-
-/** O(1) lookup: item id → registry entry, or `null` if unknown. */
-export const getDefaultCyberiaItemById = (itemId) => _ITEM_BY_ID[itemId] || null;
-
-/** All registry entries of a given item type. */
-export const getDefaultCyberiaItemsByItemType = (itemType) =>
-  DefaultCyberiaItems.filter((entry) => entry.item.type === itemType);
-
-/** All registry entries whose item type is permitted on a given entity type. */
-export const getDefaultCyberiaItemsByEntityType = (entityType) => {
-  const allowed = ENTITY_TYPE_TO_ITEM_TYPES[entityType] || [];
-  return DefaultCyberiaItems.filter((entry) => allowed.includes(entry.item.type));
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Presentation defaults
 // ─────────────────────────────────────────────────────────────────────────────
@@ -519,6 +498,10 @@ export const ENTITY_COLOR_KEYS = Object.freeze([
  *                     built-in font.
  *   fontFactorSize  — uniform multiplier applied to every text size, so a
  *                     deployment can scale all UI/HUD text without per-call edits.
+ *   overheadOcclusionHiddenOpacity — opacity of an `overhead-occlusion`
+ *                     foreground while the local player stands under it. 0 hides it.
+ *   overheadOcclusionFadeMs — duration of the fade between opacity 1 and the
+ *                     hidden opacity, in both directions.
  */
 export const RENDER_DEFAULTS = Object.freeze({
   cellSize: 45,
@@ -538,6 +521,8 @@ export const RENDER_DEFAULTS = Object.freeze({
 
   fontFamily: 'Jersey15-Regular.ttf',
   fontFactorSize: 1.4,
+  overheadOcclusionHiddenOpacity: 0,
+  overheadOcclusionFadeMs: 300,
 });
 
 /**
@@ -616,6 +601,8 @@ export function buildClientHints(overrides = {}) {
     devUi: ov.devUi ?? RENDER_DEFAULTS.devUi,
     fontFamily: ov.fontFamily ?? RENDER_DEFAULTS.fontFamily,
     fontFactorSize: ov.fontFactorSize ?? RENDER_DEFAULTS.fontFactorSize,
+    overheadOcclusionHiddenOpacity: ov.overheadOcclusionHiddenOpacity ?? RENDER_DEFAULTS.overheadOcclusionHiddenOpacity,
+    overheadOcclusionFadeMs: ov.overheadOcclusionFadeMs ?? RENDER_DEFAULTS.overheadOcclusionFadeMs,
   };
 }
 

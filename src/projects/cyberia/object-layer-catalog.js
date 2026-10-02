@@ -9,9 +9,10 @@
  * @namespace CyberiaObjectLayerCatalog
  */
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
-import { profileRef } from '../../client/components/object-layer/ObjectLayerProtocol.js';
+import { profileRef } from '../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
 import { CyberiaObjectLayerProfile } from '../../client/components/cyberia/ObjectLayerProfileCyberia.js';
 import { objectLayerCache, publishDefinition } from '../../api/object-layer/object-layer.publication.js';
+import { objectLayerIdentity } from '../../api/object-layer/object-layer.identity.js';
 import { AtlasSpriteSheetStore } from '../../api/atlas-sprite-sheet/atlas-sprite-sheet.store.js';
 import { resolveObjectLayer } from '../../server/domain/object-layer-resolver.js';
 import { CacheService } from '../../server/storage/cache.js';
@@ -156,7 +157,7 @@ const sameRender = (a, b) => (a?.cid ?? '') === (b?.cid ?? '') && (a?.metadataCi
  * @param {Object} params
  * @param {Object} params.definition - The written definition.
  * @param {Object|null} params.bound - The definition the label was bound to before the write.
- * @param {Object} [params.renderFrames] - Editor source: `{ frames, colors, frame_duration }`.
+ * @param {Object} [params.renderFrames] - Editor source: a render source (`RenderSource.js`).
  * @param {{render: Object, atlas: Object}} [params.rendered] - Output of {@link AtlasSpriteSheetStore.build}.
  * @param {Object} [params.options] - Router options of this host.
  * @returns {Promise<void>}
@@ -167,8 +168,8 @@ async function materializeDefinition({ definition, bound, renderFrames, rendered
   const predecessor =
     bound && bound.cid !== definition.cid && sameRender(bound.data.render, definition.data.render) ? bound.cid : null;
 
-  const source =
-    renderFrames ?? (predecessor && (await ObjectLayerRenderFrames.findOne({ objectLayerCid: predecessor }).lean()));
+  const inherited = predecessor && (await ObjectLayerRenderFrames.findOne({ objectLayerCid: predecessor }).lean());
+  const source = renderFrames ?? (inherited && ObjectLayerRenderFrames.sourceOf(inherited));
   if (source) await ObjectLayerRenderFrames.materialize(definition.cid, source);
 
   const atlas =
@@ -177,11 +178,34 @@ async function materializeDefinition({ definition, bound, renderFrames, rendered
 }
 
 /**
+ * The definition a write produces: the payload merged over the bound data with
+ * {@link mergeObjectLayerData}, or over `setOnInsert` when the label has none, under the
+ * Cyberia profile. Its identity decides whether a write changes the binding.
+ *
+ * @param {Object} params
+ * @param {Object|null} params.boundData - `data` of the definition the label is bound to.
+ * @param {Object} params.payload - `{ data }`; `data.item.id` required.
+ * @param {Object} [params.setOnInsert=null] - Partial payload applied only when nothing is bound.
+ * @returns {{profile:Object,data:Object}}
+ * @memberof CyberiaObjectLayerCatalog
+ */
+export function composeItemDefinition({ boundData, payload, setOnInsert = null }) {
+  const next = boundData
+    ? { data: mergeObjectLayerData(boundData, payload.data) }
+    : setOnInsert
+      ? mergeObjectLayerData(setOnInsert, payload)
+      : { ...payload };
+  next.profile = profileRef(CyberiaObjectLayerProfile);
+  next.data.stats = CyberiaObjectLayerProfile.validateStats(next.data.stats);
+  return next;
+}
+
+/**
  * Publishes the definition a Cyberia item label runs on, under the Cyberia profile, and binds
  * the label to it.
  *
- * The payload is merged over the bound definition with {@link mergeObjectLayerData}, so a
- * degraded writer keeps what an earlier one stored. Changed content becomes a new immutable
+ * The payload is composed by {@link composeItemDefinition}, so a degraded writer keeps what an
+ * earlier one stored. Changed content becomes a new immutable
  * definition and the label is rebound to it; identical content keeps the bound one. The label
  * binds only after {@link publishDefinition} succeeds: a definition the Object Layer authority
  * did not store stays a draft and the label keeps its binding. The materializations of the
@@ -203,14 +227,11 @@ export async function writeItemDefinition({ models, payload, setOnInsert = null,
   if (!itemId) throw new Error('writeItemDefinition requires data.item.id');
 
   const bound = await findBoundDefinition(models, itemId);
-  let next;
-  if (bound) {
-    next = { data: mergeObjectLayerData(bound.toObject({ virtuals: false }).data, payload.data) };
-  } else {
-    next = setOnInsert ? mergeObjectLayerData(setOnInsert, payload) : { ...payload };
-  }
-  next.profile = profileRef(CyberiaObjectLayerProfile);
-  next.data.stats = CyberiaObjectLayerProfile.validateStats(next.data.stats);
+  const next = composeItemDefinition({
+    boundData: bound ? bound.toObject({ virtuals: false }).data : null,
+    payload,
+    setOnInsert,
+  });
   if (rendered) next.data.render = rendered.render;
   if (payload.createdBy) next.createdBy = payload.createdBy;
 
@@ -221,6 +242,31 @@ export async function writeItemDefinition({ models, payload, setOnInsert = null,
   }
   await materializeDefinition({ definition, bound, renderFrames, rendered, options });
   return definition;
+}
+
+/**
+ * Brings the definition a label runs on in line with the current Cyberia profile: its profile
+ * and stats are composed again, and `revise` may change its data first. Only a definition whose
+ * identity changes is written, through {@link writeItemDefinition}; the label then rebinds and
+ * keeps its materializations.
+ * @param {Object} params
+ * @param {CatalogModels} params.models
+ * @param {string} params.itemId - The label.
+ * @param {(payload:{data:Object})=>void} [params.revise] - Changes the payload in place.
+ * @param {Object} [params.options] - Router options of this host.
+ * @returns {Promise<{definition:Object|null,written:boolean}>} The definition the label runs on
+ *   now; null when the label is unbound.
+ * @memberof CyberiaObjectLayerCatalog
+ */
+export async function reviseItemDefinition({ models, itemId, revise = () => {}, options }) {
+  const bound = await findBoundDefinition(models, itemId);
+  if (!bound) return { definition: null, written: false };
+  const boundData = bound.toObject({ virtuals: false }).data;
+  const payload = { data: structuredClone(boundData) };
+  revise(payload);
+  if (objectLayerIdentity(composeItemDefinition({ boundData, payload })).cid === bound.cid)
+    return { definition: bound, written: false };
+  return { definition: await writeItemDefinition({ models, payload, options }), written: true };
 }
 
 /**

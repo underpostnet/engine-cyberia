@@ -2,8 +2,8 @@ import { Schema, model } from 'mongoose';
 
 // https://mongoosejs.com/docs/2.7.x/docs/schematypes.html
 
-// CyberiaEntityTypeDefault — DB-backed, editable mirror of the per-entity-type
-// item defaults that ship in cyberia-server-defaults.js (ENTITY_TYPE_DEFAULTS).
+// CyberiaEntityTypeDefault — the per-entity-type item wiring an instance authors
+// over the foundation baseline of the cyberia-content artifact.
 // A document binds an entity category (entityType) to the item ids the runtime
 // rotates through by lifecycle state:
 //   liveItemIds       — ObjectLayer item ids while the entity is alive.
@@ -61,9 +61,9 @@ const CyberiaEntityTypeDefaultSchema = new Schema(
     inventoryItemsIds: [{ type: String, trim: true }],
     overrideItemsIdsState: [OverrideItemStateSchema],
     // Canonical entity behavior bound to entities matched by liveItemIds (see
-    // SharedDefaultsCyberia.ENTITY_BEHAVIORS). Empty = let the runtime derive it
-    // (armed → hostile, else passive). The simulation resolves it with the same
-    // liveItemIds match it uses for the live/dead/drop sets.
+    // SharedDefaultsCyberia.ENTITY_BEHAVIORS). Empty: a bot derives it
+    // (armed → hostile, else passive); a foreground stays normal. The simulation
+    // resolves it with the same liveItemIds match it uses for the live/dead/drop sets.
     behavior: { type: String, trim: true },
   },
   {

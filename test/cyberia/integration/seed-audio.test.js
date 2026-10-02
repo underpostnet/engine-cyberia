@@ -9,13 +9,12 @@ import { CyberiaAudioService } from '../../../src/api/cyberia-audio/cyberia-audi
 import { CyberiaMapAudioConfModel } from '../../../src/api/cyberia-map-audio-conf/cyberia-map-audio-conf.model.js';
 import { FileModel } from '../../../src/api/file/file.model.js';
 import { FileService } from '../../../src/api/file/file.service.js';
-import { getFallbackMapCodes } from '../../../src/api/cyberia-instance/cyberia-fallback-world.js';
+import { CyberiaMapAudioConfService } from '../../../src/api/cyberia-map-audio-conf/cyberia-map-audio-conf.service.js';
 import {
-  audioConfigForMaps, fallbackAudioConfig, hasAudioRenderer, loadAudioRenderer, prepareFallbackAudio,
-  seedFallbackAudio, seedInstanceAudio,
+  hasAudioRenderer, loadAudioRenderer, recordAudioBank, seedInstanceAudio,
 } from '../../../src/projects/cyberia/seed-audio.js';
 import {
-  DEFAULT_AUDIO_BANK, DEFAULT_AUDIO_BINDINGS, buildAudioEventBindings,
+  DEFAULT_AUDIO_BANK, DEFAULT_AUDIO_BINDINGS, DEFAULT_MAP_MUSIC, buildAudioEventBindings,
 } from '../../../src/api/cyberia-server-defaults/cyberia-server-defaults.js';
 import {
   AUDIO_BUS_MUSIC, AUDIO_BUS_SFX, AUDIO_LOGIC_ID_BUSES, isCanonicalAudioLogicId,
@@ -26,7 +25,12 @@ import {
 // real bytes are skipped there; everything that checks a rule rather than a recording still runs.
 const itRecording = it.skipIf(!hasAudioRenderer());
 
-describe('fallback audio pipeline', () => {
+const FOREST = ['forest-1', 'forest-2', 'forest-3', 'forest-4'];
+// The vocabulary is the defaults' own list, so adding a cue never leaves a hard-coded count behind.
+const BANK = DEFAULT_AUDIO_BANK.map(({ code }) => code);
+const EVENTS = buildAudioEventBindings();
+
+describe('audio pipeline', () => {
   let directory;
   let recordsPath;
   let audio;
@@ -38,7 +42,7 @@ describe('fallback audio pipeline', () => {
   beforeEach(() => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cyberia-seed-audio-'));
     recordsPath = path.join(directory, 'records');
-    audio = new Map(); files = new Map(); maps = new Map(); instances = new Map();
+    audio = new Map(); files = new Map(); maps = new Map(); instances = new Map([['forest', FOREST]]);
     const CyberiaInstanceModel = {
       findOne: ({ code }) => ({
         select: () => ({ lean: async () => (instances.has(code) ? { cyberiaMapCodes: instances.get(code) } : null) }),
@@ -77,29 +81,28 @@ describe('fallback audio pipeline', () => {
 
   afterEach(() => { vi.restoreAllMocks(); fs.removeSync(directory); });
 
+  const seedForest = () => seedInstanceAudio({ instanceCode: 'forest', recordsPath }, options);
+
   itRecording('generates deterministic WAVs, seeds twice, and serves the same bytes through the generic file service', async () => {
-    const config = await prepareFallbackAudio({ recordsPath });
-    expect(config.maps.map(({ mapCode }) => mapCode)).toEqual(getFallbackMapCodes());
-    const digest = () => Object.fromEntries(config.assets.map((code) => [code,
+    await recordAudioBank({ recordsPath });
+    const digest = () => Object.fromEntries(BANK.map((code) => [code,
       createHash('sha256').update(fs.readFileSync(path.join(recordsPath, `${code}.wav`))).digest('hex'),
     ]));
     const hashes = digest();
-    await seedFallbackAudio({ recordsPath }, options);
+    await seedForest();
     const ids = [...audio.values()].map(({ fileId }) => String(fileId));
-    await prepareFallbackAudio({ recordsPath });
+    await recordAudioBank({ recordsPath });
     expect(digest()).toEqual(hashes);
-    await seedFallbackAudio({ recordsPath }, options);
-    // The vocabulary is the configuration's own asset list, so adding a cue never leaves a
-    // hard-coded count behind to correct.
-    expect(audio.size).toBe(config.assets.length);
-    expect(files.size).toBe(config.assets.length);
-    expect(maps.size).toBe(getFallbackMapCodes().length);
+    await seedForest();
+    expect(audio.size).toBe(BANK.length);
+    expect(files.size).toBe(BANK.length);
+    expect(maps.size).toBe(FOREST.length);
     expect([...audio.values()].map(({ fileId }) => String(fileId))).toEqual(ids);
     for (const map of maps.values()) {
-      expect(new Set(map.events.map(({ logicEventId }) => logicEventId)).size).toBe(config.events.length);
+      expect(new Set(map.events.map(({ logicEventId }) => logicEventId)).size).toBe(EVENTS.length);
       for (const event of map.events) expect(audio.has(event.audioCode)).toBe(true);
     }
-    for (const code of config.assets) {
+    for (const code of BANK) {
       const fileId = String(audio.get(code).fileId);
       const res = { set: vi.fn() };
       const bytes = await FileService.get({ path: `/blob/${fileId}`, params: { id: fileId } }, res, options);
@@ -111,27 +114,26 @@ describe('fallback audio pipeline', () => {
   itRecording('converges on re-seed: a binding the bank no longer declares is dropped', async () => {
     // The failure this prevents: a renamed cue leaves its old binding behind, the client asks the
     // engine for an asset nothing declares, and the map keeps a dangling name forever.
-    await prepareFallbackAudio({ recordsPath });
-    await seedFallbackAudio({ recordsPath }, options);
-    const config = fallbackAudioConfig();
-    const [mapCode] = config.maps.map(({ mapCode: code }) => code);
+    await recordAudioBank({ recordsPath });
+    await seedForest();
+    const [mapCode] = FOREST;
 
     const stale = maps.get(mapCode);
     stale.events.push({ logicEventId: 'player-hit', audioCode: 'coin' });
-    expect(stale.events).toHaveLength(config.events.length + 1);
+    expect(stale.events).toHaveLength(EVENTS.length + 1);
 
-    await seedFallbackAudio({ recordsPath }, options);
+    await seedForest();
     for (const map of maps.values()) {
-      expect(map.events).toHaveLength(config.events.length);
+      expect(map.events).toHaveLength(EVENTS.length);
       expect(map.events.some(({ logicEventId }) => logicEventId === 'player-hit')).toBe(false);
       expect(map.events.map(({ logicEventId }) => logicEventId)).toEqual(
-        config.events.map(({ logicEventId }) => logicEventId),
+        EVENTS.map(({ logicEventId }) => logicEventId),
       );
     }
   }, 20000);
 
   itRecording('reuses a file left by an interrupted metadata write and repairs a missing file', async () => {
-    await prepareFallbackAudio({ recordsPath });
+    await recordAudioBank({ recordsPath });
     const record = { wavPath: path.join(recordsPath, 'coin.wav'), manifestPath: path.join(recordsPath, 'coin.json') };
     CyberiaAudioModel.findOneAndUpdate.mockRejectedValueOnce(new Error('interrupted'));
     await expect(CyberiaAudioService.importRecord(record, options)).rejects.toThrow('interrupted');
@@ -146,7 +148,7 @@ describe('fallback audio pipeline', () => {
 
   itRecording('replaces the blob when a render changes, and leaves no orphan behind', async () => {
     const { dispatch } = await loadAudioRenderer();
-    await prepareFallbackAudio({ recordsPath });
+    await recordAudioBank({ recordsPath });
     const record = { wavPath: path.join(recordsPath, 'coin.wav'), manifestPath: path.join(recordsPath, 'coin.json') };
 
     const first = await CyberiaAudioService.importRecord(record, options);
@@ -168,7 +170,7 @@ describe('fallback audio pipeline', () => {
   }, 20000);
 
   itRecording('drops the blob with the asset it belongs to', async () => {
-    await prepareFallbackAudio({ recordsPath });
+    await recordAudioBank({ recordsPath });
     await CyberiaAudioService.importRecord(
       { wavPath: path.join(recordsPath, 'coin.wav'), manifestPath: path.join(recordsPath, 'coin.json') },
       options,
@@ -202,23 +204,21 @@ describe('fallback audio pipeline', () => {
 
   itRecording('scores every map of an instance alike, and converges on re-seed', async () => {
     instances.set('nexus', ['nexus-hub', 'nexus-deep', 'nexus-vault', 'nexus-rim', 'nexus-gate']);
-    await prepareFallbackAudio({ recordsPath });
+    await recordAudioBank({ recordsPath });
     await seedInstanceAudio({ instanceCode: 'nexus', recordsPath }, options);
 
     // One bed for the whole world: what a map sounds like at rest is the world's identity, and
     // the events are what make a moment sound different.
-    const expected = audioConfigForMaps(instances.get('nexus'));
-    expect(expected.maps.map(({ defaultMusic }) => defaultMusic)).toEqual(Array(5).fill('exploration'));
     expect([...maps.keys()]).toEqual(instances.get('nexus'));
-    for (const { mapCode, defaultMusic } of expected.maps) {
-      expect(maps.get(mapCode).defaultMusic).toBe(defaultMusic);
-      expect(maps.get(mapCode).events).toHaveLength(expected.events.length);
+    for (const mapCode of instances.get('nexus')) {
+      expect(maps.get(mapCode).defaultMusic).toBe('exploration');
+      expect(maps.get(mapCode).events).toHaveLength(EVENTS.length);
     }
 
     const stale = maps.get('nexus-hub');
     stale.events.push({ logicEventId: 'player-hit', audioCode: 'coin' });
     await seedInstanceAudio({ instanceCode: 'nexus', recordsPath }, options);
-    expect(maps.get('nexus-hub').events).toHaveLength(expected.events.length);
+    expect(maps.get('nexus-hub').events).toHaveLength(EVENTS.length);
     expect(maps.size).toBe(instances.get('nexus').length);
   }, 20000);
 
@@ -230,46 +230,68 @@ describe('fallback audio pipeline', () => {
       .rejects.toThrow('declares no maps');
   });
 
-  it('sources its whole vocabulary from the centralized defaults', () => {
-    const config = fallbackAudioConfig();
+  // Every code of the bank resolves, as it does once the bank is imported.
+  const importBank = () => BANK.forEach((code) => audio.set(code, { code }));
+
+  it('seeds one map with the centralized defaults, as the map editor button does', async () => {
     // The seed declares nothing of its own: the bank, the bindings and the vocabulary they use
     // all come from cyberia-server-defaults and SharedDefaultsCyberia.
-    expect(config.assets).toEqual(DEFAULT_AUDIO_BANK.map(({ code }) => code));
-    expect(config.events).toEqual(buildAudioEventBindings());
+    importBank();
+    const conf = await CyberiaMapAudioConfService.seedDefault('forest-1', options);
+    expect(conf.defaultMusic).toBe(DEFAULT_MAP_MUSIC);
+    expect(conf.toObject().events).toEqual(EVENTS);
     for (const { logicEventId, audioCode } of DEFAULT_AUDIO_BINDINGS) {
       expect(isCanonicalAudioLogicId(logicEventId)).toBe(true);
-      expect(config.assets).toContain(audioCode);
+      expect(BANK).toContain(audioCode);
     }
     // Routing is derived from the registry, never restated per binding.
-    for (const { logicEventId, settings } of config.events) {
+    for (const { logicEventId, settings } of EVENTS) {
       expect(settings.bus).toBe(AUDIO_LOGIC_ID_BUSES[logicEventId] ?? AUDIO_BUS_SFX);
       expect(settings.crossfadeMs > 0).toBe(settings.bus === AUDIO_BUS_MUSIC);
     }
   });
 
   it('binds the portal charge as a bed and the jump as a one-shot', () => {
-    const config = fallbackAudioConfig();
-    const cooldown = config.events.find(({ logicEventId }) => logicEventId === 'portal-cooldown');
-    const portal = config.events.find(({ logicEventId }) => logicEventId === 'portal');
+    const cooldown = EVENTS.find(({ logicEventId }) => logicEventId === 'portal-cooldown');
+    const portal = EVENTS.find(({ logicEventId }) => logicEventId === 'portal');
     // The charge is held for as long as the player waits, so it loops; the jump sounds once.
     expect(cooldown).toMatchObject({ audioCode: 'portal-cooldown', settings: { bus: AUDIO_BUS_MUSIC, loop: true } });
     expect(portal).toMatchObject({ audioCode: 'portal', settings: { bus: AUDIO_BUS_SFX, loop: false } });
   });
 
   it('keeps the semantic skill vocabulary and makes bus routing a binding setting', () => {
-    const config = fallbackAudioConfig();
-    expect(config.events.find(({ logicEventId }) => logicEventId === 'projectile').audioCode).toBe('shoot');
+    expect(EVENTS.find(({ logicEventId }) => logicEventId === 'projectile').audioCode).toBe('shoot');
     // One impact cue for any collision, and the interface has a voice of its own.
-    expect(config.events.find(({ logicEventId }) => logicEventId === 'hit').audioCode).toBe('hit');
-    expect(config.events.find(({ logicEventId }) => logicEventId === 'ui-click').audioCode).toBe('ui-click');
-    expect(config.events.some(({ logicEventId }) => logicEventId === 'player-hit')).toBe(false);
-    expect(config.assets).toContain('hit');
-    expect(config.assets).not.toContain('player-hit');
-    expect(config.events.find(({ logicEventId }) => logicEventId === 'coin_drop_or_transaction').audioCode).toBe('coin');
-    expect(config.events.find(({ logicEventId }) => logicEventId === 'victory').settings.loop).toBe(false);
-    expect(new Set(config.maps.map(({ defaultMusic }) => defaultMusic))).toEqual(new Set(['exploration']));
+    expect(EVENTS.find(({ logicEventId }) => logicEventId === 'hit').audioCode).toBe('hit');
+    expect(EVENTS.find(({ logicEventId }) => logicEventId === 'ui-click').audioCode).toBe('ui-click');
+    expect(EVENTS.some(({ logicEventId }) => logicEventId === 'player-hit')).toBe(false);
+    expect(BANK).toContain('hit');
+    expect(BANK).not.toContain('player-hit');
+    expect(EVENTS.find(({ logicEventId }) => logicEventId === 'coin_drop_or_transaction').audioCode).toBe('coin');
+    expect(EVENTS.find(({ logicEventId }) => logicEventId === 'victory').settings.loop).toBe(false);
+    expect(DEFAULT_MAP_MUSIC).toBe('exploration');
     for (const settings of [{ bus: 'MASTER' }, { volume: 2 }, { pan: -1 }, { pitch: 0 }, { crossfadeMs: Infinity }]) {
       expect(new CyberiaMapAudioConfModel({ mapCode: 'test', settings }).validateSync()).toBeDefined();
     }
+  });
+
+  it('routes a new binding stated without settings by its event, and keeps a restated one as stored', async () => {
+    importBank();
+    const settingsOf = (conf, id) => conf.events.find(({ logicEventId }) => logicEventId === id).settings.toObject();
+    const fresh = await CyberiaMapAudioConfService.assign(
+      { mapCode: 'forest-1', events: [{ logicEventId: 'combat', audioCode: 'combat' }, { logicEventId: 'hit', audioCode: 'hit' }] },
+      options,
+    );
+    // A music event holds the bed in a loop; a one-shot plays once, with no crossfade.
+    expect(settingsOf(fresh, 'combat')).toEqual({ bus: AUDIO_BUS_MUSIC, loop: true });
+    expect(settingsOf(fresh, 'hit')).toEqual({ bus: AUDIO_BUS_SFX, loop: false, crossfadeMs: 0 });
+
+    const seeded = settingsOf(await CyberiaMapAudioConfService.seedDefault('forest-1', options), 'combat');
+    const edited = await CyberiaMapAudioConfService.assign(
+      { mapCode: 'forest-1', events: [{ logicEventId: 'combat', audioCode: 'boss' }], replaceEvents: true },
+      options,
+    );
+    expect(edited.events.map(({ logicEventId, audioCode }) => `${logicEventId}:${audioCode}`)).toEqual(['combat:boss']);
+    expect(settingsOf(edited, 'combat')).toEqual(seeded);
   });
 });

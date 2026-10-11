@@ -1,0 +1,95 @@
+import { STAT_DEFAULTS } from '../../../client/components/cyberia/SharedDefaultsCyberia.js';
+import { CyberiaObjectLayerProfile } from '../../../client/components/cyberia/ObjectLayerProfileCyberia.js';
+import { profileRef } from '../../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
+import { objectLayerIdentity, renderContractOf } from '../../../api/object-layer/object-layer.identity.js';
+import {
+  toInstanceConfig,
+  toMapMsg,
+  toInstanceMsg,
+  toObjectLayerMsg,
+  toActionMsg,
+  toQuestMsg,
+} from '../instance-data.js';
+
+// One definition feeds every runtime contract: the Go boot fixtures (engine → cyberia-server)
+// and the WebSocket metadata fixture (cyberia-server → cyberia-client). Its render contract and
+// its cid are computed, so the three runtimes carry a real identity: `cid` is the definition,
+// `data.item.id` its label.
+const SWORD_CONTENT = {
+  profile: profileRef(CyberiaObjectLayerProfile),
+  data: {
+    stats: { ...STAT_DEFAULTS, effect: -100, resistance: 100 },
+    item: { id: 'sword', type: 'weapon' },
+    render: renderContractOf({
+      primary: Buffer.from('cyberia contract primary render'),
+      metadata: { itemKey: 'sword', atlasWidth: 1, atlasHeight: 1, cellPixelDim: 1 },
+    }),
+  },
+};
+const SWORD = { _id: 'contract-layer', ...SWORD_CONTENT, cid: objectLayerIdentity(SWORD_CONTENT).cid };
+const BASELINE = [{ entityType: 'bot', liveItemIds: ['sword'], behavior: 'hostile' }];
+const CELL = { sourceMapCode: 'contract-map', sourceCellX: 1, sourceCellY: 1 };
+const QUEST = {
+  ...CELL,
+  code: 'contract-quest',
+  title: 'Contract Quest',
+  description: 'Collect a sword.',
+  steps: [
+    {
+      id: 'step-collect',
+      description: 'Collect a sword.',
+      objectives: [{ type: 'collect', itemId: 'sword', quantity: 1 }],
+    },
+  ],
+  rewards: [{ itemId: 'sword', quantity: 1 }],
+};
+const ACTION = {
+  ...CELL,
+  code: 'contract-action',
+  label: 'Contract',
+  dialogCode: 'default-sword',
+  questDialogueCodes: [{ questCode: QUEST.code, dialogCode: 'quest-talk-contract' }],
+};
+
+export function buildBootContractArtifacts() {
+  const layer = toObjectLayerMsg(SWORD);
+  const full = {
+    instance: toInstanceMsg({ _id: 'contract-instance', code: 'contract-test', cyberiaMapCodes: ['contract-map'] }),
+    maps: [
+      toMapMsg({
+        _id: 'contract-map',
+        code: 'contract-map',
+        gridX: 16,
+        gridY: 16,
+        entities: [{ entityType: 'bot', level: 7, initCellX: 0, initCellY: 0, objectLayerItemIds: ['sword'] }],
+      }),
+    ],
+    objectLayers: [layer],
+    config: toInstanceConfig({}, BASELINE),
+    version: 'contract-fixture',
+    actions: [toActionMsg(ACTION)],
+    quests: [toQuestMsg(QUEST)],
+  };
+  const payloads = {
+    boot_full_instance: full,
+    boot_object_layer: layer,
+    boot_manifest: { entries: [{ itemId: 'sword', cid: SWORD.cid }] },
+    boot_ping: { serverTimeMs: 1000 },
+  };
+  // The shape `game.OLMeta` marshals for the client: an unregistered ledger is absent.
+  const wsMetadata = {
+    [layer.item.id]: {
+      cid: layer.cid,
+      data: { stats: layer.stats, item: layer.item, render: layer.render },
+    },
+  };
+  return {
+    ...Object.fromEntries(
+      Object.entries(payloads).map(([name, data]) => [
+        'cyberia-server/engine_client/testdata/' + name + '.json',
+        JSON.stringify({ status: 'success', data }, null, 2) + '\n',
+      ]),
+    ),
+    'cyberia-client/tests/testdata/ws_object_layer_metadata.json': JSON.stringify(wsMetadata, null, 2) + '\n',
+  };
+}

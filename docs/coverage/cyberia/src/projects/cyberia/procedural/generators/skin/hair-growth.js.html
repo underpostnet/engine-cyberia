@@ -1,0 +1,577 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/projects/cyberia/procedural/generators/skin/hair-growth.js</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../../index.html">All files</a> / <a href="index.html">src/projects/cyberia/procedural/generators/skin</a> hair-growth.js</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>94/94</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">95.08% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>58/61</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>25/25</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>71/71</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">10010x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">28424x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">3960x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">67020x</span>
+<span class="cline-any cline-yes">11925x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">203x</span>
+<span class="cline-any cline-yes">203x</span>
+<span class="cline-any cline-yes">203x</span>
+<span class="cline-any cline-yes">203x</span>
+<span class="cline-any cline-yes">26224x</span>
+<span class="cline-any cline-yes">26224x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">203x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">137444x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">41745x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">333960x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">2956x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1847500x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2956x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">4466x</span>
+<span class="cline-any cline-yes">14660x</span>
+<span class="cline-any cline-yes">4466x</span>
+<span class="cline-any cline-yes">220x</span>
+<span class="cline-any cline-yes">219x</span>
+<span class="cline-any cline-yes">219x</span>
+<span class="cline-any cline-yes">2753x</span>
+<span class="cline-any cline-yes">2753x</span>
+<span class="cline-any cline-yes">2753x</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-yes">10973x</span>
+<span class="cline-any cline-yes">10973x</span>
+<span class="cline-any cline-yes">10973x</span>
+<span class="cline-any cline-yes">87784x</span>
+<span class="cline-any cline-yes">87784x</span>
+<span class="cline-any cline-yes">34299x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-yes">34299x</span>
+<span class="cline-any cline-yes">21208x</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-yes">15378x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5570x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">219x</span>
+<span class="cline-any cline-yes">219x</span>
+<span class="cline-any cline-yes">102933x</span>
+<span class="cline-any cline-yes">102933x</span>
+<span class="cline-any cline-yes">1470x</span>
+<span class="cline-any cline-yes">1470x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">203x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">118125x</span>
+<span class="cline-any cline-yes">5650x</span>
+<span class="cline-any cline-yes">189x</span>
+<span class="cline-any cline-yes">5650x</span>
+<span class="cline-any cline-yes">189x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * The hair generator: a constrained, seeded growth from the hair region over the head. A strand
+ * starts on the outline next to the hair and takes steps outward, pulled by the style: gravity, a
+ * side bias (which also picks the roots on that side first), a chance to branch and a length. A
+ * step takes only a free cell inside the reach of the head, outside the protected shape and not
+ * in a hole the silhouette encloses. A strand that closes a hole or splits the shape is dropped.
+ * It is not a contour mutation: the silhouette grows where the hair grows. Pure functions.
+ *
+ * @module src/projects/cyberia/procedural/generators/skin/hair-growth.js
+ */
+import { hexToRgba } from '../../../../../client/components/objectlayer-studio/RenderSource.js';
+import { seededRandom } from '../../../../../client/components/objectlayer-studio/PixelRegion.js';
+import { analyzeFrame } from '../../core/frame-analysis.js';
+import { cellsOfMask, close, dilate, maskOfCells } from '../../core/morphology.js';
+import { shapeOf } from '../../core/frame-mutation.js';
+import { shuffled } from '../../core/seed.js';
+&nbsp;
+/**
+ * The hair styles. `length` is the steps of a strand, `reach` the cells from the head a strand may
+ * go, `density` the share of the roots that grow, `bias` the pull to the right (negative to the
+ * left), `gravity` the pull down and `branch` the chance a step splits.
+ */
+export const HAIR_STYLES = Object.freeze({
+  short: { length: 2, reach: 2, density: 0.4, bias: 0, gravity: 0, branch: 0.05, layers: 1 },
+  medium: { length: 3, reach: 3, density: 0.6, bias: 0, gravity: 0.2, branch: 0.15, layers: 1 },
+  long: { length: 6, reach: 6, density: 0.5, bias: 0, gravity: 0.9, branch: 0.1, layers: 1 },
+  'left-heavy': { length: 4, reach: 4, density: 0.6, bias: -0.9, gravity: 0.3, branch: 0.15, layers: 1 },
+  'right-heavy': { length: 4, reach: 4, density: 0.6, bias: 0.9, gravity: 0.3, branch: 0.15, layers: 1 },
+  messy: { length: 4, reach: 4, density: 0.8, bias: 0, gravity: 0, branch: 0.5, layers: 1 },
+  layered: { length: 3, reach: 4, density: 0.6, bias: 0, gravity: 0.3, branch: 0.2, layers: 2 },
+});
+&nbsp;
+/** The ids of the styles, in the order a seeded pick reads them. */
+export const HAIR_STYLE_IDS = Object.freeze(Object.keys(HAIR_STYLES));
+&nbsp;
+/** The share of the head and hair cells a full hair variation may add. */
+const MAX_GROWTH_SHARE = 0.5;
+/** The most occupied neighbors of a cell a strand may enter: more would fill a concavity. */
+const MAX_CROWD = 4;
+const STEPS = Object.freeze([
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+]);
+&nbsp;
+const paint = (hex) =&gt; [...hexToRgba(hex).slice(0, 3), 255];
+&nbsp;
+/**
+ * Grows hair over a frame.
+ * @param {number[][][]} frame
+ * @param {Object} context
+ * @param {Object} context.analysis - {@link analyzeFrame} of the frame.
+ * @param {Array&lt;[number,number]&gt;} context.hairCells - The hair region cells.
+ * @param {Array&lt;[number,number]&gt;} context.headCells - The head region cells.
+ * @param {Set&lt;string&gt;} context.frozen - `x,y` keys of the cells that never take hair.
+ * @param {{facing:string,hairMass:number}} context.rule - The rules of the direction.
+ * @param {string} context.style - A key of {@link HAIR_STYLES}.
+ * @param {Object} context.plan - The palette plan.
+ * @param {number} context.seed - The seed of the step: variant seed, direction and frame.
+ * @param {number} context.strength - The hair variation, 0 to 1.
+ * @returns {{frame:number[][][],added:number}} The frame the hair changed, or the frame as it was
+ *   when no strand fits.
+ */
+export function growHair(frame, { analysis, hairCells, headCells, frozen, rule, style, plan, seed, strength }) {
+  const { width, height, mask, outline, enclosed } = analysis;
+  const shape = HAIR_STYLES[style];
+  const body = [...hairCells, ...headCells].filter(([x, y]) =&gt; mask[y * width + x]);
+  const budget = Math.round(strength * rule.hairMass * MAX_GROWTH_SHARE * body.length);
+  const hairKeys = new Set(hairCells.map(([x, y]) =&gt; `${x},${y}`));
+  const touchesHair = (x, y) =&gt;
+    hairKeys.has(`${x},${y}`) || STEPS.some(([dx, dy]) =&gt; hairKeys.has(`${x + dx},${y + dy}`));
+  const roots = cellsOfMask(outline, width).filter(([x, y]) =&gt; touchesHair(x, y));
+  if (budget &lt; 1 || roots.length === 0) return { frame, added: 0 };
+&nbsp;
+  const random = seededRandom(seed);
+  const zone = dilate(maskOfCells(body, width, height), width, height, shape.reach);
+  const occupied = mask.slice();
+  const center = [
+    body.reduce((sum, [x]) =&gt; sum + x, 0) / body.length,
+    body.reduce((sum, [, y]) =&gt; sum + y, 0) / body.length,
+  ];
+  const facingBias = rule.facing === 'right' ? -0.4 : rule.facing === 'left' ? <span class="branch-0 cbranch-no" title="branch not covered" >0.4 </span>: 0;
+  const added = [];
+  const free = (x, y) =&gt;
+    x &gt;= 0 &amp;&amp;
+    y &gt;= 0 &amp;&amp;
+    x &lt; width &amp;&amp;
+    y &lt; height &amp;&amp;
+    !occupied[y * width + x] &amp;&amp;
+    !enclosed[y * width + x] &amp;&amp;
+    zone[y * width + x] &amp;&amp;
+    !frozen.has(`${x},${y}`);
+  const crowd = (x, y) =&gt;
+    STEPS.filter(
+      ([dx, dy]) =&gt;
+        x + dx &gt;= 0 &amp;&amp; y + dy &gt;= 0 &amp;&amp; x + dx &lt; width &amp;&amp; y + dy &lt; height &amp;&amp; occupied[(y + dy) * width + x + dx],
+    ).length;
+&nbsp;
+  const before = shapeOf(frame);
+  const keepsTopology = (cells) =&gt; {
+    const { components, holes } = shapeOf(
+      Array.from({ length: height }, (_, y) =&gt;
+        Array.from({ length: width }, (_, x) =&gt; (cells[y * width + x] ? [0, 0, 0, 255] : [0, 0, 0, 0])),
+      ),
+    );
+    return components === before.components &amp;&amp; holes === before.holes;
+  };
+  const order = shuffled(roots, random)
+    .map((root) =&gt; ({ root, score: ((root[0] - center[0]) * shape.bias) / 4 + random() }))
+    .sort((left, right) =&gt; right.score - left.score)
+    .map(({ root }) =&gt; root);
+  for (let layer = 0; layer &lt; shape.layers; layer++) {
+    const length = Math.max(1, Math.round(shape.length * (layer === 0 ? 1 : 0.5)));
+    for (const root of order.slice(0, Math.max(1, Math.round(roots.length * shape.density)))) {
+      const start = added.length;
+      const stack = [{ at: root, left: length }];
+      while (stack.length &gt; 0 &amp;&amp; added.length &lt; budget) {
+        const { at, left } = stack.pop();
+        if (left &lt; 1) continue;
+        const outward = [at[0] - center[0], at[1] - center[1]];
+        const pull = [outward[0] + shape.bias + facingBias, outward[1] + shape.gravity * 2];
+        const norm = Math.hypot(...pull) || <span class="branch-1 cbranch-no" title="branch not covered" >1;</span>
+        const options = STEPS.map(([dx, dy]) =&gt; ({ x: at[0] + dx, y: at[1] + dy, dx, dy }))
+          .filter(({ x, y }) =&gt; free(x, y) &amp;&amp; crowd(x, y) &lt;= MAX_CROWD)
+          .map((option) =&gt; ({
+            ...option,
+            weight:
+              Math.max(
+                0.05,
+                1 + (option.dx * pull[0] + option.dy * pull[1]) / (norm * Math.hypot(option.dx, option.dy)),
+              ) * (option.dx === 0 || option.dy === 0 ? 1.5 : 1),
+          }));
+        if (options.length === 0) continue;
+        let rest = random() * options.reduce((sum, { weight }) =&gt; sum + weight, 0);
+        const chosen = options.find(({ weight }) =&gt; (rest -= weight) &lt; 0) ?? <span class="branch-1 cbranch-no" title="branch not covered" >options.at(-1);</span>
+        occupied[chosen.y * width + chosen.x] = 1;
+        added.push([chosen.x, chosen.y]);
+        stack.push({ at: [chosen.x, chosen.y], left: left - 1 });
+        if (random() &lt; shape.branch) stack.push({ at: [chosen.x, chosen.y], left: Math.floor(left / 2) });
+      }
+      if (!keepsTopology(occupied)) for (const [x, y] of added.splice(start)) occupied[y * width + x] = 0;
+    }
+  }
+  const closed = close(occupied, width, height);
+  for (let cell = 0; cell &lt; closed.length &amp;&amp; added.length &lt; budget; cell++) {
+    const [x, y] = [cell % width, Math.floor(cell / width)];
+    if (closed[cell] &amp;&amp; free(x, y)) {
+      occupied[cell] = 1;
+      added.push([x, y]);
+    }
+  }
+  if (added.length === 0 || !keepsTopology(occupied)) return { frame, added: 0 };
+&nbsp;
+  const grown = frame.map((row) =&gt; row.map((cell) =&gt; cell.slice()));
+  for (const [x, y] of added) grown[y][x] = paint(plan.regions.hair.base);
+  const after = analyzeFrame(grown);
+  for (const [x, y] of added) if (after.outline[y * width + x]) grown[y][x] = paint(plan.outline);
+  return { frame: grown, added: added.length };
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-10-11T00:34:18.316Z
+            </div>
+        <script src="../../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../../sorter.js"></script>
+        <script src="../../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

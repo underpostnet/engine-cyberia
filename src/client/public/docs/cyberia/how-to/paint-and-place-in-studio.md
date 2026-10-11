@@ -13,26 +13,43 @@ canvas with its coordinates, or the entity defaults table. The tools and the sec
 the right of the stage when the screen has room, and under it when it does not. The eye button
 hides and shows the stage. Ids, labels and definitions show in a case-sensitive face.
 
+The **Cyberia Procedural Engine** makes candidates for existing or new items in the background. A
+candidate opens in the Object Layer editor in review mode: a banner names the item and its revision,
+and **Clone** is off. A save stores a new revision for review and promotes nothing. See
+[Generate skin variants](generate-skin-variants.md). **Import frames** runs on the server, also its
+palette remap and contour mutation with **Mutate** on: the editor shows the frames the server answers.
+
+A save of an item never changes what the runtime runs: it stores a new revision under its own cid.
+Outside a review, a banner above the editor says whether the revision is the one the item runs.
+**Bind as Runtime Version** in the banner, or in the **Cyberia Item Catalog**, moves the item to
+it. A cid opens exactly that revision; an item id opens the revision the item runs. See
+[Manage runtime bindings](manage-runtime-bindings.md).
+
 One foundation context panel shows in three places: **Context** in the Object Layer editor,
 **Paint** in the map editor, and above the **Metadata JSON** card of the Object Layer viewer
 (`/object-layer/<cid>`). The viewer shows it only for an item the foundation defines. A click on
 a palette color copies it as `#RRGGBBAA`, the form the hex field of the Object Layer editor takes.
 
 An item or a map that belongs to a saga carries a badge for each saga, in a color the saga code
-fixes: in the foundation context panel, and in the **Sagas** column of the Object Layer tables
-and the map table. A map belongs to the saga that defines it and to every stored saga that
-lists it. An item belongs to the saga that defines it, to the saga of every map whose entities
-carry it, to the sagas of the maps of every instance whose entity-type defaults wire it (live,
-dead, drop and inventory items), and to every saga of an item whose skill summons it. An item you place on a saga map
-joins that saga, and so does the projectile its skill summons. The **Sagas** filter takes
-comma-separated saga codes; each matches the codes that contain it.
+fixes: in the foundation context panel, and in the **Sagas** column of the Object Layer tables and
+the map table. The cards of the action editor carry the same badges: a quest, an action and a
+dialogue by its code, a skill by its trigger item. A map belongs to the saga that defines it and to
+every stored saga that lists it. An item belongs to the saga that defines it, to the saga of every
+map whose entities carry it, to the sagas of the maps of every instance whose entity-type defaults
+wire it (live, dead, drop and inventory items), and to every saga of an item whose skill summons it.
+An item you place on a saga map joins that saga, and so does the projectile its skill summons. A
+quest or an action belongs to the saga that defines it, to every stored saga that links it, and to
+the sagas of the map it stands on. A dialogue belongs to the sagas of the actions that show it, and
+the dialogue `default-<item>` to the sagas of the item. The **Sagas** filter takes comma-separated
+saga codes; each matches the codes that contain it. The search of an action editor card list also
+matches saga codes.
 
 ## Document bar
 
 Each editor starts its tools with the same bar: the map, instance, action, entity and Object
 Layer editors. The bar names the document the form holds, or shows **New** and the subject. It
 stays in view while the tools scroll. In the action editor, the bar acts on the document of the
-open tab.
+open tab. The **Saga integration** tab has no bar.
 
 | button     | action                                                                                        |
 | ---------- | --------------------------------------------------------------------------------------------- |
@@ -43,9 +60,11 @@ open tab.
 | **Delete** | Removes the loaded document.                                                                  |
 
 New, Reset and Delete ask first. Clone, Reset and Delete need a loaded document. Save, Clone and
-Delete need a moderator. An editor shows only the buttons it has: the instance editor has no
-Clone and no Delete, dialogue lines and skills have no Clone, and the Object Layer editor has no
-Delete (the viewer removes an item).
+Delete need a moderator; a log-in or a log-out renders the open editors again for the new role.
+The table under an editor pages on its own: the loaded document stays loaded on any page. An
+editor shows only the buttons it has: the instance editor has no Clone and no Delete, dialogue
+lines and skills have no Clone, and the Object Layer editor has no Delete (the viewer removes an
+item).
 
 ## Tabs
 
@@ -58,7 +77,7 @@ is open.
 | Object Layer | **Paint**, **Frames**, **Item**, **Context** (with the studio only)      |
 | map          | **Map**, **Paint**, **Transform**, **Entities**, **Media**, **Library**  |
 | instance     | **Instance**, **Maps**, **World**, **Runtime** (moderators), **Library** |
-| action       | **Quests**, **Actions**, **Dialogues**, **Skills**                       |
+| action       | **Quests**, **Actions**, **Dialogues**, **Skills**, **Saga integration** |
 
 The drawing tools of the Object Layer editor stay above its tabs.
 
@@ -79,13 +98,14 @@ The drawing tools of the Object Layer editor stay above its tabs.
      colors between two marked ones to the custom palette.
 4. To start from another item's animation, pick it under **Frames of object layer** in
    **Frames** and click **Import frames**: the frames of every direction and the frame duration are replaced; the item
-   data and the stats stay. The frames take the palette in use in **Palettes**, or the first
-   palette of the context: the darkest color takes the outline, the lightest the highlight, a rare
-   saturated color the accent, and transparency stays. An item without a context palette imports
-   nothing. With **Mutate** on, a **Random factor** above 0 moves a share of each frame's outer
-   contour by one cell, each frame with a seed of its own. A move that splits the shape, fills or
-   opens a hole, or shifts its box or center by more than one cell is rejected. The message counts
-   the frames and the moves accepted and rejected.
+   data and the stats stay. With **Mutate** off, the frames stay exactly as stored. With **Mutate**
+   on, the frames take the palette in use in **Palettes**, or the first palette of the context: the
+   darkest color takes the outline, the lightest the highlight, a rare saturated color the accent,
+   and transparency stays. An item without a context palette imports nothing with **Mutate** on.
+   A **Random factor** above 0 also moves a share of each frame's outer contour by one cell, each
+   frame with a seed of its own. A move that splits the shape, fills or opens a hole, or shifts its
+   box or center by more than one cell is rejected. The message counts the frames and the moves
+   accepted and rejected.
 5. Pick a template in **Paint**. Templates that suit the item type come first (★). A template paints in the
    palette in use, sets its mirror, and becomes the stamp.
 6. Paint. The tools: pencil, eraser, fill, eyedropper, line, rectangle and ellipse (Shift fills),
@@ -99,8 +119,10 @@ The drawing tools of the Object Layer editor stay above its tabs.
    `circle 8 8 4` or `poly 0,0 8,0 0,8`. Fill, delete, copy and move act on that selection.
 8. Set the item id, type, description and stats in **Item**, and add each painted frame to its
    direction in **Frames**.
-9. Save. A save made from a definition another save or an import replaced answers 409: reload,
-   and the editor opens the definition the item runs now. Unsaved work is kept per item.
+9. Save. The save stores a new revision and the item keeps running the one it ran. Unsaved work is
+   kept per item.
+10. To make the revision run, click **Bind as Runtime Version** in the banner. A bind made
+    meanwhile by another moderator answers 409; reload and decide again.
 
 ## Place a map
 
@@ -116,7 +138,13 @@ The drawing tools of the Object Layer editor stay above its tabs.
 4. Set the size, level and color, then click the canvas to add the entity at a cell. The entity
    buttons edit many entities at once: fill the map, flip, generate a variation, swap or replace
    around preserved types, rename an item id, delete the entities the filters select, delete all.
-5. Save. A save names the map revision it loaded; another save first answers 409.
+5. **Entities** lists the entities in the order the map stores them, with the index of each. Drag
+   an entity by its handle, or focus the handle and press the up or down arrow, to move it. The
+   order is also the drawing order: a later entity draws over an earlier one. A move is one undo
+   step.
+6. Save. A save names the map revision it loaded; another save first answers 409.
+7. To place the quests and actions of a saga at the entities you placed, synchronize the saga
+   ([Synchronize a saga](synchronize-a-saga.md)).
 
 ## Drafts
 
@@ -130,7 +158,7 @@ truth.
 | -------------------------------- | ----------------------------------------------------------- |
 | `GET /object-layer/context/:id`  | The foundation context of the item a cid, id or label names |
 | `GET /cyberia-map/context/:code` | The map context against its stored entities and portals     |
-| `GET /cyberia-saga/sources`      | The sagas each item label and map code belongs to           |
+| `GET /cyberia-saga/sources`      | The sagas of each item, map, quest, action and dialogue     |
 
-All are read-only. `src/projects/cyberia/foundation-context.js` builds them from the context index
+All are read-only. `src/projects/cyberia/content/foundation-context.js` builds them from the context index
 of the content artifact ([Content artifact](../explanation/content-artifact.md#document-families)).

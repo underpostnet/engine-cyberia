@@ -212,7 +212,7 @@ the node's own configuration, which `node bin host load` owns.
 
 **Command:** `npm run dev [deploy-id] [sub-conf]`
 
-Starts the server in development mode with hot-reload via nodemon.
+Starts the server in development mode through `src/dev.js`. The server restarts when a `.js`, `.mjs`, `.cjs` or `.json` file under `src/` changes, except under `src/client/`, which the client dev server rebuilds. A configuration file outside `src/`, such as a `conf.server.json`, needs a manual restart.
 
 ```bash
 npm run dev dd-core
@@ -266,7 +266,7 @@ npm run dev:proxy
 
 | Script           | Description                                                                                     |
 | ---------------- | ----------------------------------------------------------------------------------------------- |
-| `dev:container`  | Starts the server in development mode without nodemon (`NODE_ENV=development node src/server`)  |
+| `dev:container`  | Starts the server in development mode without watching (`NODE_ENV=development node src/server`) |
 | `prod:container` | Starts the server in production mode inside a container (`NODE_ENV=production node src/server`) |
 | `dev:proxy`      | Starts an Express proxy server for development (`NODE_ENV=development node src/proxy proxy`)    |
 
@@ -455,6 +455,23 @@ On RHEL and Rocky Linux, host configuration keeps SELinux in Enforcing mode. Kub
 sudo scripts/audit-selinux.sh --since boot
 sudo ausearch -m AVC,USER_AVC,SELINUX_ERR -ts recent -i
 ```
+
+### Control-plane address
+
+A control plane binds its node address into its certificates, its leases and the event webhook URL. A DHCP address does not survive a short link drop: NetworkManager removes it, and the next lease can take a full DHCP timeout (45 s). The API server is then unreachable, and every leader-elected component restarts.
+
+The kubeadm and K3s bring-up therefore pins the default interface's current IPv4 binding before it configures the host. Kind and `--dev` hosts keep their own network configuration. On an existing control plane, run the same step by hand:
+
+```bash
+node bin ip --static-ipv4 --dry-run   # print the plan
+node bin ip --static-ipv4             # pin the address, gateway and DNS
+```
+
+The step reads the live binding (address, gateway, DNS) with `nmcli` and writes it into the interface's NetworkManager profile with `ipv4.method manual`. `nmcli device reapply` changes the running interface without a link drop, so an SSH session survives.
+
+A transient timer, `underpost-ipv4-revert-<interface>`, restores the previous profile after 5 minutes. The step stops the timer only after verification: the profile and the live binding must match, and name resolution must still work if it worked before. A failed verification reverts at once. If the session dies during the change, the timer reverts it without console access.
+
+A pinned address stops renewing its DHCP lease, so the DHCP server can lease it to another device. Reserve the address for the interface's MAC address on the DHCP server, or remove it from the DHCP range.
 
 ### What `--dev` sets up on its own
 

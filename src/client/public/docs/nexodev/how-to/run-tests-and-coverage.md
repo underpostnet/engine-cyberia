@@ -221,8 +221,8 @@ and logs the budget when the run starts.
 
 | Footprint        | Memory of one batch | Host reserve | Threads    | Priority  |
 | ---------------- | ------------------- | ------------ | ---------- | --------- |
-| `safe` (default) | 30%                 | 10%          | 50% of CPU | `nice 10` |
-| `balanced`       | 50%                 | 5%           | 75% of CPU | `nice 5`  |
+| `safe` (default) | 30%                 | 5%           | 50% of CPU | `nice 10` |
+| `balanced`       | 50%                 | 3%           | 75% of CPU | `nice 5`  |
 | `ci`             | no limit            | no limit     | no limit   | unchanged |
 
 - The runner samples the process tree of the batch four times a second. When the
@@ -514,8 +514,8 @@ underpost test underpost:integration --deploy-list dd-core,dd-cyberia --namespac
 **As a Job** — for a run that owns its lifetime and outlives no pod.
 
 ```bash
-underpost test underpost:integration --job --image underpost/engine:v3.4.5
-underpost test --job --image underpost/engine:v3.4.5 --dry-run   # print the manifest
+underpost test underpost:integration --job --image underpost/engine:v3.5.0
+underpost test --job --image underpost/engine:v3.5.0 --dry-run   # print the manifest
 ```
 
 The Job carries `backoffLimit: 0` and `restartPolicy: Never`: a test run is a

@@ -14,55 +14,13 @@ import { ObjectLayerService } from '../../services/object-layer/object-layer.ser
 import { CyberiaEntityTypeDefaultService } from '../../services/cyberia-entity-type-default/cyberia-entity-type-default.service.js';
 import { CyberiaInstanceConfService } from '../../services/cyberia-instance-conf/cyberia-instance-conf.service.js';
 import { CyberiaItemCatalogService } from '../../services/cyberia-item-catalog/cyberia-item-catalog.service.js';
-import {
-  BUFF_FACTOR_DEFAULT,
-  DEBUFF_FACTOR_DEFAULT,
-  ENTITY_TYPES,
-  SELECTABLE_ENTITY_BEHAVIORS,
-  isAssignableEntityBehavior,
-} from './SharedDefaultsCyberia.js';
+import { ENTITY_TYPES, SELECTABLE_ENTITY_BEHAVIORS, isAssignableEntityBehavior } from './SharedDefaultsCyberia.js';
 
 // DropDown invokes optionData.onClick on selection, so every option must carry one.
 const dropdownOption = (value) => ({ value, display: value, data: value, onClick: () => {} });
 
-// Optional numbers an override row may state. An empty box states nothing, and the placeholder
-// default applies. `drops` limits a number to the ids the drop list carries.
-const OVERRIDE_NUMBERS = [
-  {
-    key: 'dropChance',
-    label: 'drop',
-    title: 'Probability this id scatters on death. 1 always drops, 0 never does.',
-    min: 0,
-    max: 1,
-    step: 0.05,
-    placeholder: 1,
-    drops: true,
-  },
-  {
-    key: 'buffFactor',
-    label: 'buff',
-    title: 'Fraction of max life the item restores when it is consumed.',
-    min: 0,
-    max: 1,
-    step: 0.05,
-    placeholder: BUFF_FACTOR_DEFAULT,
-  },
-  {
-    key: 'debuffFactor',
-    label: 'debuff',
-    title: 'Fraction of max life a debuff removes. No effect uses it yet.',
-    min: 0,
-    max: 1,
-    step: 0.05,
-    placeholder: DEBUFF_FACTOR_DEFAULT,
-  },
-];
-
-// The optional numbers a rule states, and only those.
-const overrideNumbers = (rule) =>
-  Object.fromEntries(
-    OVERRIDE_NUMBERS.filter(({ key }) => Number.isFinite(rule[key])).map(({ key }) => [key, rule[key]]),
-  );
+// The drop chance a rule states; an absent one always drops.
+const statedDropChance = (rule) => (Number.isFinite(rule.dropChance) ? { dropChance: rule.dropChance } : {});
 
 // EntityEngineCyberia — CRUD surface for the cyberia-entity-type-default
 // collection (instance wiring over the foundation baseline). An ag-grid lists
@@ -89,11 +47,8 @@ class EntityEngineCyberia {
   static inventoryItemsIds = [];
   // Per-id overrides of what the lists derive: { itemId, active, quantity }.
   static overrideItemsIdsState = [];
-  // Instance codes whose conf references the loaded default, and every code that could.
+  // Instance codes whose conf references the loaded default.
   static instanceCodes = [];
-  static availableInstanceCodes = [];
-  // entityDefault _id → instance codes, for the grid column. Built with the list.
-  static instanceLinks = new Map();
   // itemId → item type. A sprite lives under its type, so an item id alone cannot be previewed.
   // Types never change, so this is a cache that only ever grows: ids reach it from the list and
   // from every id added in the form, which is what makes a just-picked item preview immediately.
@@ -160,8 +115,6 @@ class EntityEngineCyberia {
     });
   }
 
-  // Instance codes are a small, already-loaded set, so the picker filters them in place rather
-  // than round-tripping per keystroke the way the item-id pickers do.
   static async buildInstanceDropdown(id) {
     return await DropDown.instance({
       id,
@@ -169,10 +122,10 @@ class EntityEngineCyberia {
       data: [],
       containerClass: 'inl',
       serviceProvider: async (q) => {
-        const query = String(q || '').toLowerCase();
-        return EntityEngineCyberia.availableInstanceCodes
-          .filter((code) => !query || code.toLowerCase().includes(query))
-          .map((code) => dropdownOption(code));
+        const { status, data } = await CyberiaInstanceConfService.get({
+          filterModel: { instanceCode: { filterType: 'text', type: 'contains', filter: q } },
+        });
+        return status === 'success' ? data.data.map(({ instanceCode }) => dropdownOption(instanceCode)) : [];
       },
     });
   }
@@ -324,24 +277,25 @@ class EntityEngineCyberia {
             value="${rule.quantity}"
             style="width:60px;"
           />
-          ${OVERRIDE_NUMBERS.filter(({ drops }) => !drops || isDrop)
-            .map(
-              ({ key, label, title, min, max, step, placeholder }) =>
-                html`<label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;" title="${title}">
-                  ${label}
+          ${
+            isDrop
+              ? html`<label
+                  style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;"
+                  title="Probability this id scatters on death. 1 always drops, 0 never does."
+                >
+                  drop
                   <input
-                    class="entity-engine-override-${key}-${i}"
+                    class="entity-engine-override-drop-chance-${i}"
                     type="number"
-                    min="${min}"
-                    ${max === undefined ? '' : `max="${max}"`}
-                    step="${step}"
-                    placeholder="${placeholder}"
-                    value="${Number.isFinite(rule[key]) ? rule[key] : ''}"
-                    style="width:64px;"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value="${Number.isFinite(rule.dropChance) ? rule.dropChance : 1}"
+                    style="width:60px;"
                   />
-                </label>`,
-            )
-            .join('')}
+                </label>`
+              : ''
+          }
           ${orphan ? html`<span style="color:#c90;font-size:11px;">no list carries this id</span>` : ''}
         </div>
         ${await BtnIcon.instance({
@@ -360,18 +314,16 @@ class EntityEngineCyberia {
       if (qty)
         qty.onchange = () =>
           (EntityEngineCyberia.overrideItemsIdsState[i].quantity = Math.max(1, parseInt(qty.value) || 1));
-      for (const { key, min, max } of OVERRIDE_NUMBERS) {
-        const input = s(`.entity-engine-override-${key}-${i}`);
-        if (!input) continue;
-        input.onchange = () => {
+      const dropChance = s(`.entity-engine-override-drop-chance-${i}`);
+      if (dropChance)
+        dropChance.onchange = () => {
           const rule = EntityEngineCyberia.overrideItemsIdsState[i];
-          const parsed = parseFloat(input.value);
-          // An empty or unreadable box says nothing, so the default applies.
-          if (!Number.isFinite(parsed)) delete rule[key];
-          else rule[key] = Math.min(max, Math.max(min, parsed));
-          input.value = Number.isFinite(rule[key]) ? rule[key] : '';
+          const parsed = parseFloat(dropChance.value);
+          // An empty or unreadable box states nothing, so the id always drops.
+          if (!Number.isFinite(parsed)) delete rule.dropChance;
+          else rule.dropChance = Math.min(1, Math.max(0, parsed));
+          dropChance.value = Number.isFinite(rule.dropChance) ? rule.dropChance : 1;
         };
-      }
       if (s(`.btn-entity-engine-rm-override-${i}`))
         s(`.btn-entity-engine-rm-override-${i}`).onclick = () => {
           EntityEngineCyberia.overrideItemsIdsState.splice(i, 1);
@@ -554,9 +506,9 @@ class EntityEngineCyberia {
                 style="font-size:11px;font-family:monospace;white-space:nowrap;${rule.active ? '' : 'color:#888;'}"
                 title="${rule.itemId}"
                 >${rule.active ? 'active' : 'inactive'}
-                ×${Math.max(1, rule.quantity || 1)}${Object.entries(overrideNumbers(rule))
-                  .map(([key, value]) => ` ${OVERRIDE_NUMBERS.find((number) => number.key === key).label} ${value}`)
-                  .join('')}
+                ×${Math.max(1, rule.quantity || 1)}${
+                  Number.isFinite(rule.dropChance) && 1 !== rule.dropChance ? ` drop ${rule.dropChance}` : ''
+                }
                 ${rule.itemId}</span
               >`,
           )
@@ -578,7 +530,7 @@ class EntityEngineCyberia {
       _id: doc._id,
       entityType: doc.entityType || '',
       behavior: doc.behavior || '',
-      instances: (EntityEngineCyberia.instanceLinks.get(String(doc._id)) || []).join(', '),
+      instances: (doc.instanceCodes || []).join(', '),
       liveItemIds: [...(doc.liveItemIds || [])],
       deadItemIds: [...(doc.deadItemIds || [])],
       dropItemIds: [...(doc.dropItemIds || [])],
@@ -587,30 +539,10 @@ class EntityEngineCyberia {
     };
   }
 
-  // The link lives on CyberiaInstanceConf.entityDefaults, so one conf read answers it for every
-  // row at once — there is no second place to ask, and nothing to keep in sync.
-  static async refreshInstanceLinks() {
-    const res = await CyberiaInstanceConfService.get({ limit: 500 });
-    const confs = res?.data?.data || [];
-    EntityEngineCyberia.availableInstanceCodes = confs.map((conf) => conf.instanceCode).sort();
-    EntityEngineCyberia.instanceLinks = new Map();
-    for (const conf of confs) {
-      for (const ref of conf.entityDefaults || []) {
-        const key = String(ref);
-        if (!EntityEngineCyberia.instanceLinks.has(key)) EntityEngineCyberia.instanceLinks.set(key, []);
-        EntityEngineCyberia.instanceLinks.get(key).push(conf.instanceCode);
-      }
-    }
-    for (const codes of EntityEngineCyberia.instanceLinks.values()) codes.sort();
-  }
-
   /** Reads the page the query parameters name, filtered and sorted as the grid shows, with its pager. */
   static async refreshList() {
     const { page, limit } = pageQuery();
-    const [res] = await Promise.all([
-      CyberiaEntityTypeDefaultService.get({ page, limit, ...AgGrid.query(EntityEngineCyberia.gridId) }),
-      EntityEngineCyberia.refreshInstanceLinks(),
-    ]);
+    const res = await CyberiaEntityTypeDefaultService.get({ page, limit, ...AgGrid.query(EntityEngineCyberia.gridId) });
     const { data = [], total = 0, totalPages = 1 } = res?.data || {};
     EntityEngineCyberia.listCache = data;
     EntityEngineCyberia.loadedPage = { page, limit };
@@ -651,8 +583,7 @@ class EntityEngineCyberia {
         itemId: rule.itemId,
         active: !!rule.active,
         quantity: Math.max(1, rule.quantity || 1),
-        // Sent only when authored, so an untouched number keeps its default.
-        ...overrideNumbers(rule),
+        ...statedDropChance(rule),
       })),
     };
   }
@@ -669,9 +600,9 @@ class EntityEngineCyberia {
       itemId: rule.itemId,
       active: !!rule.active,
       quantity: Math.max(1, rule.quantity || 1),
-      ...overrideNumbers(rule),
+      ...statedDropChance(rule),
     }));
-    EntityEngineCyberia.instanceCodes = [...(EntityEngineCyberia.instanceLinks.get(String(doc._id)) || [])];
+    EntityEngineCyberia.instanceCodes = [...(doc.instanceCodes || [])];
     for (const field of EntityEngineCyberia.ITEM_FIELDS) EntityEngineCyberia.renderItemList(field);
     EntityEngineCyberia.renderOverrideList();
     EntityEngineCyberia.renderInstanceList();
@@ -980,8 +911,8 @@ class EntityEngineCyberia {
             html`<div class="in" style="font-size:12px;color:#888;margin-bottom:8px;">
                 <i class="fa-solid fa-circle-info"></i> Adjusts what the lists above derive for one id they already carry:
                 <b>active</b> forces the spawn state — a skin the equipment rules would otherwise leave inactive — and the
-                quantity sizes a stack, which is how a drop bundle declares how many it scatters. <b>buff</b> is the part of
-                max life a consumed item restores. An empty box keeps its default. An override never adds an id.
+                quantity sizes a stack, which is how a drop bundle declares how many it scatters. An empty box keeps its
+                default. An override never adds an id.
               </div>
               <div class="fl" style="align-items:flex-end;">
                 <div class="in fll" style="flex:1;">

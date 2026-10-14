@@ -500,8 +500,9 @@ message InstanceConfig {
   // ── Tick model (authoritative simulation cadence) ─────────────────────────
   // tick_rate is the canonical simulation Hz on cyberia-server.
   int32 tick_rate     = 65;
-  // snapshot_rate is the AOI replication Hz. Typically ≤ tick_rate.
-  int32 snapshot_rate = 66;
+  // The server sends one snapshot per tick, so no snapshot rate exists.
+  reserved 66;
+  reserved "snapshot_rate";
 
   // Presentation does not travel on this contract.
   reserved 67;
@@ -527,7 +528,7 @@ message EntityTypeDefault {
   repeated string drop_item_ids = 6;
   // Canonical entity behavior bound to entities matched by live_item_ids. Empty
   // lets the runtime derive it (armed → hostile, else passive). See
-  // SharedDefaultsCyberia.ENTITY_BEHAVIORS / game/behavior.go.
+  // SharedDefaultsCyberia.ENTITY_BEHAVIORS / game/content/behavior.go.
   string behavior = 7;
 }
 

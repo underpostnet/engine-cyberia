@@ -608,8 +608,7 @@
 <a name='L543'></a><a href='#L543'>543</a>
 <a name='L544'></a><a href='#L544'>544</a>
 <a name='L545'></a><a href='#L545'>545</a>
-<a name='L546'></a><a href='#L546'>546</a>
-<a name='L547'></a><a href='#L547'>547</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L546'></a><a href='#L546'>546</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1078,7 +1077,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">204x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1104,11 +1102,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">120x</span>
+<span class="cline-any cline-yes">119x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">603x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">580x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1118,18 +1114,20 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">693x</span>
-<span class="cline-any cline-yes">92x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">669x</span>
+<span class="cline-any cline-yes">91x</span>
 <span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">87x</span>
+<span class="cline-any cline-yes">86x</span>
 <span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-yes">69x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">9x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">78x</span>
+<span class="cline-any cline-yes">77x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1148,7 +1146,7 @@
 <span class="cline-any cline-yes">24x</span>
 <span class="cline-any cline-yes">24x</span>
 <span class="cline-any cline-yes">24x</span>
-<span class="cline-any cline-yes">624x</span>
+<span class="cline-any cline-yes">600x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1250,7 +1248,7 @@ export const STATUS_ICONS = Object.freeze([
 /**
  * The default a placed entity resolves to, by the item ids it already carries.
  *
- * Mirrors `resolveEntityDefaultBuild` in cyberia-server/game/entity_defaults.go, which is the rule
+ * Mirrors `ResolveEntityDefaultBuild` in cyberia-server/game/content/entity_defaults.go, which is the rule
  * the simulation applies at spawn: a default matches only when the entity carries ALL of its live
  * ids, and the most specific match wins — the one requiring the largest set, so `{purple, pistol}`
  * beats `{purple}`. Ties keep the earlier default, which makes the order a world declares them in
@@ -1286,7 +1284,7 @@ export function resolveEntityDefaultBuild({ entityType, itemIds = [] }, defaults
  * (live / dead / drop) and the inventory-only extras — deduplicated, in that order. Which slots
  * are *active* is not stored anywhere: it follows from the discriminator the id belongs to, and
  * the runtime flips them as context changes (`activateOrAppendLayer` in
- * cyberia-server/game/dead_items.go activates the slot that is already there). Seeding the whole
+ * cyberia-server/game/content/dead_items.go activates the slot that is already there). Seeding the whole
  * union is what lets it activate rather than append.
  *
  * Spawn state is alive, so the live ids are the active ones. A worn item and an inventory-only
@@ -1568,7 +1566,6 @@ export function resolveProgressionRules(input = {}) {
 export const CYBERIA_INSTANCE_CONF_DEFAULTS = {
   // ── Tick model ─────────────────────────────────────────────────────
   tickRate: 60,
-  snapshotRate: 20,
 &nbsp;
   // ── World / AOI ────────────────────────────────────────────────────
   aoiRadius: 10,
@@ -1708,7 +1705,7 @@ export function fillInstanceConfDefaults(conf = {}) {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-13T12:34:25.278Z
+                at 2026-10-14T12:15:39.688Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

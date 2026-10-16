@@ -10,6 +10,14 @@
 export const DEFAULT_INSTANCE_CODE = 'amethyst-strata-expansion';
 
 /**
+ * The path of a world on its game client and server: the default world at the root, any other
+ * under its code.
+ * @param {string} code
+ * @returns {string}
+ */
+export const worldPathOf = (code) => (code && code !== DEFAULT_INSTANCE_CODE ? `/${encodeURIComponent(code)}` : '');
+
+/**
  * Canonical set of ObjectLayer item type names. Used as the
  * `data.item.type` discriminator and as the asset directory name on disk.
  *
@@ -403,6 +411,13 @@ export const PARTY_INVITES_MAX = 5;
 // A party member shares a bot kill when its centre is this many cells or less from the centre of the bot.
 export const PARTY_XP_SHARE_RADIUS = 10;
 export const CHAT_TEXT_MAX_RUNES = 160;
+// Chat emoji: a line writes `:<name>:` and the client draws the ui-icon `emoji-<name>` in its place.
+export const CHAT_EMOJI = Object.freeze(['smile', 'laugh', 'wink', 'cool', 'sad', 'angry', 'heart', 'thumbsup']);
+// Accepted friends one account may have, and friend requests it may have open.
+export const FRIENDS_MAX = 200;
+export const FRIEND_REQUESTS_MAX = 20;
+// Days a friend request waits for its answer.
+export const FRIEND_REQUEST_DAYS = 30;
 export const STAT_CONTRACT_VERSION = 2;
 export const STAT_DEFAULTS = Object.freeze(Object.fromEntries(STAT_TYPES.map((key) => [key, STAT_DEFAULT])));
 export const STAT_EFFECTIVE_FLOORS = Object.freeze(Object.fromEntries(STAT_DEFINITIONS.map(({ key, floor }) => [key, floor])));

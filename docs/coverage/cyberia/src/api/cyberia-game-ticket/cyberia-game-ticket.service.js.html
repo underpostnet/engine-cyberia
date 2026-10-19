@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">22% </span>
+                <span class="strong">20.37% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>11/50</span>
+                <span class='fraction'>11/54</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/33</span>
+                <span class='fraction'>0/39</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">26.19% </span>
+                <span class="strong">24.44% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>11/42</span>
+                <span class='fraction'>11/45</span>
             </div>
         
             
@@ -198,7 +198,15 @@
 <a name='L133'></a><a href='#L133'>133</a>
 <a name='L134'></a><a href='#L134'>134</a>
 <a name='L135'></a><a href='#L135'>135</a>
-<a name='L136'></a><a href='#L136'>136</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -251,7 +259,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -345,6 +357,8 @@ import crypto from 'crypto';
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { hashToken } from '../../server/security/auth.js';
 import { DEFAULT_INSTANCE_CODE, worldPathOf } from '../../client/components/cyberia/SharedDefaultsCyberia.js';
+import { worldAvailable } from '../cyberia-server-registry/cyberia-server-registry.service.js';
+import { universeCodeOf } from '../cyberia-universe/cyberia-universe.service.js';
 &nbsp;
 /** Open tickets one account or one guest may hold at a time. */
 const OPEN_TICKETS_MAX = 5;
@@ -379,8 +393,9 @@ const insertTicket = <span class="fstat-no" title="function not covered" >async 
 &nbsp;
 /**
  * Makes a ticket for one world: for an account session (`user`, `session`) or for a guest (`guest`).
- * A request that names no world launches the default world. `path` is where the world lives on the
- * game client, for the launch to open.
+ * A request that names no world launches the default world. The world needs a live server that
+ * takes sessions, and an account needs the world in a universe. `path` is where the world lives on
+ * the game client, for the launch to open.
  * @param {{principal: 'account'|'guest', user?: string, session?: string, guest?: string, instanceCode?: string}} params
  * @param {{host: string, path: string}} context
  * @returns {Promise&lt;{ticket: string, expiresAt: Date, path: string}&gt;}
@@ -390,6 +405,9 @@ const createGameTicket = <span class="fstat-no" title="function not covered" >as
   const code = <span class="cstat-no" title="statement not covered" >(typeof instanceCode === 'string' &amp;&amp; instanceCode.trim()) || DEFAULT_INSTANCE_CODE;</span>
 <span class="cstat-no" title="statement not covered" >  if (!(await DataBaseProviderService.getModel('CyberiaInstance', context).exists({ code })))</span>
 <span class="cstat-no" title="statement not covered" >    throw httpError(`unknown world "${code}"`, 404);</span>
+<span class="cstat-no" title="statement not covered" >  if (!(await worldAvailable(code, context))) <span class="cstat-no" title="statement not covered" >throw httpError(`world "${code}" has no server taking sessions now`, 503);</span></span>
+<span class="cstat-no" title="statement not covered" >  if (principal === 'account' &amp;&amp; !(await universeCodeOf(code, context)))</span>
+<span class="cstat-no" title="statement not covered" >    throw httpError(`world "${code}" belongs to no universe, so it keeps no account progress`, 409);</span>
 &nbsp;
   const Ticket = <span class="cstat-no" title="statement not covered" >DataBaseProviderService.getModel('CyberiaGameTicket', context);</span>
   const holder = <span class="cstat-no" title="statement not covered" >principal === 'guest' ? { guest } : { user };</span>
@@ -475,7 +493,7 @@ export { createGameTicket, createResumeTicket, consumeGameTicket, findGameTicket
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-16T06:43:25.192Z
+                at 2026-10-19T23:33:46.578Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

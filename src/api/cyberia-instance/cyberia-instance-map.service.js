@@ -3,11 +3,14 @@
 import { CyberiaEntityTypeDefaultService } from '../cyberia-entity-type-default/cyberia-entity-type-default.service.js';
 import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
 import { refreshMapPreview } from '../../projects/cyberia/instance/map-preview-generator.js';
+import { worldPreview } from '../../projects/cyberia/instance/world-preview.js';
+import { instanceMapLayout } from '../../projects/cyberia/instance/instance-map-layout.js';
 import { loggerFactory } from '../../server/ops/logger.js';
 import { apiPathOf } from '../../server/domain/api-contract.js';
 import { resolveEntityDefaultBuild } from '../cyberia-server-defaults/cyberia-server-defaults.js';
 import { catalogModels, findBoundDefinitions } from '../../projects/cyberia/catalog/object-layer-catalog.js';
 import { contentArtifact } from '../../projects/cyberia/content/content-artifact.js';
+import { resolveGraphLayout } from '../../client/components/cyberia/SharedDefaultsCyberia.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -52,7 +55,6 @@ const entityPresenceStatus = (entity, objectLayerMetadata, behavior) => {
       return '';
   }
 };
-
 
 const mergeEntityDefaults = (entityDefaults = []) => {
   const merged = entityDefaults.map((entityDefault) => ({
@@ -216,9 +218,28 @@ const buildStaticPayload = ({
   const previewRoute = (mapCode) =>
     `${apiPathOf()}/cyberia-instance/instance-map/${encodeURIComponent(instance.code)}/preview/${encodeURIComponent(mapCode)}`;
 
-  const nodes = maps.map((m) => ({
+  // Nodes follow the instance order, so the default cells never depend on the read order.
+  const mapByCode = new Map(maps.map((m) => [m.code, m]));
+  const ordered = (instance.cyberiaMapCodes || [])
+    .filter((code) => mapByCode.has(code))
+    .map((code) => mapByCode.get(code));
+  const layout = resolveGraphLayout(
+    ordered.map((m) => m.code),
+    instance.mapLayout || [],
+    'mapCode',
+  );
+  const { nodes: positions } = instanceMapLayout(ordered, layout);
+  const nodes = ordered.map((m, i) => ({
     mapCode: m.code,
     name: m.name || m.code,
+    x: layout[i].x,
+    y: layout[i].y,
+    // The size of the map: one scale for every map of the world, its longest map side 1.
+    w: positions[i].w,
+    h: positions[i].h,
+    // The centre of a map with a world origin, at the scale of `w`, `h`; null without one.
+    world: positions[i].world,
+    position: { x: positions[i].x, y: positions[i].y },
     gridX: m.gridX,
     gridY: m.gridY,
     // File id of the map's auto-captured Object Layer render (persisted maps).
@@ -273,7 +294,7 @@ const resolveInstanceWorld = async (instanceCode, options) => {
   const mapCodes = instance.cyberiaMapCodes || [];
   const [maps, quests, actions] = await Promise.all([
     CyberiaMap.find({ code: { $in: mapCodes } })
-      .select('code name gridX gridY preview entities')
+      .select('code name gridX gridY worldX worldY preview entities')
       .lean(),
     CyberiaQuest.find({ sourceMapCode: { $in: mapCodes } })
       .select('code title prerequisiteCodes sourceMapCode sourceCellX sourceCellY')
@@ -327,6 +348,9 @@ class CyberiaInstanceMapService {
     logger.info(`map preview persisted for "${mapCode}"`);
     return rendered;
   };
+
+  /** The preview of a world: its maps on their cells, keyed by both. */
+  static getWorldPreview = async (req, res, options) => await worldPreview(req.params.instanceCode, options);
 }
 
 export { CyberiaInstanceMapService, buildStaticPayload };

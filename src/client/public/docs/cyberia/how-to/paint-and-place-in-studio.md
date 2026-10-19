@@ -51,16 +51,17 @@ Layer editors. The bar names the document the form holds, or shows **New** and t
 stays in view while the tools scroll. In the action editor, the bar acts on the document of the
 open tab. The **Saga integration** tab has no bar.
 
-| button     | action                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------- |
-| **New**    | Clears the form for a new document.                                                           |
-| **Save**   | Stores the form: it updates the loaded document, or creates a new one.                        |
-| **Clone**  | Stores the form as a new document. A map, quest or action copy takes the code `<code>-clone`. |
-| **Reset**  | Discards the unsaved changes: the form shows the stored document again.                       |
-| **Delete** | Removes the loaded document.                                                                  |
+| button     | action                                                                                 |
+| ---------- | -------------------------------------------------------------------------------------- |
+| **New**    | Clears the form for a new document.                                                    |
+| **Save**   | Stores the form: it updates the loaded document, or creates a new one.                 |
+| **Clone**  | Stores the form as a new document with the entered code. An existing code is rejected. |
+| **Reset**  | Discards the unsaved changes: the form shows the stored document again.                |
+| **Delete** | Removes the loaded document.                                                           |
 
 New, Reset and Delete ask first. Clone, Reset and Delete need a loaded document. Save, Clone and
 Delete need a moderator; a log-in or a log-out renders the open editors again for the new role.
+For a map, quest or action clone, enter a code that does not exist before you select Clone.
 The table under an editor pages on its own: the loaded document stays loaded on any page. An
 editor shows only the buttons it has: the instance editor has no Clone and no Delete, dialogue
 lines and skills have no Clone, and the Object Layer editor has no Delete (the viewer removes an
@@ -144,8 +145,14 @@ The drawing tools of the Object Layer editor stay above its tabs.
    step.
    To exchange two entities, type their indexes in **Swap two entities by index** and click
    **Swap Entities**: each index keeps its place and holds the other entity. A swap is one undo step.
-6. Save. A save names the map revision it loaded; another save first answers 409.
-7. To place the quests and actions of a saga at the entities you placed, synchronize the saga
+6. To place the map in its world, set **World X** and **World Y** under the grid: the cell of the
+   world where its top left corner sits. Two maps whose places meet along a whole edge join there in
+   the Instance Map. Leave both empty for a map with no place; a clone starts with none. The save
+   refuses an origin that is not two integer cells, and a world whose maps overlap
+   ([map registry](../explanation/map-registry.md#writes)).
+7. Save. A save names the map revision it loaded; another save first answers 409. The code of a map
+   never changes: clone the map to copy it under a new code.
+8. To place the quests and actions of a saga at the entities you placed, synchronize the saga
    ([Synchronize a saga](synchronize-a-saga.md)).
 
 ## Drafts

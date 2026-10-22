@@ -11,14 +11,15 @@
  * @namespace CyberiaContentRelease
  */
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import canonicalize from 'canonicalize';
 import { DataBaseProviderService } from '../../../db/DataBaseProvider.js';
 import { loggerFactory } from '../../../server/ops/logger.js';
-import { domainOrigin } from '../../../server/domain/domain-client.js';
+import { clearDomainCache, domainOrigin } from '../../../server/domain/domain-client.js';
 import { publishObjectLayer, resolveObjectLayer } from '../../../server/domain/object-layer-resolver.js';
 import { objectLayerIdentity, renderContractOf } from '../../../api/object-layer/object-layer.identity.js';
 import { isProfileRef } from '../../../client/components/objectlayer-studio/ObjectLayerProtocol.js';
-import { findLegacyPins } from '../catalog/catalog-consistency.js';
 import {
   collectInstanceItemIds,
   collectSummonedItemIds,
@@ -34,6 +35,8 @@ import { MongooseDB } from '../../../db/mongo/MongooseDB.js';
 import { assertReleaseId } from '../../../server/release/source-release.js';
 import { loadContentArtifact, serveContentArtifact, servedContentArtifact } from './content-artifact.js';
 import { catalogRegistryModels, reconcileMapRegistry, registryDefects } from '../instance/map-registry.js';
+import { confEconomyCode, universeWalletDefect } from '../economy/economy-policy.js';
+import { itemPolicyDefect } from '../../../api/cyberia-server-defaults/cyberia-server-defaults.js';
 
 const logger = loggerFactory(import.meta);
 
@@ -121,6 +124,26 @@ export function releaseDbConf(db, releaseId) {
   };
 }
 
+/**
+ * The content a host backup holds: the dump of the database its active release served, or of the
+ * workspace when no release was active.
+ * @param {Object} params
+ * @param {Object[]} params.ledger - The release ledger the backup holds.
+ * @param {string} params.backupDir - One backup: a dump directory per database.
+ * @param {string} params.workspace - The workspace database name.
+ * @returns {{releaseId:string, database:string, dir:string}}
+ * @throws {Error} When the backup holds no dump of that database.
+ * @memberof CyberiaContentRelease
+ */
+export function backupContentDump({ ledger, backupDir, workspace }) {
+  const active = ledger.find((release) => release.status === 'active');
+  const database = active?.database ?? workspace;
+  const dir = path.join(backupDir, database);
+  if (!fs.existsSync(dir))
+    throw new Error(`${backupDir} holds no dump of ${database}: take a backup that dumps the partition databases`);
+  return { releaseId: active?.releaseId ?? '', database, dir };
+}
+
 const check = (name) => ({ name, ok: true, count: 0, findings: [] });
 
 /** Why a check against the Object Layer authority did not run. Only a development host skips. */
@@ -156,12 +179,13 @@ const identityDefect = (doc) => {
  *   runtime's profile, whose identity is its content's.
  * - `canonical`: every bound cid resolves at the Object Layer authority, with the same digest.
  *   Skipped, and said so, when this deployment is the authority.
- * - `legacy-pins`: no quest or action pins a definition: the catalog alone binds each item.
  * - `labels`: every label a map entity or entity default uses is bound in the catalog.
  * - `skills`: every skill document can run: see `skillDefect`.
  * - `render`: the atlas each bound definition points at holds the render it names: its primary
  *   render and its layout address `data.render`.
  * - `instances`: every instance has its conf and every map it lists.
+ * - `economy`: every conf names an active economy, every item policy is valid and names bound labels,
+ *   and the worlds of each universe of the host hold one wallet.
  * - `schema`: every content document passes its schema.
  *
  * @param {Object} models - Content models of the release: `CyberiaItemCatalog`, `ObjectLayer`,
@@ -172,10 +196,11 @@ const identityDefect = (doc) => {
  * @param {(cid:string)=>Promise<Object|null>} [params.resolveCanonical] - Canonical lookup; defaults to the domain resolver.
  * @param {{db:import('mongodb').Db, digest:string}} [params.artifact] - The release database and the
  *   content digest the release records; absent for the workspace.
+ * @param {boolean} [params.canonical=true] - Run the canonical check; content that is not published skips it.
  * @returns {Promise<{ok:boolean,checkedAt:Date,checks:Array<{name:string,ok:boolean,count:number,findings:string[]}>,manifest:Object,dependencies:string[]}>}
  * @memberof CyberiaContentRelease
  */
-export async function validateContentRelease(models, { options, resolveCanonical, artifact } = {}) {
+export async function validateContentRelease(models, { options, resolveCanonical, artifact, canonical = true } = {}) {
   const checks = [];
 
   const artifactCheck = check('artifact');
@@ -219,7 +244,9 @@ export async function validateContentRelease(models, { options, resolveCanonical
   const canonicalCheck = check('canonical');
   const authority = domainOrigin('object-layer');
   const resolve = resolveCanonical ?? (authority ? (cid) => resolveObjectLayer(cid, options) : null);
-  if (!resolve) {
+  if (!canonical) {
+    canonicalCheck.findings.push('skipped: the content is not published');
+  } else if (!resolve) {
     canonicalCheck.findings.push(`skipped: ${authoritySkipReason(options)}`);
   } else {
     canonicalCheck.count = boundCids.length;
@@ -235,13 +262,6 @@ export async function validateContentRelease(models, { options, resolveCanonical
     }
   }
   checks.push(canonicalCheck);
-
-  const legacyCheck = check('legacy-pins');
-  const legacy = await findLegacyPins(models);
-  legacyCheck.count = legacy.documents.length;
-  for (const { collection, code, pins } of legacy.documents)
-    fail(legacyCheck, `${collection} ${code}: pins ${pins.map(({ itemId, cid }) => `${itemId} → ${cid}`).join(', ')}`);
-  checks.push(legacyCheck);
 
   // Every label the content names, by the rule the boot payload and the export use, with the
   // first document that names it.
@@ -317,10 +337,47 @@ export async function validateContentRelease(models, { options, resolveCanonical
   for (const defect of registryDefects(maps, instances)) fail(instancesCheck, defect);
   checks.push(instancesCheck);
 
+  // Every world runs an active profile, every item row and salvage output is a bound label, and each
+  // universe of the host keeps one wallet over the worlds of this content.
+  const economyCheck = check('economy');
+  if (models.CyberiaEconomy && models.CyberiaEconomicItemPolicy) {
+    const economies = new Map(
+      (await models.CyberiaEconomy.find({}, { code: 1, status: 1 }).lean()).map((e) => [e.code, e.status]),
+    );
+    const confs = await models.CyberiaInstanceConf.find({}).lean();
+    for (const conf of confs) {
+      economyCheck.count++;
+      const code = confEconomyCode(conf);
+      if (economies.get(code) !== 'active')
+        fail(economyCheck, `instance ${conf.instanceCode}: no active economy ${code}`);
+    }
+    for (const row of await models.CyberiaEconomicItemPolicy.find({}).lean()) {
+      economyCheck.count++;
+      const defect = itemPolicyDefect(row);
+      if (defect) fail(economyCheck, `economy ${row.economyCode}: ${defect}`);
+      if (!economies.has(row.economyCode))
+        fail(economyCheck, `item policy ${row.itemId}: no economy ${row.economyCode}`);
+      for (const itemId of [row.itemId, ...(row.salvage ?? []).map((line) => line.itemId)])
+        if (!bound.has(itemId)) fail(economyCheck, `economy ${row.economyCode}: label "${itemId}" is not bound`);
+    }
+    const worlds = new Set(confs.map(({ instanceCode }) => instanceCode));
+    const universes = models.CyberiaUniverse
+      ? await models.CyberiaUniverse.find({}, { code: 1, instances: 1 }).lean()
+      : [];
+    for (const universe of universes) {
+      const members = universe.instances.map(({ instanceCode }) => instanceCode).filter((code) => worlds.has(code));
+      const defect = await universeWalletDefect(models, members).catch((error) => error.message);
+      if (defect) fail(economyCheck, `universe ${universe.code}: ${defect}`);
+    }
+  } else economyCheck.findings.push('skipped: the host loads no economy models');
+  checks.push(economyCheck);
+
   const schemaCheck = check('schema');
   for (const name of [
     'CyberiaInstance',
     'CyberiaInstanceConf',
+    'CyberiaEconomy',
+    'CyberiaEconomicItemPolicy',
     'CyberiaMap',
     'CyberiaQuest',
     'CyberiaAction',
@@ -356,12 +413,18 @@ const LIVE_CONTENT_APIS = Object.freeze([
   'cyberia-instance',
   'cyberia-instance-conf',
   'cyberia-map',
+  'cyberia-map-audio-conf',
+  'cyberia-audio',
   'cyberia-quest',
   'cyberia-action',
   'cyberia-dialogue',
   'cyberia-skill',
   'cyberia-entity-type-default',
+  'cyberia-saga',
   'cyberia-item-catalog',
+  'cyberia-economy',
+  'cyberia-economic-item-policy',
+  'cyberia-market',
 ]);
 
 /** Fields a write sets on its own: timestamps, version keys, save revisions and generated pictures. */
@@ -404,32 +467,39 @@ export async function liveChanges({ CyberiaContentRelease, connection }) {
   return {
     release,
     known: true,
-    changed: LIVE_CONTENT_APIS.filter((api) => current[api] !== release.fingerprint[api]),
+    // A build that predates an API records no fingerprint of it.
+    changed: LIVE_CONTENT_APIS.filter((api) => api in release.fingerprint && current[api] !== release.fingerprint[api]),
   };
 }
 
 /**
- * Stores every definition a release binds at the Object Layer authority, so the canonical pool
- * holds all the content the release will serve. Idempotent: the authority answers known content
- * with the identity it already has. A no-op when this deployment is the authority.
+ * Stores every definition a release binds that the Object Layer authority does not hold yet, so
+ * the canonical pool holds all the content the release will serve. Idempotent: a definition the
+ * authority holds with the same content is not sent again. A no-op when this deployment is the authority.
  * @param {Object} models - Content models of the release: `CyberiaItemCatalog`, `ObjectLayer`.
  * @param {Object} [params]
  * @param {import('../../../api/types.js').RouterOptions} [params.options] - Router options of the host.
  * @param {(definition:Object)=>Promise<{cid:string,created:boolean}>} [params.publish] - Defaults to the domain publisher.
+ * @param {(cid:string)=>Promise<Object|null>} [params.resolveCanonical] - Canonical lookup; defaults to the domain resolver.
  * @returns {Promise<{name:string,ok:boolean,count:number,findings:string[],created:number}>}
  * @memberof CyberiaContentRelease
  */
-export async function publishContentRelease(models, { options, publish } = {}) {
+export async function publishContentRelease(models, { options, publish, resolveCanonical } = {}) {
   const entry = { ...check('publication'), created: 0 };
-  const send = publish ?? (domainOrigin('object-layer') ? publishObjectLayer : null);
+  const authority = domainOrigin('object-layer');
+  const send = publish ?? (authority ? publishObjectLayer : null);
   if (!send) {
     entry.findings.push(`skipped: ${authoritySkipReason(options)}`);
     return entry;
   }
+  const resolve = resolveCanonical ?? (authority ? (cid) => resolveObjectLayer(cid, options) : async () => null);
   const cids = [...new Set(await models.CyberiaItemCatalog.distinct('objectLayerCid'))];
+  let sent = false;
   for (const doc of await models.ObjectLayer.find({ cid: { $in: cids } }).lean()) {
     entry.count++;
     try {
+      if ((await resolve(doc.cid))?.contentHash === doc.contentHash) continue;
+      sent = true;
       const stored = await send(doc);
       if (stored?.cid !== doc.cid) fail(entry, `${doc.cid}: the authority stored it as ${stored?.cid}`);
       else if (stored.created) entry.created++;
@@ -437,6 +507,8 @@ export async function publishContentRelease(models, { options, publish } = {}) {
       fail(entry, `${doc.cid}: ${error.message}`);
     }
   }
+  // The read cache keeps the absence a lookup saw; the canonical check reads the authority after the writes.
+  if (sent) clearDomainCache();
   return entry;
 }
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
+import nodePath from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { Types } from 'mongoose';
 import { load } from 'js-yaml';
@@ -16,6 +18,7 @@ vi.mock('../../../src/api/ipfs/ipfs.client.js', () => ({ IpfsClient: {} }));
 vi.mock('../../../src/projects/cyberia/runtime/hot-reload-trigger.js', () => ({ triggerHotReload: vi.fn() }));
 
 const {
+  backupContentDump,
   beginContentRelease,
   contentPartitionOf,
   contentReleaseRowFactory,
@@ -109,10 +112,6 @@ class FakeModel {
   }
   single(query) {
     return { lean: async () => (await query.lean())[0] ?? null };
-  }
-  /** The raw driver collection: every document, as the schema-free reads see it. */
-  get collection() {
-    return { find: () => ({ toArray: async () => clone(this.docs) }) };
   }
   findById(id) {
     const doc = this.docs.find((row) => String(row._id) === String(id));
@@ -213,7 +212,11 @@ const content = () => {
         },
       ]),
       CyberiaInstance: new FakeModel([{ code: 'FOREST', conf: confId, cyberiaMapCodes: ['forest-1'] }]),
-      CyberiaInstanceConf: new FakeModel([{ _id: confId }]),
+      CyberiaInstanceConf: new FakeModel([{ _id: confId, instanceCode: 'FOREST' }]),
+      CyberiaEconomy: new FakeModel([{ code: 'standard', status: 'active' }]),
+      CyberiaEconomicItemPolicy: new FakeModel([
+        { economyCode: 'standard', itemId: 'sword', buyback: true, buybackPayout: 2 },
+      ]),
     },
   };
 };
@@ -243,6 +246,43 @@ describe('release identity', () => {
   });
 });
 
+describe('host backup content', () => {
+  let backupDir;
+  beforeEach(() => {
+    backupDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'backup-content-'));
+    for (const database of ['cyberia-content', 'cyberia-content-r1', 'cyberia-content-r2'])
+      fs.mkdirSync(nodePath.join(backupDir, database));
+    return () => fs.rmSync(backupDir, { recursive: true, force: true });
+  });
+  const ledger = [
+    { releaseId: 'r1', status: 'retired', database: 'cyberia-content-r1' },
+    { releaseId: 'r2', status: 'active', database: 'cyberia-content-r2' },
+  ];
+
+  it('reads the dump of the database the active release served, by the name the ledger records', () => {
+    expect(backupContentDump({ ledger, backupDir, workspace: 'cyberia-content' })).toEqual({
+      releaseId: 'r2',
+      database: 'cyberia-content-r2',
+      dir: nodePath.join(backupDir, 'cyberia-content-r2'),
+    });
+  });
+
+  it('reads the workspace dump when no release was active', () => {
+    expect(backupContentDump({ ledger: ledger.slice(0, 1), backupDir, workspace: 'cyberia-content' })).toEqual({
+      releaseId: '',
+      database: 'cyberia-content',
+      dir: nodePath.join(backupDir, 'cyberia-content'),
+    });
+  });
+
+  it('refuses a backup that holds no dump of the served database', () => {
+    fs.rmSync(nodePath.join(backupDir, 'cyberia-content-r2'), { recursive: true });
+    expect(() => backupContentDump({ ledger, backupDir, workspace: 'cyberia-content' })).toThrow(
+      /holds no dump of cyberia-content-r2/,
+    );
+  });
+});
+
 describe('candidate validation', () => {
   it('passes a release whose every reference resolves', async () => {
     const { models, hatchet, sword } = content();
@@ -253,15 +293,33 @@ describe('candidate validation', () => {
       'artifact',
       'catalog',
       'canonical',
-      'legacy-pins',
       'labels',
       'skills',
       'render',
       'instances',
+      'economy',
       'schema',
     ]);
     expect(validation.manifest).toEqual({ instances: ['FOREST'], maps: 1, bindings: 2, quests: 1, actions: 1 });
     expect(validation.dependencies).toEqual([hatchet.cid, sword.cid].sort());
+  });
+
+  it('fails on a world without an active economy, or an item policy of an unbound label', async () => {
+    const { models, hatchet, sword } = content();
+    models.CyberiaInstanceConf.docs[0].economyCode = 'frontier';
+    models.CyberiaInstanceConf.docs.push({ instanceCode: 'OLD', economyCode: 'gone' });
+    models.CyberiaEconomicItemPolicy.docs.push({
+      economyCode: 'standard',
+      itemId: 'axe',
+      burn: true,
+      salvage: [{ itemId: 'sword', qty: 1 }],
+    });
+    const validation = await validateContentRelease(models, { resolveCanonical: canonicalFrom([hatchet, sword]) });
+    expect(failing(validation).economy).toEqual([
+      'instance FOREST: no active economy frontier',
+      'instance OLD: no active economy gone',
+      'economy standard: label "axe" is not bound',
+    ]);
   });
 
   it('fails on a skill document whose handlers disagree or that names a handler no simulation runs', async () => {
@@ -331,20 +389,6 @@ describe('candidate validation', () => {
     models.ObjectLayer.docs[0].profile = { id: '', version: 0 };
     const validation = await validateContentRelease(models, { resolveCanonical: canonicalFrom([hatchet, sword]) });
     expect(failing(validation).catalog.join('\n')).toMatch(/profile is not a valid profile reference/);
-  });
-
-  it('fails on a quest or an action that still pins a definition: the catalog alone binds an item', async () => {
-    const { models, hatchet, sword } = content();
-    models.CyberiaQuest.docs[0].steps[0].objectives[0].objectLayerCid = hatchet.cid;
-    models.CyberiaAction.docs[0].shopItems[0].priceItemId = 'coin';
-    models.CyberiaAction.docs[0].shopItems[0].priceObjectLayerCid = definition('ghost', 1).cid;
-    const errors = failing(await validateContentRelease(models, { resolveCanonical: canonicalFrom([hatchet, sword]) }))[
-      'legacy-pins'
-    ];
-    expect(errors).toEqual([
-      `CyberiaQuest q1: pins hatchet → ${hatchet.cid}`,
-      `CyberiaAction shop: pins coin → ${definition('ghost', 1).cid}`,
-    ]);
   });
 
   it('fails on a label the runtime cannot resolve', async () => {
@@ -449,11 +493,17 @@ describe('candidate validation', () => {
     expect(consumer.checks.find((entry) => entry.name === 'canonical').findings).toEqual([
       'skipped: no Object Layer authority origin is configured',
     ]);
+    const resolve = vi.fn();
+    const unpublished = await validateContentRelease(models, { resolveCanonical: resolve, canonical: false });
+    expect(unpublished.checks.find((entry) => entry.name === 'canonical').findings).toEqual([
+      'skipped: the content is not published',
+    ]);
+    expect(resolve).not.toHaveBeenCalled();
   });
 });
 
 describe('publication to the Object Layer authority', () => {
-  it('stores every bound definition, once, and reports what was new', async () => {
+  it('stores only the bound definitions the authority does not hold, once, and reports what was new', async () => {
     const { models, hatchet, sword } = content();
     const pool = new Map([[hatchet.cid, hatchet]]);
     const sent = [];
@@ -463,20 +513,36 @@ describe('publication to the Object Layer authority', () => {
       pool.set(doc.cid, doc);
       return { cid: objectLayerIdentity(doc).cid, created };
     };
-    const first = await publishContentRelease(models, { publish });
+    const resolveCanonical = async (cid) => pool.get(cid) ?? null;
+    const first = await publishContentRelease(models, { publish, resolveCanonical });
     expect(first).toMatchObject({ name: 'publication', ok: true, count: 2, created: 1 });
-    const again = await publishContentRelease(models, { publish });
+    const again = await publishContentRelease(models, { publish, resolveCanonical });
     expect(again).toMatchObject({ ok: true, count: 2, created: 0 });
-    expect(sent.sort()).toEqual([hatchet.cid, hatchet.cid, sword.cid, sword.cid].sort());
+    expect(sent).toEqual([sword.cid]);
   });
 
   it('fails when the authority stores the content under another identity', async () => {
     const { models } = content();
     const result = await publishContentRelease(models, {
       publish: async () => ({ cid: 'bafkreiother', created: true }),
+      resolveCanonical: async () => null,
     });
     expect(result.ok).toBe(false);
     expect(result.findings[0]).toMatch(/the authority stored it as bafkreiother/);
+  });
+
+  it('fails on a lookup the authority cannot answer, and sends nothing for it', async () => {
+    const { models } = content();
+    const publish = vi.fn();
+    const result = await publishContentRelease(models, {
+      publish,
+      resolveCanonical: async () => {
+        throw new Error('The object-layer domain is unavailable');
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.findings[0]).toMatch(/domain is unavailable/);
+    expect(publish).not.toHaveBeenCalled();
   });
 });
 
@@ -768,11 +834,12 @@ describe('deploy pipeline', () => {
     expect(script).toMatch(/\*:latest\)\s+if \[ "\$\{ALLOW_LATEST_IMAGE:-0\}" != "1" \]/);
   });
 
-  it('runs the stages in order: the content candidate before the rollout, the promotion after readiness', () => {
+  it('runs the stages in order: the data before the rollout, the promotion after readiness', () => {
     const order = [
       'stage_sources',
       'stage_build',
       'stage_configuration',
+      'stage_runtime_indexes',
       'stage_content_candidate',
       'stage_rollout',
       'stage_readiness',
@@ -822,17 +889,46 @@ describe('deploy pipeline', () => {
       script.indexOf('stage_promotion() {'),
     );
     const prepared = candidate.indexOf('content-release prepare $CONTENT_RELEASE_ID --channel $CYBERIA_SOURCE_CHANNEL');
-    const secret = candidate.indexOf('apply_release_secret');
     const built = candidate.indexOf('content_release_job "$CONTENT_RELEASE_ID" "$DEPLOY_IMAGE"');
     expect(prepared).toBeGreaterThan(-1);
-    expect(prepared).toBeLessThan(secret);
-    expect(secret).toBeLessThan(built);
+    expect(prepared).toBeLessThan(built);
     expect(candidate).toContain('build "$CONTENT_RELEASE_ID" --from source');
     // Only the prepare names the channel: both channels build through the one Release Job.
-    expect(candidate.slice(secret)).not.toContain('CYBERIA_SOURCE_CHANNEL');
+    expect(candidate.slice(built)).not.toContain('CYBERIA_SOURCE_CHANNEL');
     expect(script).not.toMatch(/content import|import-content/);
     expect(script).not.toContain('kubectl exec');
     expect(lib).not.toContain('kubectl exec');
+  });
+
+  it('syncs the runtime indexes on the deployed image on every deploy, and stops it when the sync fails', () => {
+    const stage = script.slice(
+      script.indexOf('stage_runtime_indexes() {'),
+      script.indexOf('stage_content_candidate() {'),
+    );
+    const run = (status) =>
+      spawnSync(
+        'bash',
+        [
+          '-c',
+          `set -euo pipefail
+          DEPLOY_IMAGE=engine:2 SKIP_CONTENT_RELEASE=1
+          deploy_step() { shift; "$@"; }
+          apply_release_secret() { echo secret; }
+          release_job() { echo "job: $*"; return ${status}; }
+          ${stage}
+          stage_runtime_indexes
+          echo next`,
+        ],
+        { encoding: 'utf8' },
+      );
+    const synced = run(0);
+    expect(synced.status).toBe(0);
+    expect(synced.stdout).toBe(
+      'secret\njob: runtime-indexes engine:2 node bin/cyberia runtime-indexes --apply\nnext\n',
+    );
+    const failed = run(1);
+    expect(failed.status).not.toBe(0);
+    expect(failed.stdout).not.toContain('next');
   });
 
   it('promotes a release from either channel and never pushes to a repository', () => {
@@ -848,7 +944,7 @@ describe('deploy pipeline', () => {
     const helper = script.slice(script.indexOf('content_release_skipped() {'), script.indexOf('# ── Stage D'));
     const candidate = script.slice(script.indexOf('stage_content_candidate() {'), script.indexOf('# ── Stage E'));
     const promotion = script.slice(script.indexOf('stage_promotion() {'), script.indexOf('# ── Revert'));
-    const run = (discard) =>
+    const run = (discard, live = false) =>
       spawnSync(
         'bash',
         [
@@ -859,7 +955,7 @@ describe('deploy pipeline', () => {
           CYBERIA_SOURCE_CHANNEL=public CYBERIA_API_ORIGIN=https://api ENGINE_API_PATH=api/v1
           CYBERIA_SERVER_ORIGIN=https://server READINESS_TIMEOUT=1
           deploy_step() { shift; "$@"; }
-          content_release_job() { echo "job: $*"; }
+          content_release_job() { echo "job: $*"; ${live ? '[ "$1" != content-release-live-changes ]' : ':'}; }
           sudo() { :; }
           apply_release_secret() { :; }
           served_content_release() { echo v1; }
@@ -881,6 +977,11 @@ describe('deploy pipeline', () => {
       'job: content-release-live-changes engine:1 live-changes',
       'job: content-release-promote engine:1 promote v2',
     ]);
+    const stopped = run(0, true);
+    expect(stopped.status).toBe(1);
+    expect(stopped.stdout).not.toContain('content-release-promote');
+    expect(stopped.stderr).toContain('content-release export-live');
+    expect(stopped.stderr).toContain('DISCARD_LIVE_CHANGES=1');
     const discarded = run(1);
     expect(discarded.stdout).not.toContain('content-release-live-changes');
     expect(discarded.stdout).toContain('DISCARD_LIVE_CHANGES=1');

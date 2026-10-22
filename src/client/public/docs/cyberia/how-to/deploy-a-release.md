@@ -24,27 +24,69 @@ held before the layout stay where they are and are no longer read.
 The deploy runs no tests: CI tests the source, and the source carries its coverage reports in `docs/coverage/`.
 Nothing before Stage E changes what players see: a candidate that fails stops the deploy before it.
 
-| Stage | Name                   | Content                                                                                                                                                                                                                                 |
-| ----- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A     | Source synchronization | Every product repository from one source channel: the deployment at its branch tip, every other at the revision the deployment lock pins                                                                                                |
-| B     | Immutable artifacts    | Catalog install, release id `v<version>-<commit>-<content revision>`, image `engine-cyberia:v<version>`                                                                                                                                 |
-| C     | Configuration          | `app load`, `validate-domains`, manifests, client bundle, private conf                                                                                                                                                                  |
-| D     | Content candidate      | The host prepares the locked revision; a Release Job builds it, imports the foundation then each instance, and validates it, with the data-release Secret alone. A second Job stops the deploy when the active release has live changes |
-| E     | Application rollout    | Loads deployment configuration and starts the new pod; blue/green traffic switches when it is Ready                                                                                          |
-| F     | Readiness              | Engine API, Object Layer authority                                                                                                                                                                                                      |
-| G     | Promotion              | Promote the release, wait until the runtime serves it and the game server is ready, then prune the databases and the release store                                                                                                      |
+| Stage | Name                   | Content                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A     | Source synchronization | Every product repository from one source channel: the deployment at its branch tip, every other at the revision the deployment lock pins                                                                                                                                                                                                                                                              |
+| B     | Immutable artifacts    | Catalog install, release id `v<version>-<commit>-<content revision>`, image `engine-cyberia:v<version>`                                                                                                                                                                                                                                                                                               |
+| C     | Configuration          | `app load`, `validate-domains`, manifests, client bundle, private conf                                                                                                                                                                                                                                                                                                                                |
+| D     | Data                   | A Release Job makes the indexes of the runtime records the ones their models declare; a record that refuses a unique index stops the deploy and names the key. The host prepares the locked revision; a Release Job builds it, imports the foundation then each instance, and validates it, with the data-release Secret alone. A third Job stops the deploy when the active release has live changes |
+| E     | Application rollout    | Loads deployment configuration and starts the new pod; blue/green traffic switches when it is Ready                                                                                                                                                                                                                                                                                                   |
+| F     | Readiness              | Engine API, Object Layer authority                                                                                                                                                                                                                                                                                                                                                                    |
+| G     | Promotion              | Promote the release, wait until the runtime serves it and the game server is ready, then prune the databases and the release store                                                                                                                                                                                                                                                                    |
 
 Stage B refuses a `:latest` image unless `ALLOW_LATEST_IMAGE=1`.
 
-Set `SKIP_CONTENT_RELEASE=1` to deploy the runtimes only. Stages D and G do not run. The new pod serves the release that is already active.
+Set `SKIP_CONTENT_RELEASE=1` to deploy the runtimes only. The content candidate of Stage D and Stage G do not run; the index sync still runs. The new pod serves the release that is already active.
 
 A live change is a change to the active release that its build does not hold
 ([Live changes](../explanation/content-releases.md#live-changes)). The promotion stops serving it, so
-Stage D stops the deploy before the rollout and names the changed content. Export each changed world
-with `cyberia instance <code> --export <dir> --release <active-id>`, commit it to `cyberia-content`,
-and deploy that revision. Set `DISCARD_LIVE_CHANGES=1` to promote and stop serving the changes.
+Stage D stops the deploy before the rollout and names the changed content.
+[Export the live content](#export-the-live-content) to keep the changes. Set `DISCARD_LIVE_CHANGES=1`
+to promote and stop serving them.
 
 `REPLICAS` sets the pod count of each colour (default `1`). Stage E and a switch back render this count.
+
+## Export the live content
+
+`cyberia content-release export-live` turns the content production serves into `cyberia-content`
+source. It reads a host backup: the backup of the Cyberia host dumps the databases of the content
+partition with the host database.
+
+1. Stop the Studio edits in production. An edit after the backup is not exported.
+2. On the host, take a backup. The daily backup cron job runs the same command:
+
+   ```bash
+   node bin db dd-cyberia --export --git --primary-pod --preserveUUID
+   ```
+
+3. On the local machine, import the same backup. The export reads the Files from the host database:
+
+   ```bash
+   node bin db dd-cyberia --import --git --hosts www.cyberiaonline.com --paths / --drop --preserveUUID --primary-pod
+   ```
+
+4. Preview the export, then write it:
+
+   ```bash
+   node bin/cyberia content-release export-live --dev
+   node bin/cyberia content-release export-live --apply --dev
+   ```
+
+5. Review `git diff` in `cyberia-content`, run its tests, commit, and lock the revision.
+6. Deploy with `DISCARD_LIVE_CHANGES=1`. The live changes are now source, but the guard compares the
+   release with its build, so it still names them.
+
+The export restores the dump of the release the backup ledger names as active into a scratch
+release database, `<content partition>-capture-<timestamp>`. It then imports the absent content of
+the content artifact: the documents a newer schema adds, such as economies and markets. A document
+production holds stays as production holds it. Every check of `content-release validate` runs,
+except the canonical check, because nothing is published. Each world is exported into a temporary
+directory, and the change against `cyberia-content` is printed. `--apply` replaces the instance
+directories, and refuses while one of them has uncommitted changes. The scratch database and its
+map registry rows are removed at the end.
+
+A dump is consistent per collection, not at one point in time. Step 1 keeps the collections
+consistent with each other, and the checks refuse a reference that does not resolve.
 
 ## Failure and revert
 
@@ -130,12 +172,12 @@ The portal and the engine API are stateless and follow the blue/green rollout of
 
 ## Verification
 
-| Tier                  | Command                                        | Covers                                                                                                                                                                        |
-| --------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `underpost:audit`     | `npx vitest run --project underpost:audit`     | Runtime dependency closure. It runs alone, and it tells host saturation from an application defect                                                                            |
-| `cyberia:unit`        | `npx vitest run --project cyberia:unit`        | Validation checks, publication, pruning, deploy script order                                                                                                                  |
-| `ecosystem:contract`  | `npx vitest run --project ecosystem:contract`  | Single writer, API extensions, local domain addresses, module boundaries                                                                                                      |
-| `cyberia:integration` | `npx vitest run --project cyberia:integration` | A real MongoDB replica set: indexes, migrations, build, validate, promote, roll back, prune, restart, concurrent promotion, runtime isolation, one data source for every role |
+| Tier                  | Command                                        | Covers                                                                                                                                                                           |
+| --------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `underpost:audit`     | `npx vitest run --project underpost:audit`     | Runtime dependency closure. It runs alone, and it tells host saturation from an application defect                                                                               |
+| `cyberia:unit`        | `npx vitest run --project cyberia:unit`        | Validation checks, publication, pruning, deploy script order                                                                                                                     |
+| `ecosystem:contract`  | `npx vitest run --project ecosystem:contract`  | Single writer, API extensions, local domain addresses, module boundaries                                                                                                         |
+| `cyberia:integration` | `npx vitest run --project cyberia:integration` | A real MongoDB replica set: the runtime index sync, build, validate, promote, roll back, prune, restart, concurrent promotion, runtime isolation, one data source for every role |
 
 `cyberia:integration` starts `mongod` as a one-member replica set through `test/support/mongod.js`.
 It needs MongoDB 5.0 or later: `UNDERPOST_MONGOD_BIN`, or `mongod` on PATH. Without one the project

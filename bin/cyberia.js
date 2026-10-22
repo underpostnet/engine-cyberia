@@ -16,7 +16,6 @@ import {
   STORAGE_CATEGORIES,
   checkCatalogStorage,
   checkWorldBindings,
-  repairLegacyPins,
 } from '../src/projects/cyberia/catalog/catalog-consistency.js';
 import { migrateObjectLayerStorage } from '../src/api/object-layer/object-layer.ipfs.js';
 import { Command, InvalidArgumentError } from 'commander';
@@ -40,7 +39,6 @@ import { refreshWorldPreviews } from '../src/projects/cyberia/instance/world-pre
 import {
   catalogRegistryModels,
   reconcileMapRegistry,
-  registryIndexes,
   registryTransaction,
 } from '../src/projects/cyberia/instance/map-registry.js';
 import {
@@ -72,6 +70,12 @@ import { sha256HexFromCid } from '../src/api/object-layer/object-layer.identity.
 import { ItemLedgerIndexer } from '../src/api/item-ledger/item-ledger.indexer.js';
 import { CyberiaObjectLayerProfile } from '../src/client/components/cyberia/ObjectLayerProfileCyberia.js';
 import { fetchInstanceObjectLayerItemIds, getInstanceModels } from '../src/projects/cyberia/instance-data.js';
+import {
+  activeEconomy,
+  confEconomyCode,
+  readEconomy,
+  replaceEconomy,
+} from '../src/projects/cyberia/economy/economy-policy.js';
 import {
   RELEASE_CONTENT,
   releaseInstanceCodes,
@@ -114,6 +118,7 @@ import {
   CONTENT_PARTITION,
   activateContentRelease,
   advanceContentRelease,
+  backupContentDump,
   beginContentRelease,
   contentFingerprint,
   contentReleaseRowFactory,
@@ -145,7 +150,13 @@ import { dropConsumerCanonicalPins, isObjectLayerAuthority } from '../src/api/ob
 import { purgeObjectLayers } from '../src/api/object-layer/object-layer.purge.js';
 import * as cyberiaStudio from '../src/projects/cyberia/object-layer.extension.js';
 import { consumedApisOf, ownsApi } from '../src/server/domain/consumed-api.js';
-import { CYBERIA_PLAYER_APIS, validateDomainConf } from '../src/projects/cyberia/stack/domain-ownership.js';
+import {
+  CYBERIA_PLAYER_APIS,
+  CYBERIA_RUNTIME_APIS,
+  validateDomainConf,
+} from '../src/projects/cyberia/stack/domain-ownership.js';
+import { resolveMarketProfile } from '../src/api/cyberia-server-defaults/cyberia-server-defaults.js';
+import { runtimeModels, syncRuntimeIndexes } from '../src/projects/cyberia/runtime/runtime-indexes.js';
 import { ValkeyAPI, closeValkeyConnection, createValkeyConnection } from '../src/db/valkey/Valkey.js';
 import { CacheService } from '../src/server/storage/cache.js';
 import { program as underpostProgram } from '../src/cli/index.js';
@@ -159,11 +170,11 @@ import {
   contentArtifact,
   contentLockEntry,
   contentRoot,
-  contentSources,
   deploymentRoot,
   entityTypeDefaultKey,
   importContent,
   importSaga,
+  instanceSourceDir,
   openContentArtifact,
   planContent,
   readBackupContent,
@@ -476,71 +487,6 @@ async function runIdentityMigration(models, context) {
     process.exit(1);
   }
 }
-
-/**
- * Rewrites a conf backup's `entityDefaults` into the reference shape the schema now stores.
- *
- * Backups written before the collection became the single owner embedded whole documents in the
- * conf. Those files are the only place that shape still exists, so it is converted here, at the
- * boundary where they enter — nothing downstream understands anything but an id.
- *
- * Each embedded entry is matched against the entity-type-default documents travelling in the same
- * backup, by entity type and live-item set. That lookup is safe precisely because it cannot see
- * the database: it can only ever resolve to a document this instance exported. An entry with no
- * counterpart is written to the collection so the reference it gets resolves to something.
- *
- * @param {object} confData - Parsed cyberia-instance-conf.json.
- * @param {string} backupDir - Backup root, holding cyberia-entity-type-defaults/.
- * @param {import('mongoose').Model} CyberiaEntityTypeDefault
- * @returns {Promise<object>} The conf, with `entityDefaults` as ids.
- */
-const adoptEntityTypeDefaultRefs = async (confData, backupDir, CyberiaEntityTypeDefault) => {
-  const entries = confData.entityDefaults || [];
-  const embedded = entries.filter((entry) => entry && 'object' === typeof entry && entry.entityType);
-  if (0 === embedded.length) return confData;
-
-  const dir = `${backupDir}/cyberia-entity-type-defaults`;
-  const exported = fs.existsSync(dir)
-    ? fs
-        .readdirSync(dir)
-        .filter((file) => file.endsWith('.json'))
-        .map((file) => fs.readJsonSync(`${dir}/${file}`))
-    : [];
-  const liveKey = (doc) => `${doc.entityType}::${[...(doc.liveItemIds || [])].sort().join(',')}`;
-  const byKey = new Map(exported.map((doc) => [liveKey(doc), doc]));
-
-  const ids = [];
-  let created = 0;
-  for (const entry of entries) {
-    if (!entry || 'object' !== typeof entry || !entry.entityType) {
-      if (entry) ids.push(entry);
-      continue;
-    }
-    const match = byKey.get(liveKey(entry));
-    if (match?._id) {
-      ids.push(match._id);
-      continue;
-    }
-    const doc = await CyberiaEntityTypeDefault.create({
-      entityType: entry.entityType,
-      liveItemIds: entry.liveItemIds || [],
-      deadItemIds: entry.deadItemIds || [],
-      dropItemIds: entry.dropItemIds || [],
-      inventoryItemsIds: entry.inventoryItemsIds || [],
-      overrideItemsIdsState: entry.overrideItemsIdsState || [],
-      behavior: entry.behavior || '',
-    });
-    ids.push(doc._id);
-    created++;
-  }
-  confData.entityDefaults = ids;
-  logger.info('Migrated embedded conf entityDefaults to collection references', {
-    instanceCode: confData.instanceCode,
-    references: ids.length,
-    created,
-  });
-  return confData;
-};
 
 /** Default source of recorded `<name>.wav` + `<name>.json` pairs for `cyberia audio --import`. */
 const DEFAULT_AUDIO_RECORDS_PATH = './cyberia-audio/records';
@@ -1560,6 +1506,9 @@ try {
           'cyberia-saga',
           'cyberia-audio',
           'cyberia-map-audio-conf',
+          'cyberia-economy',
+          'cyberia-economic-item-policy',
+          'cyberia-market',
           ...ITEM_DEFINITION_APIS,
           ...(owns('item-ledger') ? ['item-ledger'] : []),
         ],
@@ -1574,6 +1523,7 @@ try {
       const CyberiaMap = DataBaseProviderService.getModel('cyberia-map', { host, path });
       const CyberiaQuest = DataBaseProviderService.getModel('cyberia-quest', { host, path });
       const CyberiaAction = DataBaseProviderService.getModel('cyberia-action', { host, path });
+      const CyberiaMarket = DataBaseProviderService.getModel('cyberia-market', { host, path });
       const CyberiaSkill = DataBaseProviderService.getModel('cyberia-skill', { host, path });
       const CyberiaEntityTypeDefault = DataBaseProviderService.getModel('cyberia-entity-type-default', { host, path });
       const CyberiaSaga = DataBaseProviderService.getModel('cyberia-saga', { host, path });
@@ -1583,6 +1533,10 @@ try {
       const CyberiaItemCatalog = DataBaseProviderService.getModel('cyberia-item-catalog', { host, path });
       const File = DataBaseProviderService.getModel('file', { host, path });
       const models = { ObjectLayer, CyberiaItemCatalog };
+      const economyModels = {
+        CyberiaEconomy: DataBaseProviderService.getModel('cyberia-economy', { host, path }),
+        CyberiaEconomicItemPolicy: DataBaseProviderService.getModel('cyberia-economic-item-policy', { host, path }),
+      };
 
       // ── SYNC ENTITY-TYPE DEFAULTS ───────────────────────────────────
       if (options.syncEntities) {
@@ -1617,9 +1571,7 @@ try {
 
         // Only a content source checkout takes an export by default; a packed artifact never does.
         const backupDir =
-          typeof options.export === 'string' && options.export
-            ? options.export
-            : nodePath.join(contentSources(), 'content', 'instances', instanceCode);
+          typeof options.export === 'string' && options.export ? options.export : instanceSourceDir(instanceCode);
 
         fs.ensureDirSync(backupDir);
         // The export is a projection of what this instance references, never an archive of
@@ -1692,12 +1644,24 @@ try {
           instanceConf = created?.toObject ? created.toObject() : created;
         }
         if (instanceConf) {
-          // `.lean()` skips the schema defaults and a document written before a bound tightened
-          // may carry a value the schema now rejects; the backup is made whole and valid here so
-          // it imports back as-is.
+          // `.lean()` skips the schema defaults, and a document an older schema wrote may carry a
+          // value the schema now rejects or a field it retired; the backup holds the conf whole,
+          // valid and declared only, so it imports back as-is.
+          const economyCode = confEconomyCode(instanceConf);
           ({ conf: instanceConf } = await CyberiaInstanceConfService.coerceToSchema(instanceConf, CyberiaInstanceConf));
-          fs.writeJsonSync(`${backupDir}/cyberia-instance-conf.json`, instanceConf, { spaces: 2 });
+          fs.writeJsonSync(
+            `${backupDir}/cyberia-instance-conf.json`,
+            declaredDocument(CyberiaInstanceConf, instanceConf),
+            { spaces: 2 },
+          );
           logger.info('Exported CyberiaInstanceConf', { instanceCode });
+          if (!options.conf) {
+            const economy = await readEconomy(economyModels, economyCode);
+            if (!economy)
+              throw new Error(`Instance ${instanceCode} names economy ${economyCode}, which does not exist`);
+            fs.writeJsonSync(`${backupDir}/cyberia-economy.json`, economy, { spaces: 2 });
+            logger.info('Exported CyberiaEconomy', { economyCode, items: economy.items.length });
+          }
         } else {
           logger.warn('Could not create or find CyberiaInstanceConf', { instanceCode });
         }
@@ -1809,6 +1773,20 @@ try {
             }
           }
           logger.info(`Exported ${actions.length} CyberiaAction document(s)`, { codes: actions.map((a) => a.code) });
+          // The market profiles its terminals open travel with the world.
+          const markets = await CyberiaMarket.find({
+            code: { $in: [...new Set(actions.map((a) => a.market?.marketCode).filter(Boolean))] },
+          }).lean();
+          if (markets.length > 0) {
+            fs.ensureDirSync(`${backupDir}/cyberia-markets`);
+            for (const market of markets)
+              fs.writeJsonSync(
+                `${backupDir}/cyberia-markets/${encodeURIComponent(market.code)}.json`,
+                declaredDocument(CyberiaMarket, market),
+                { spaces: 2 },
+              );
+            logger.info(`Exported ${markets.length} CyberiaMarket document(s)`, { codes: markets.map((m) => m.code) });
+          }
         }
 
         // 4. Export the entity-type defaults this instance's conf references, by _id.
@@ -2143,7 +2121,7 @@ try {
             // Made whole and valid before the live conf is touched, so a backup the schema
             // rejects resets to defaults rather than leaving the instance with no conf.
             const { conf: confData } = await CyberiaInstanceConfService.coerceToSchema(
-              await adoptEntityTypeDefaultRefs(fs.readJsonSync(confImportPath), backupDir, CyberiaEntityTypeDefault),
+              fs.readJsonSync(confImportPath),
               CyberiaInstanceConf,
             );
             if (confData._id) await CyberiaInstanceConf.deleteOne({ _id: confData._id });
@@ -2301,15 +2279,26 @@ try {
           logger.info(`Imported ${audioConfCount} CyberiaMapAudioConf document(s)`);
         }
 
-        // 4. Import CyberiaInstanceConf (skillRules, equipmentRules, entityDefaults, etc.)
+        // 4. Import CyberiaInstanceConf (skillRules, equipmentRules, entityDefaults, etc.) with the
+        //    economy it names: the one the backup carries, else the foundation economy of that code
+        //    when the database holds none. The economy is replaced by code, with its item rows.
         const confImportPath = `${backupDir}/cyberia-instance-conf.json`;
         if (fs.existsSync(confImportPath)) {
+          const backupConf = fs.readJsonSync(confImportPath);
+          const economyCode = confEconomyCode(backupConf);
+          const economyImportPath = `${backupDir}/cyberia-economy.json`;
+          const economy = fs.existsSync(economyImportPath)
+            ? fs.readJsonSync(economyImportPath)
+            : !(await economyModels.CyberiaEconomy.exists({ code: economyCode })) &&
+              contentArtifact().foundation.economies.find(({ code }) => code === economyCode);
+          if (economy) {
+            await replaceEconomy(economyModels, economy);
+            logger.info('Imported CyberiaEconomy', { economyCode: economy.code, items: economy.items?.length ?? 0 });
+          }
+          await activeEconomy(economyModels, economyCode);
           // Made whole and valid before the live conf is touched, so a backup the schema
           // rejects resets to defaults rather than leaving the instance with no conf.
-          const { conf: confData } = await CyberiaInstanceConfService.coerceToSchema(
-            await adoptEntityTypeDefaultRefs(fs.readJsonSync(confImportPath), backupDir, CyberiaEntityTypeDefault),
-            CyberiaInstanceConf,
-          );
+          const { conf: confData } = await CyberiaInstanceConfService.coerceToSchema(backupConf, CyberiaInstanceConf);
           if (confData._id) await CyberiaInstanceConf.deleteOne({ _id: confData._id });
           await CyberiaInstanceConf.deleteOne({ instanceCode: confData.instanceCode });
           await CyberiaInstanceConf.create(confData);
@@ -2378,7 +2367,30 @@ try {
           logger.info(`Imported ${questCount} CyberiaQuest document(s)`);
         }
 
-        // 6c. Import CyberiaAction documents (overwrite by code).
+        // 6c. Import the CyberiaMarket profiles the terminals open (overwrite by code, raising the revision;
+        //     a stored profile keeps its scope and currency), then the CyberiaAction documents (overwrite by code).
+        const marketsDir = `${backupDir}/cyberia-markets`;
+        if (fs.existsSync(marketsDir)) {
+          let marketCount = 0;
+          for (const file of fs.readdirSync(marketsDir).filter((f) => f.endsWith('.json'))) {
+            const { _id, revision, createdAt, updatedAt, __v, ...market } = fs.readJsonSync(`${marketsDir}/${file}`);
+            resolveMarketProfile(market);
+            const stored = await CyberiaMarket.findOne({ code: market.code }, { scope: 1, currencyCode: 1 }).lean();
+            if (stored && (stored.scope !== market.scope || stored.currencyCode !== market.currencyCode)) {
+              logger.warn(`Kept CyberiaMarket ${market.code}: its scope and currency change only in the Studio`);
+              continue;
+            }
+            if (stored)
+              await CyberiaMarket.updateOne(
+                { _id: stored._id },
+                { $set: market, $inc: { revision: 1 } },
+                { runValidators: true },
+              );
+            else await CyberiaMarket.create(market);
+            marketCount++;
+          }
+          logger.info(`Imported ${marketCount} CyberiaMarket document(s)`);
+        }
         const actionsDir = `${backupDir}/cyberia-actions`;
         if (fs.existsSync(actionsDir)) {
           const actionFiles = fs.readdirSync(actionsDir).filter((f) => f.endsWith('.json'));
@@ -3836,6 +3848,7 @@ try {
     'cyberia-content-release',
     'cyberia-server-registry',
     'cyberia-player',
+    'cyberia-universe',
     'file',
     'cyberia-item-catalog',
     'object-layer',
@@ -3847,6 +3860,9 @@ try {
     'cyberia-skill',
     'cyberia-instance',
     'cyberia-instance-conf',
+    'cyberia-economy',
+    'cyberia-economic-item-policy',
+    'cyberia-market',
   ];
 
   const releaseEnvOptions = (command) =>
@@ -4048,7 +4064,7 @@ try {
   };
 
   const exportHint = (releaseId) =>
-    `Export each changed world with \`cyberia instance <code> --export <dir> --release ${releaseId}\` and commit it to cyberia-content`;
+    `Export them from a host backup of ${releaseId} with \`cyberia content-release export-live\` and commit them to cyberia-content`;
 
   /**
    * Promotes a release. Live changes of the active release block it until they are exported, or
@@ -4289,6 +4305,114 @@ try {
     await endRelease(context, !notice);
   });
 
+  /** The files of `to` against `from`, by relative path. */
+  const treeChanges = (from, to) => {
+    const files = (dir) =>
+      fs.existsSync(dir)
+        ? fs.readdirSync(dir, { recursive: true }).filter((file) => fs.statSync(nodePath.join(dir, file)).isFile())
+        : [];
+    const before = new Set(files(from));
+    const changes = { created: [], modified: [], removed: [], unchanged: 0 };
+    for (const file of files(to)) {
+      if (!before.delete(file)) changes.created.push(file);
+      else if (fs.readFileSync(nodePath.join(from, file)).equals(fs.readFileSync(nodePath.join(to, file))))
+        changes.unchanged++;
+      else changes.modified.push(file);
+    }
+    changes.removed.push(...before);
+    return changes;
+  };
+
+  releaseEnvOptions(
+    contentRelease
+      .command('export-live')
+      .option('--backup <dir>', 'One backup of this host, a timestamp folder (default: its latest backup)')
+      .option('--apply', 'Write the exported instances to cyberia-content')
+      .description(
+        'Export every world a host backup served into cyberia-content, read by the current models and completed ' +
+          'with the content the artifact adds. Import the same backup first: its Files are read from the host ' +
+          'database. Writes nothing without --apply',
+      ),
+  ).action(async (options = {}) => {
+    const { deployId, host, path } = resolveDeployDb(options);
+    const hostDir = Underpost.db.backupHostDir({ deployId, host, path });
+    const latest = Underpost.db._getLatestBackupTimestamp(hostDir);
+    const backupDir = options.backup || (latest ? nodePath.join(hostDir, latest) : '');
+    const stamp = nodePath.basename(backupDir);
+    if (!/^\d+$/.test(stamp)) {
+      logger.error(`No backup of ${host}${path}: run \`node bin db ${deployId} --import --git\`, or pass --backup`);
+      process.exit(1);
+    }
+    const stagingId = `capture-${stamp}`;
+    const context = await openReleases(options, stagingId);
+    const staging = releaseStore(context);
+    const exportDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), `content-${stagingId}-`));
+    const run = artifactImportRunner(contentRoot(), options);
+    let ok = false;
+    try {
+      const hostDump = nodePath.join(backupDir, context.db.name);
+      if (!fs.existsSync(hostDump)) throw new Error(`${backupDir} holds no dump of ${context.db.name}`);
+      const ledger = Underpost.db.readDumpCollection(
+        hostDump,
+        context.models.CyberiaContentRelease.collection.collectionName,
+      );
+      const source = backupContentDump({ ledger, backupDir, workspace: context.workspaceDatabase });
+      logger.info(`Backup ${stamp} served ${source.releaseId || 'the workspace'} from ${source.database}`);
+      // The index builds of the bound models finish first, so none recreates a collection under the restore.
+      await Promise.all(Object.values(context.models).map((Model) => Model.init()));
+      await staging.dropDatabase();
+      logger.info(`Restored into ${context.releaseDatabase}`, await Underpost.db.restoreDump(staging, source.dir));
+      await run(`content import --release ${stagingId}`);
+      const validation = await validateContentRelease(context.models, {
+        options: { host: context.host, path: context.path, consumes: context.consumes },
+        canonical: false,
+      });
+      printChecks(validation);
+      if (!validation.ok) throw new Error('The content fails the current checks; nothing is exported');
+      const codes = (await context.models.CyberiaInstance.find({}, { code: 1 }).sort({ code: 1 }).lean()).map(
+        ({ code }) => code,
+      );
+      for (const code of codes)
+        await run(`instance ${code} --export ${nodePath.join(exportDir, code)} --release ${stagingId}`);
+      for (const code of codes) {
+        const changes = treeChanges(instanceSourceDir(code), nodePath.join(exportDir, code));
+        logger.info(
+          `${code}: ${changes.created.length} created, ${changes.modified.length} modified, ` +
+            `${changes.removed.length} removed, ${changes.unchanged} unchanged`,
+        );
+        // File paths are data, so they go to stdout plainly, never through the logger.
+        for (const [mark, files] of [
+          ['+', changes.created],
+          ['~', changes.modified],
+          ['-', changes.removed],
+        ])
+          for (const file of files) console.log(`${mark} ${code}/${file}`);
+      }
+      if (options.apply) {
+        const targets = codes.map(instanceSourceDir);
+        const dirty = shellExec(
+          `git -C ${shellArgumentFactory(contentRoot())} status --porcelain -- ${targets.map(shellArgumentFactory).join(' ')}`,
+          { stdout: true, silent: true },
+        ).trim();
+        if (dirty) throw new Error(`Commit or discard these changes before the export replaces them:\n${dirty}`);
+        for (const [index, code] of codes.entries()) {
+          fs.removeSync(targets[index]);
+          fs.copySync(nodePath.join(exportDir, code), targets[index]);
+        }
+        logger.info(`Wrote ${codes.join(', ')} to ${contentRoot()}: review the change with git diff`);
+      } else logger.info('Nothing written: pass --apply to write the exported instances to cyberia-content');
+      ok = true;
+    } catch (error) {
+      logger.error(error.message);
+    } finally {
+      await staging.dropDatabase();
+      const { CyberiaGlobalMapCodeRegistry } = await catalogRegistryModels(context.connection, context.releaseDatabase);
+      await CyberiaGlobalMapCodeRegistry.deleteMany({ catalog: context.releaseDatabase });
+      fs.removeSync(exportDir);
+    }
+    await endRelease(context, ok);
+  });
+
   releaseEnvOptions(
     contentRelease
       .command('rollback')
@@ -4381,10 +4505,6 @@ try {
       .command('map-registry')
       .option('--release <release-id>', 'The catalog of this release instead of the one the host serves')
       .option('--apply', 'Write the changes in one transaction')
-      .option(
-        '--indexes',
-        'Report the registry indexes; with --apply, build the schema indexes and drop the obsolete ones',
-      )
       .description(
         'Compare the map owners the registry holds with the maps and instances of a catalog. Prints the ' +
           'changes and the defects, and exits 1 on a defect. Writes nothing without --apply',
@@ -4397,10 +4517,6 @@ try {
         (await context.models.CyberiaContentRelease.active())?.database ||
         context.workspaceDatabase;
       const models = await catalogRegistryModels(context.connection, catalog);
-      if (options.indexes) {
-        console.log(JSON.stringify(await registryIndexes(models.CyberiaGlobalMapCodeRegistry, options), null, 2));
-        return;
-      }
       const report = options.apply ? (await registryTransaction(models)).report : await reconcileMapRegistry(models);
       console.log(JSON.stringify(report, null, 2));
       if (report.defects.length) process.exitCode = 1;
@@ -4434,8 +4550,33 @@ try {
     process.exit(report.failed.length > 0 ? 1 : 0);
   });
 
+  // ─── Runtime indexes ────────────────────────────────────────────────────────
+  releaseEnvOptions(
+    program
+      .command('runtime-indexes')
+      .option(
+        '--apply',
+        'Delete the records without a required field of a unique key, drop the indexes no model declares, then build the missing ones',
+      )
+      .description(
+        'Compare the indexes of the runtime records (players, sessions, tickets, markets, registries, content ' +
+          'releases, Procedural Engine jobs) with the ones their models declare. Prints what differs as JSON, and ' +
+          'exits 1 while something differs or a build fails. The deploy runs it with --apply before the rollout',
+      ),
+  ).action(async (options = {}) => {
+    const { host, path, db } = resolveDeployDb(options);
+    await DataBaseProviderService.load({ apis: CYBERIA_RUNTIME_APIS, host, path, db });
+    try {
+      const result = await syncRuntimeIndexes(runtimeModels({ host, path }), { apply: !!options.apply });
+      console.log(JSON.stringify({ applied: !!options.apply, ...result }, null, 2));
+      if (!result.ready) process.exitCode = 1;
+    } finally {
+      await DataBaseProviderService.getProvider({ host, path }, 'mongoose').close();
+    }
+  });
+
   // ─── Player records ─────────────────────────────────────────────────────────
-  const player = program.command('player').description('Cyberia player profiles: held stacks');
+  const player = program.command('player').description('Cyberia player records: held stacks');
 
   const openPlayers = async (options) => {
     const { host, path, db } = resolveDeployDb(options);
@@ -4488,6 +4629,9 @@ try {
   const content = program.command('content').description('The Cyberia content artifact: status, audit and import');
 
   const CONTENT_APIS = [
+    'cyberia-economy',
+    'cyberia-economic-item-policy',
+    'cyberia-market',
     'cyberia-skill',
     'cyberia-entity-type-default',
     'cyberia-map',
@@ -4539,19 +4683,6 @@ try {
       ok = ok && storage.ok;
     }
     process.exit(ok ? 0 : 1);
-  });
-
-  releaseEnvOptions(
-    catalog
-      .command('repair')
-      .description(
-        'Report the definitions legacy quests and actions still pin and the items they make ambiguous; print the audit result as JSON',
-      )
-      .option('--apply', 'Remove every legacy pin: each item then resolves through the catalog alone'),
-  ).action(async (options = {}) => {
-    const { provider } = await openContent(options);
-    console.log(JSON.stringify(await repairLegacyPins(provider.models, { apply: !!options.apply }), null, 2));
-    process.exit(0);
   });
 
   content
@@ -4643,7 +4774,7 @@ try {
       .option('--dry-run', 'Plan only; write nothing')
       .description(
         'Import the content artifact: Object Layer definitions and their catalog bindings, entity-type ' +
-          'defaults, skills, maps, quests, dialogues and actions of the foundation, or of one saga. Idempotent',
+          'defaults, skills, maps, quests, dialogues, markets, actions and economies of the foundation, or of one saga. Idempotent',
       ),
   ).action(async (options = {}) => {
     const artifact = contentArtifact();

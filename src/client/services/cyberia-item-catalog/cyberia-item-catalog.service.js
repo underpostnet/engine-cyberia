@@ -19,6 +19,13 @@ class CyberiaItemCatalogService {
   static get = (options = {}) =>
     request(buildQueryUrl(getApiBaseUrl({ id: options.id && itemPath(options.id), endpoint }), options).toString());
 
+  /** The CID each item id runs now, or null for an unbound one. */
+  static resolve = ({ itemIds }) => {
+    const url = new URL(getApiBaseUrl({ id: 'resolve', endpoint }));
+    url.searchParams.set('ids', itemIds.join(','));
+    return request(url.toString());
+  };
+
   /** The items a bind can add: a published definition and no binding. `q` matches a part of the id. */
   static getUnbound = ({ q = '' } = {}) => {
     const url = new URL(getApiBaseUrl({ id: 'unbound', endpoint }));
@@ -42,6 +49,31 @@ class CyberiaItemCatalogService {
       method: 'POST',
       body: payloadFactory({ itemId, objectLayerCid, expectedCid: expectedCid ?? '' }),
     });
+
+  /** The canonical definitions of the Object Layer authority whose item id holds `q`, or the one `q` names by CID. */
+  static importSearch = ({ q }) => {
+    const url = new URL(getApiBaseUrl({ id: 'import/search', endpoint }));
+    url.searchParams.set('q', q);
+    return request(url.toString());
+  };
+
+  /** What an import of a definition of the authority would do for `itemId` (default: its own). */
+  static importPreview = ({ cid, itemId = '' }) => {
+    const url = new URL(getApiBaseUrl({ id: `import/${encodeURIComponent(cid)}`, endpoint }));
+    if (itemId) url.searchParams.set('itemId', itemId);
+    return request(url.toString());
+  };
+
+  /** What an import of a definition document would do for `itemId` (default: its own). */
+  static importDocumentPreview = ({ document, itemId = '' }) =>
+    request(getApiBaseUrl({ id: 'import/preview', endpoint }), {
+      method: 'POST',
+      body: payloadFactory({ document, ...(itemId ? { itemId } : {}) }),
+    });
+
+  /** Imports a definition into the live content: `{ cid | document, itemId, bind, expectedCid?, replace?, acknowledged }`. */
+  static importDefinition = (body) =>
+    request(getApiBaseUrl({ id: 'import', endpoint }), { method: 'POST', body: payloadFactory(body) });
 }
 
 export { CyberiaItemCatalogService };

@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">28.57% </span>
+                <span class="strong">30% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>8/28</span>
+                <span class='fraction'>9/30</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">22.22% </span>
+                <span class="strong">20% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/9</span>
+                <span class='fraction'>2/10</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">25% </span>
+                <span class="strong">28% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>6/24</span>
+                <span class='fraction'>7/25</span>
             </div>
         
             
@@ -217,7 +217,16 @@
 <a name='L152'></a><a href='#L152'>152</a>
 <a name='L153'></a><a href='#L153'>153</a>
 <a name='L154'></a><a href='#L154'>154</a>
-<a name='L155'></a><a href='#L155'>155</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -236,7 +245,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -276,6 +285,15 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -366,7 +384,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">9x</span>
+<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -428,8 +446,17 @@ export async function <span class="fstat-no" title="function not covered" >loadS
 export async function <span class="fstat-no" title="function not covered" >loadItemSource(</span>models, itemId) {
   const cid = <span class="cstat-no" title="statement not covered" >await findBoundCid(models, itemId);</span>
 <span class="cstat-no" title="statement not covered" >  if (!cid) <span class="cstat-no" title="statement not covered" >throw requestError(`Item ${itemId} is not a Cyberia item here`, 404);</span></span>
-<span class="cstat-no" title="statement not covered" >  return { ...(await loadSource(models, cid)), artDirection: extractArtDirection(contextOf(itemId)) };</span>
+<span class="cstat-no" title="statement not covered" >  return { ...(await loadSource(models, cid)), artDirection: artDirectionOf(itemId) };</span>
 }
+&nbsp;
+/**
+ * The art direction of an item label from its foundation context; null where the foundation does not
+ * define it. An item needs no stored definition for it.
+ * @param {string} itemId
+ * @returns {Object|null} {@link extractArtDirection}.
+ * @memberof CyberiaProceduralSource
+ */
+export const artDirectionOf = <span class="fstat-no" title="function not covered" >(i</span>temId) =&gt; <span class="cstat-no" title="statement not covered" >extractArtDirection(contextOf(itemId));</span>
 &nbsp;
 /**
  * A page of the existing items: every item label bound to a definition. The filter and the sort
@@ -532,7 +559,7 @@ export const baselineSource = (itemType, { activable, stats }) =&gt; ({
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-22T22:43:46.273Z
+                at 2026-10-27T18:56:05.024Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

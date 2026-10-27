@@ -62,6 +62,20 @@ export const catalogModels = (options) => ({
 });
 
 /**
+ * The cids among some definitions that have stored render frames: the only definitions a view
+ * draws and a frame operation takes.
+ * @param {{ObjectLayerRenderFrames:Object}} models
+ * @param {string[]} cids
+ * @returns {Promise<Set<string>>}
+ * @memberof CyberiaObjectLayerCatalog
+ */
+export const renderedCids = async ({ ObjectLayerRenderFrames }, cids) => {
+  const unique = [...new Set(cids.filter(Boolean))];
+  if (unique.length === 0) return new Set();
+  return new Set(await ObjectLayerRenderFrames.distinct('objectLayerCid', { objectLayerCid: { $in: unique } }));
+};
+
+/**
  * Whether the deployment context serves the Cyberia item catalog. A host without it names
  * definitions by cid only.
  * @param {{host:string,path:string}} options - Router options.
@@ -319,16 +333,33 @@ async function assertRunnable({ ObjectLayer }, cid, options) {
  * @param {string|null} params.expectedCid - The definition the caller saw the item run; empty when unbound.
  * @param {string} params.source - What binds: see `BINDING_SOURCES` of the catalog model.
  * @param {string} [params.by=''] - The actor.
+ * @param {Object} [params.provenance] - Where an imported definition came from.
  * @param {import('mongoose').ClientSession} [params.session] - The transaction the binding joins.
  * @param {Object} [params.options] - Router options of this host.
  * @returns {Promise<Object>} The catalog entry.
  * @throws {Error} 400 when the definition cannot run; 409 when the item runs another definition.
  * @memberof CyberiaObjectLayerCatalog
  */
-export async function bindItem({ models, itemId, objectLayerCid, expectedCid, source, by = '', session, options }) {
+export async function bindItem({
+  models,
+  itemId,
+  objectLayerCid,
+  expectedCid,
+  source,
+  by = '',
+  provenance,
+  session,
+  options,
+}) {
   if (!itemId) throw invalid('An item id is required');
   await assertRunnable(models, objectLayerCid, options);
-  const entry = await models.CyberiaItemCatalog.bind(itemId, objectLayerCid, { expectedCid, source, by, session });
+  const entry = await models.CyberiaItemCatalog.bind(itemId, objectLayerCid, {
+    expectedCid,
+    source,
+    by,
+    provenance,
+    session,
+  });
   await CacheService.invalidate(objectLayerCache(options));
   return entry;
 }
@@ -382,6 +413,17 @@ export function composeItemDefinition({ boundData, payload, setOnInsert = null }
   next.data.stats = CyberiaObjectLayerProfile.validateStats(next.data.stats);
   return next;
 }
+
+/**
+ * The cid an exact publication of a stored definition gives: its content composed alone, with the
+ * render it names. A revision stored under the current profile gives its own cid.
+ * @param {{data:Object}} definition - A stored definition, lean.
+ * @returns {string}
+ * @memberof CyberiaObjectLayerCatalog
+ */
+export const exactDefinitionCid = (definition) =>
+  objectLayerIdentity(composeItemDefinition({ boundData: null, payload: { data: structuredClone(definition.data) } }))
+    .cid;
 
 /**
  * Publishes a definition of a Cyberia item under the Cyberia profile. The item keeps its binding:

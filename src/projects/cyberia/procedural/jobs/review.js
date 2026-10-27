@@ -97,6 +97,7 @@ export async function openForEdit({ models, jobId, id, actor }) {
   });
   if (!opened) throw await conflict(models, item, EDITABLE);
   await recordAudit(models, auditOf(item, 'item.opened_for_edit', actor));
+  await syncJob({ models, jobId: item.jobId });
   return reviewContextOf(await models.CyberiaProceduralJob.findById(jobId).lean(), opened);
 }
 
@@ -120,10 +121,9 @@ async function recordRevision({ models, id, cid, actor, now = new Date() }) {
   if (!item) throw requestError('Job item not found', 404);
   if (!EDITABLE.includes(item.status)) throw await conflict(models, item, EDITABLE);
   if (item.candidateCid === cid) {
-    return (
-      (await Item.advance({ id, from: ['editing'], to: 'review', where: { candidateCid: cid } })) ??
-      (await Item.findById(id).lean())
-    );
+    const reviewed = await Item.advance({ id, from: ['editing'], to: 'review', where: { candidateCid: cid } });
+    if (reviewed) await syncJob({ models, jobId: item.jobId, now });
+    return reviewed ?? (await Item.findById(id).lean());
   }
   const { spec } = await Job.findById(item.jobId, { spec: 1 }).lean();
   const validation = await validateRevision({ models, cid, item, spec, now });
@@ -145,6 +145,7 @@ async function recordRevision({ models, id, cid, actor, now = new Date() }) {
       reason: item.review.decision === 'approved' ? 'the approval of the previous revision no longer applies' : '',
     }),
   );
+  await syncJob({ models, jobId: item.jobId, now });
   return updated;
 }
 
@@ -216,7 +217,36 @@ export async function approveItem({ models, jobId, id, cid, actor, reason = '', 
   });
   if (!approved) throw await conflict(models, item, ITEM_REVIEWABLE);
   await recordAudit(models, auditOf(item, 'item.approved', actor, { reason }));
+  await syncJob({ models, jobId: item.jobId, now });
   return approved;
+}
+
+/**
+ * Takes back the approval of an item: it returns to review with its revision, and no decision covers it.
+ * @param {Object} params
+ * @param {Object} params.models
+ * @param {string} params.jobId
+ * @param {string} params.id - The item's document id.
+ * @param {string} params.actor
+ * @param {string} [params.reason]
+ * @param {Date} [params.now]
+ * @returns {Promise<Object>} The item.
+ * @throws {Error} 409 when the item is not approved.
+ * @memberof CyberiaProceduralReview
+ */
+export async function withdrawApproval({ models, jobId, id, actor, reason = '', now = new Date() }) {
+  const item = await findItem(models, jobId, id);
+  const withdrawn = await models.CyberiaProceduralJobItem.advance({
+    id: item._id,
+    from: ['approved'],
+    to: 'review',
+    where: { candidateCid: item.candidateCid },
+    set: { review: EMPTY_REVIEW },
+  });
+  if (!withdrawn) throw await conflict(models, item, ['approved']);
+  await recordAudit(models, auditOf(item, 'item.approval_withdrawn', actor, { reason }));
+  await syncJob({ models, jobId: item.jobId, now });
+  return withdrawn;
 }
 
 /**
@@ -284,7 +314,7 @@ export async function regenerateItem({ models, jobId, id, actor, reason = '', no
       seed: regenerationSeed(item.seed),
       attempt: 0,
       predecessor: { cid: item.candidateCid, seed: item.seed, revision: item.revision },
-      error: { message: '', at: null },
+      error: { message: '', retryable: false, at: null },
       validation: { ok: false, checkedAt: null, problems: [] },
       diversity: { score: null, nearest: '', metrics: {} },
       signature: null,
@@ -294,6 +324,44 @@ export async function regenerateItem({ models, jobId, id, actor, reason = '', no
   });
   if (!queued) throw await conflict(models, item, from);
   await recordAudit(models, auditOf(item, 'item.regenerated', actor, { newRevision: item.revisions.length, reason }));
+  await syncJob({ models, jobId: item.jobId, now });
+  return queued;
+}
+
+/**
+ * Queues a failed item again under its own seed: the same spec, the same seed and the same output,
+ * so it adds no candidate. Only a failure a second run can pass takes a retry: a lost lease or a
+ * failing store, not a refusal of the generator or an invalid result.
+ * @param {Object} params
+ * @param {Object} params.models
+ * @param {string} params.jobId
+ * @param {string} params.id - The item's document id.
+ * @param {string} params.actor
+ * @param {Date} [params.now]
+ * @returns {Promise<Object>} The queued item.
+ * @throws {Error} 409 when the job was cancelled, or the item did not fail in a way a retry passes.
+ * @memberof CyberiaProceduralReview
+ */
+export async function retryItem({ models, jobId, id, actor, now = new Date() }) {
+  const job = await models.CyberiaProceduralJob.findById(jobId, { status: 1 }).lean();
+  if (job?.status === 'cancelled') throw requestError('The job was cancelled, so it generates no more', 409);
+  const item = await findItem(models, jobId, id);
+  if (item.status !== 'failed' || !item.error?.retryable)
+    throw requestError(
+      item.status === 'failed'
+        ? `A run under the same seed fails the same way (${item.error?.message}): generate a new result`
+        : `The item is ${item.status}; a retry needs a failed item`,
+      409,
+    );
+  const queued = await models.CyberiaProceduralJobItem.advance({
+    id: item._id,
+    from: ['failed'],
+    to: 'queued',
+    where: { 'error.retryable': true },
+    set: { attempt: 0, error: { message: '', retryable: false, at: null }, finishedAt: null },
+  });
+  if (!queued) throw await conflict(models, item, ['failed']);
+  await recordAudit(models, auditOf(item, 'item.retried', actor, { reason: item.error.message }));
   await syncJob({ models, jobId: item.jobId, now });
   return queued;
 }

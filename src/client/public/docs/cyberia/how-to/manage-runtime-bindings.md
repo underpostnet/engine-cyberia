@@ -57,6 +57,35 @@ world names changes.
 In the Object Layer Studio, a banner above the editor says whether the revision you edit is the
 runtime version. **Bind as Runtime Version** there does the same bind. A save never binds.
 
+## Import a definition from Object Layer
+
+A definition another studio published to the Object Layer authority can run here. The definition is
+enough: the import reads the render it names from IPFS and rebuilds the render frames and the atlas
+from it. The import stores all of it on this host, so the game never asks the authority for it.
+
+1. Click **Import from Object Layer**. Name the definition in one of two ways:
+   - Type a part of the item id or a CID, click **Search**, then click **Preview** on a result.
+   - Paste its document, or click **Attach JSON file**, then click **Check document**. The document
+     is the data of one definition, exactly `{ item, stats, render }`: every field and no other.
+     The browser names each defect before the server checks it.
+2. Read the preview. It draws the idle frame and shows the item, its CID, where it comes from, its
+   profile, its frames and what the import stores here. The server checks it first: a definition
+   with a problem, for example bytes that do not hash to its CID, a render that IPFS does not hold,
+   or an unknown item type, shows the problem and does not import. A document the authority does
+   not hold is published there by the import.
+3. Read the warnings. The Object Layer protocol carries no license or author, so the view asks you
+   to confirm the right to use the definition. Check **I confirm**.
+4. Choose whether to bind. Without **Bind an item to it now**, the import only adds the definition to
+   the live content, and no item moves. With it, choose the item id under **Bind to** and click
+   **Check item id**. When the item runs another definition, check **Replace the binding** to
+   replace it. The earlier definition stays stored, and the history keeps it.
+5. Click **Import** (or **Import and bind**), and confirm. A bound item runs the definition in every
+   world after its next reload. The history of the item shows the import and its provenance.
+
+If another moderator bound the item meanwhile, the import answers 409 and binds nothing: check the
+item id again. An import of what this host stores already changes nothing. An import of a definition
+an item runs, whose frames or atlas this host lacks, restores them and reloads the game servers.
+
 ## Read the IPFS state
 
 Click **IPFS** on a definition. One line for each file under `/object-layer/cid/<cid>/` shows its

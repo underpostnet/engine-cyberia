@@ -82,7 +82,7 @@ const RevisionSchema = new Schema(
  * @property {number} ordinal - Position in the job, from 0
  * @property {string} targetItemId - The item the candidate becomes: an existing item id, or the proposed id of a new item; the `data.item.id` of every revision
  * @property {string} sourceCid - Object Layer the target item ran on when the job was created; empty for a new item
- * @property {string} paletteId - Palette Template of the candidate; empty when its palette choice names none
+ * @property {string} paletteId - The palette of the candidate; empty when its palette choice names none
  * @property {string} templateId - Genesis Template the candidate starts from
  * @property {{parentCid:string,parentItemId:string,parentRevision:number|null,generationRunId:string}} lineage - Where the source came from; the parent revision is the source revision
  * @property {string} generatedCid - Cid of the latest generated revision
@@ -94,7 +94,7 @@ const RevisionSchema = new Schema(
  * @property {Object} metrics - What the generator reported
  * @property {{score:number|null,nearest:string,metrics:Object}} diversity - How far the current generation stands from the source and its siblings
  * @property {Object|null} signature - The compact signature of the current generation, for the diversity of its siblings
- * @property {{message:string,at:Date}} error - Why the last run failed
+ * @property {{message:string,retryable:boolean,at:Date}} error - Why the last run failed, and whether a run under the same seed can succeed
  * @property {{ok:boolean,checkedAt:Date,problems:string[]}} validation - Technical validation of the current revision
  * @property {Array<Object>} revisions - Every revision, oldest first
  * @property {{cid:string,seed:number,revision:number}} predecessor - The generation a regeneration replaced
@@ -130,7 +130,11 @@ const CyberiaProceduralJobItemSchema = new Schema(
       metrics: { type: Schema.Types.Mixed, default: () => ({}) },
     },
     signature: { type: Schema.Types.Mixed, default: null },
-    error: { message: { type: String, default: '' }, at: { type: Date, default: null } },
+    error: {
+      message: { type: String, default: '' },
+      retryable: { type: Boolean, default: false },
+      at: { type: Date, default: null },
+    },
     validation: {
       ok: { type: Boolean, default: false },
       checkedAt: { type: Date, default: null },

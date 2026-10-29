@@ -18,13 +18,13 @@ vi.mock('../../../src/api/ipfs/ipfs.client.js', () => ({ IpfsClient: {} }));
 vi.mock('../../../src/projects/cyberia/runtime/hot-reload-trigger.js', () => ({ triggerHotReload: vi.fn() }));
 
 const {
-  backupContentDump,
   beginContentRelease,
   contentPartitionOf,
   contentReleaseRowFactory,
   importArtifactContent,
-  publishContentRelease,
   pruneContentReleases,
+  requiredCanonicalCids,
+  settleCanonical,
   releaseDatabaseName,
   releaseDbConf,
   reloadContentServers,
@@ -217,6 +217,7 @@ const content = () => {
       CyberiaEconomicItemPolicy: new FakeModel([
         { economyCode: 'standard', itemId: 'sword', buyback: true, buybackPayout: 2 },
       ]),
+      CyberiaGlobalContent: new FakeModel([]),
     },
   };
 };
@@ -246,43 +247,6 @@ describe('release identity', () => {
   });
 });
 
-describe('host backup content', () => {
-  let backupDir;
-  beforeEach(() => {
-    backupDir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'backup-content-'));
-    for (const database of ['cyberia-content', 'cyberia-content-r1', 'cyberia-content-r2'])
-      fs.mkdirSync(nodePath.join(backupDir, database));
-    return () => fs.rmSync(backupDir, { recursive: true, force: true });
-  });
-  const ledger = [
-    { releaseId: 'r1', status: 'retired', database: 'cyberia-content-r1' },
-    { releaseId: 'r2', status: 'active', database: 'cyberia-content-r2' },
-  ];
-
-  it('reads the dump of the database the active release served, by the name the ledger records', () => {
-    expect(backupContentDump({ ledger, backupDir, workspace: 'cyberia-content' })).toEqual({
-      releaseId: 'r2',
-      database: 'cyberia-content-r2',
-      dir: nodePath.join(backupDir, 'cyberia-content-r2'),
-    });
-  });
-
-  it('reads the workspace dump when no release was active', () => {
-    expect(backupContentDump({ ledger: ledger.slice(0, 1), backupDir, workspace: 'cyberia-content' })).toEqual({
-      releaseId: '',
-      database: 'cyberia-content',
-      dir: nodePath.join(backupDir, 'cyberia-content'),
-    });
-  });
-
-  it('refuses a backup that holds no dump of the served database', () => {
-    fs.rmSync(nodePath.join(backupDir, 'cyberia-content-r2'), { recursive: true });
-    expect(() => backupContentDump({ ledger, backupDir, workspace: 'cyberia-content' })).toThrow(
-      /holds no dump of cyberia-content-r2/,
-    );
-  });
-});
-
 describe('candidate validation', () => {
   it('passes a release whose every reference resolves', async () => {
     const { models, hatchet, sword } = content();
@@ -296,12 +260,50 @@ describe('candidate validation', () => {
       'labels',
       'skills',
       'render',
+      'global',
       'instances',
       'economy',
       'schema',
     ]);
-    expect(validation.manifest).toEqual({ instances: ['FOREST'], maps: 1, bindings: 2, quests: 1, actions: 1 });
+    expect(validation.manifest).toEqual({
+      instances: ['FOREST'],
+      maps: 1,
+      bindings: 2,
+      global: 0,
+      quests: 1,
+      actions: 1,
+    });
     expect(validation.dependencies).toEqual([hatchet.cid, sword.cid].sort());
+  });
+
+  it('passes global content no world, entity default or binding names, and fails one the release cannot serve', async () => {
+    const { models, hatchet, sword } = content();
+    const lantern = definition('lantern', 3, true);
+    const banner = definition('banner', 1);
+    const fileId = new Types.ObjectId();
+    models.ObjectLayer.docs.push(clone(lantern), clone(banner));
+    models.AtlasSpriteSheet.docs.push({ objectLayerCid: lantern.cid, fileId, metadata: layoutOf('lantern') });
+    models.File.docs.push({ _id: fileId, data: primaryOf('lantern') });
+    models.CyberiaGlobalContent.docs.push({ objectLayerCid: lantern.cid }, { objectLayerCid: banner.cid });
+    const resolveCanonical = canonicalFrom([hatchet, sword, lantern, banner]);
+    const passed = await validateContentRelease(models, { resolveCanonical });
+    expect(failing(passed)).toEqual({});
+    expect(passed.checks.find(({ name }) => name === 'global').count).toBe(2);
+    expect(passed.checks.find(({ name }) => name === 'canonical').count).toBe(4);
+    expect(passed.manifest.global).toBe(2);
+    expect(passed.dependencies).toEqual([hatchet.cid, sword.cid, lantern.cid, banner.cid].sort());
+
+    const absent = definition('absent', 2);
+    models.CyberiaGlobalContent.docs.push({ objectLayerCid: absent.cid });
+    models.File.docs.find(({ _id }) => _id === fileId).data = Buffer.from('another image');
+    models.ObjectLayer.docs.find(({ cid }) => cid === banner.cid).origin = 'draft';
+    const failed = failing(await validateContentRelease(models, { resolveCanonical }));
+    expect(failed.global).toEqual([
+      expect.stringMatching(new RegExp(`^${lantern.cid}: the atlas holds render \\w+`)),
+      `${banner.cid}: a draft, never published`,
+      `${absent.cid}: not in the release cache`,
+    ]);
+    expect(failed.canonical).toEqual([`${absent.cid}: unknown to the Object Layer authority`]);
   });
 
   it('fails on a world without an active economy, or an item policy of an unbound label', async () => {
@@ -431,7 +433,7 @@ describe('candidate validation', () => {
     models.File.docs[0].data = Buffer.from('another image');
     const other = renderContractOf({ primary: Buffer.from('another image'), metadata: layoutOf('hatchet') });
     expect(await validate()).toEqual([
-      `hatchet: the atlas holds render ${other.cid} + ${named.metadataCid}, the definition names ${named.cid} + ${named.metadataCid}`,
+      `hatchet (${hatchet.cid}): the atlas holds render ${other.cid} + ${named.metadataCid}, the definition names ${named.cid} + ${named.metadataCid}`,
     ]);
 
     models.File.docs[0].data = primaryOf('hatchet');
@@ -441,7 +443,7 @@ describe('candidate validation', () => {
       metadata: models.AtlasSpriteSheet.docs[0].metadata,
     });
     expect(await validate()).toEqual([
-      `hatchet: the atlas holds render ${named.cid} + ${relaid.metadataCid}, the definition names ${named.cid} + ${named.metadataCid}`,
+      `hatchet (${hatchet.cid}): the atlas holds render ${named.cid} + ${relaid.metadataCid}, the definition names ${named.cid} + ${named.metadataCid}`,
     ]);
   });
 
@@ -503,45 +505,152 @@ describe('candidate validation', () => {
 });
 
 describe('publication to the Object Layer authority', () => {
-  it('stores only the bound definitions the authority does not hold, once, and reports what was new', async () => {
+  /** An ObjectLayer collection a publication reads and caches into. */
+  const layers = (docs) => ({
+    docs,
+    findOne: ({ cid }) => ({ lean: async () => clone(docs.find((doc) => doc.cid === cid) ?? null) }),
+    upsertByIdentity: vi.fn(async (payload, { origin }) => {
+      const doc = docs.find((row) => row.cid === objectLayerIdentity(payload).cid);
+      doc.origin = origin;
+      return doc;
+    }),
+  });
+
+  it('needs every bound and every global definition canonical', async () => {
     const { models, hatchet, sword } = content();
-    const pool = new Map([[hatchet.cid, hatchet]]);
-    const sent = [];
-    const publish = async (doc) => {
-      sent.push(doc.cid);
-      const created = !pool.has(doc.cid);
+    const lantern = definition('lantern', 3);
+    models.CyberiaGlobalContent.docs.push({ objectLayerCid: lantern.cid }, { objectLayerCid: hatchet.cid });
+    expect(await requiredCanonicalCids(models)).toEqual([hatchet.cid, sword.cid, lantern.cid].sort());
+  });
+
+  it('reads the authority first and sends nothing it already holds', async () => {
+    const hatchet = definition('hatchet', 5);
+    const publish = vi.fn();
+    const result = await settleCanonical({
+      ObjectLayer: layers([{ ...hatchet, origin: 'draft' }]),
+      cid: hatchet.cid,
+      publish,
+      resolveCanonical: async () => hatchet,
+    });
+    expect(result).toEqual({ contentHash: hatchet.contentHash, sent: false });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('sends a definition the authority lacks, and completes only once the authority holds it', async () => {
+    const sword = definition('sword', 9);
+    const ObjectLayer = layers([{ ...sword, origin: 'draft' }]);
+    const pool = new Map();
+    const publish = vi.fn(async (doc) => {
       pool.set(doc.cid, doc);
-      return { cid: objectLayerIdentity(doc).cid, created };
+      return { cid: doc.cid, created: true };
+    });
+    expect(
+      await settleCanonical({
+        ObjectLayer,
+        cid: sword.cid,
+        publish,
+        resolveCanonical: async (cid) => pool.get(cid) ?? null,
+      }),
+    ).toEqual({
+      contentHash: sword.contentHash,
+      sent: true,
+    });
+    // The draft became the cache copy of the canonical content.
+    expect(ObjectLayer.upsertByIdentity).toHaveBeenCalledWith(expect.anything(), { origin: 'cache' });
+    expect(ObjectLayer.docs[0].origin).toBe('cache');
+
+    const acknowledged = vi.fn(async (doc) => ({ cid: doc.cid, created: true }));
+    await expect(
+      settleCanonical({
+        ObjectLayer: layers([sword]),
+        cid: sword.cid,
+        publish: acknowledged,
+        resolveCanonical: async () => null,
+      }),
+    ).rejects.toMatchObject({ retryable: true, message: expect.stringMatching(/does not hold it yet/) });
+  });
+
+  it('settles a publication whose answer was lost by what the authority stored', async () => {
+    const sword = definition('sword', 9);
+    const pool = new Map();
+    const timedOut = async (doc) => {
+      pool.set(doc.cid, doc);
+      throw Object.assign(
+        new Error('POST https://objectlayer.org/api/v1/object-layer/canonical timed out after 5000ms'),
+        {
+          retryable: true,
+          ambiguous: true,
+        },
+      );
     };
     const resolveCanonical = async (cid) => pool.get(cid) ?? null;
-    const first = await publishContentRelease(models, { publish, resolveCanonical });
-    expect(first).toMatchObject({ name: 'publication', ok: true, count: 2, created: 1 });
-    const again = await publishContentRelease(models, { publish, resolveCanonical });
-    expect(again).toMatchObject({ ok: true, count: 2, created: 0 });
-    expect(sent).toEqual([sword.cid]);
-  });
-
-  it('fails when the authority stores the content under another identity', async () => {
-    const { models } = content();
-    const result = await publishContentRelease(models, {
-      publish: async () => ({ cid: 'bafkreiother', created: true }),
-      resolveCanonical: async () => null,
+    expect(
+      await settleCanonical({ ObjectLayer: layers([sword]), cid: sword.cid, publish: timedOut, resolveCanonical }),
+    ).toMatchObject({
+      sent: true,
     });
-    expect(result.ok).toBe(false);
-    expect(result.findings[0]).toMatch(/the authority stored it as bafkreiother/);
+
+    const lost = async () => {
+      throw Object.assign(new Error('timed out'), { retryable: true, ambiguous: true });
+    };
+    await expect(
+      settleCanonical({
+        ObjectLayer: layers([sword]),
+        cid: sword.cid,
+        publish: lost,
+        resolveCanonical: async () => null,
+      }),
+    ).rejects.toMatchObject({ retryable: true });
   });
 
-  it('fails on a lookup the authority cannot answer, and sends nothing for it', async () => {
-    const { models } = content();
+  it('fails for good on a refusal, another identity, or other content under the same CID', async () => {
+    const sword = definition('sword', 9);
+    const absent = async () => null;
+    await expect(
+      settleCanonical({
+        ObjectLayer: layers([sword]),
+        cid: sword.cid,
+        publish: async () => {
+          throw Object.assign(new Error('POST answered 400'), { status: 400, retryable: false });
+        },
+        resolveCanonical: absent,
+      }),
+    ).rejects.toMatchObject({ retryable: false });
+    await expect(
+      settleCanonical({
+        ObjectLayer: layers([sword]),
+        cid: sword.cid,
+        publish: async () => ({ cid: 'bafkreiother' }),
+        resolveCanonical: absent,
+      }),
+    ).rejects.toMatchObject({ retryable: false, message: expect.stringMatching(/stored .* as bafkreiother/) });
+    await expect(
+      settleCanonical({
+        ObjectLayer: layers([sword]),
+        cid: sword.cid,
+        resolveCanonical: async () => ({ ...sword, contentHash: 'other' }),
+      }),
+    ).rejects.toMatchObject({ retryable: false, message: expect.stringMatching(/holds other content/) });
+    await expect(
+      settleCanonical({ ObjectLayer: layers([]), cid: sword.cid, resolveCanonical: absent }),
+    ).rejects.toMatchObject({
+      retryable: false,
+    });
+  });
+
+  it('leaves a lookup the authority cannot answer to a retry, and sends nothing meanwhile', async () => {
+    const sword = definition('sword', 9);
     const publish = vi.fn();
-    const result = await publishContentRelease(models, {
-      publish,
-      resolveCanonical: async () => {
-        throw new Error('The object-layer domain is unavailable');
-      },
-    });
-    expect(result.ok).toBe(false);
-    expect(result.findings[0]).toMatch(/domain is unavailable/);
+    await expect(
+      settleCanonical({
+        ObjectLayer: layers([sword]),
+        cid: sword.cid,
+        publish,
+        resolveCanonical: async () => {
+          throw Object.assign(new Error('The object-layer domain is unavailable'), { retryable: true });
+        },
+      }),
+    ).rejects.toMatchObject({ retryable: true });
     expect(publish).not.toHaveBeenCalled();
   });
 });
@@ -750,10 +859,12 @@ describe('candidate database', () => {
     return { begun, reset };
   };
 
-  it('empties the database of every build that runs: a first build and a retry of a failed one', async () => {
+  it('empties the database of a first build and keeps it for a retry of a failed one', async () => {
     expect((await begin([], 'v1')).reset).toEqual(['cyberia-content-v1']);
     const failed = { releaseId: 'v1', status: 'failed', source, database: 'cyberia-content-v1' };
-    expect((await begin([failed], 'v1')).reset).toEqual(['cyberia-content-v1']);
+    const retried = await begin([failed], 'v1');
+    expect(retried.reset).toEqual([]);
+    expect(retried.begun.resumed).toBe(true);
   });
 
   it('never empties a release it keeps', async () => {
@@ -784,10 +895,27 @@ describe('artifact import order', () => {
     ]);
   });
 
+  it('imports the global content after the sagas and before the instances, whatever instances it selects', async () => {
+    const { ran, run } = recorder();
+    const manifest = {
+      sagas: ['amethyst-strata-expansion'],
+      instances: ['test'],
+      global: [`bafkrei${'a'.repeat(52)}`],
+    };
+    await importArtifactContent({ run, ...selectReleaseContent({ manifest, instances: ['test'] }), releaseId: 'v1' });
+    expect(ran).toEqual([
+      'content import --release v1',
+      'content import --saga amethyst-strata-expansion --rebind --release v1',
+      'content import --global --release v1',
+      'instance test --import --release v1',
+    ]);
+  });
+
   it('runs the same import for the same artifact and content set, and leaves undeclared instances out', async () => {
     const manifest = {
       sagas: ['amethyst-strata-expansion'],
       instances: ['amethyst-strata-expansion', 'fallback', 'test'],
+      global: [],
     };
     const imported = async () => {
       const { ran, run } = recorder();
@@ -1092,7 +1220,10 @@ describe('deploy pipeline', () => {
     expect(build.match(/importArtifactContent\(\{\s+run: artifactImportRunner\([\s\S]*?releaseId: id,/g)).toHaveLength(
       2,
     );
-    expect(build).toContain('artifactImportRunner(`${buildDir}/source`, options)');
+    // A retry imports the verified artifact the candidate holds, never a second build of it.
+    expect(build).toContain('artifactImportRunner(root, options)');
+    expect(build).toContain('materializeContentArtifact(releaseStore(context), record.digest');
+    expect(build.match(/step: ingest,/g)).toHaveLength(2);
   });
 
   it('bootstraps a development workspace through the same ordered import, without a release', () => {
@@ -1109,7 +1240,7 @@ describe('deploy pipeline', () => {
       cli.indexOf(".command('validate [release-id]')"),
     );
     expect(build).toContain('const instances = releaseInstanceCodes(codeList(options.instances));');
-    expect(build.match(/\.\.\.selectReleaseContent\(\{ manifest(: built)?, instances \}\)/g)).toHaveLength(2);
+    expect(build.match(/\.\.\.selectReleaseContent\(\{ manifest(: [^,]+)?, instances \}\)/g)).toHaveLength(2);
     expect(script).not.toMatch(/CONTENT_INSTANCES="\$\{CONTENT_INSTANCES:-[^}]/);
   });
 

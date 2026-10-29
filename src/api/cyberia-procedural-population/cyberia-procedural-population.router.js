@@ -88,6 +88,291 @@ class CyberiaProceduralPopulationRouter {
       */
       return await handle('get')(req, res);
     });
+    router.get(`/:id/runtime-context`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Where the map runs'
+        #swagger.description = 'The runtime context of the map in the working graph of the population: each instance and universe with its state, association and preview source, and the problems of the graph. Writes nothing.'
+        #swagger.path = '/cyberia-procedural-population/{id}/runtime-context'
+        #swagger.method = 'get'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('runtimeContext')(req, res);
+    });
+    router.get(`/:id/instances/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'An instance in the working graph'
+        #swagger.description = 'The instance as the working graph of the population holds it: the document the Instance Studio edits, its state and its revisions.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}'
+        #swagger.method = 'get'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('instanceDraft')(req, res);
+    });
+    router.put(`/:id/instances/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Save an instance draft'
+        #swagger.description = 'Saves the draft of an instance in the population: document, conf, the revision it starts from and the revision of the draft. The canonical instance changes only at the publication.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}'
+        #swagger.method = 'put'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('saveInstanceDraft')(req, res);
+    });
+    router.delete(`/:id/instances/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Discard an instance draft'
+        #swagger.description = 'Discards the draft of an instance: the persisted instance shows again. Nothing canonical changes.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}'
+        #swagger.method = 'delete'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('discardDocumentDraft')(req, res);
+    });
+    router.post(`/:id/instances/:code/rebase`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Rebase an instance draft'
+        #swagger.description = 'Moves the draft onto the revision the stored instance is at now, keeping the fields the draft changed; a field both changed is a conflict unless prefer is draft.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}/rebase'
+        #swagger.method = 'post'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('rebaseDocumentDraft')(req, res);
+    });
+    router.post(`/:id/universes/:code/rebase`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Rebase a universe draft'
+        #swagger.description = 'Moves the draft onto the revision the stored universe is at now, keeping the fields the draft changed; a field both changed is a conflict unless prefer is draft.'
+        #swagger.path = '/cyberia-procedural-population/{id}/universes/{code}/rebase'
+        #swagger.method = 'post'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('rebaseDocumentDraft')(req, res);
+    });
+    router.post(`/:id/instances/:code/variants`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Propose a variant'
+        #swagger.description = 'Proposes an instance-specific variant of an entity-type default the instance references; the publication creates it with its reference.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}/variants'
+        #swagger.method = 'post'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('proposeVariant')(req, res);
+    });
+    router.put(`/:id/instances/:code/variants/:key`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Save a variant'
+        #swagger.description = 'Saves the fields of a variant the instance draft proposes.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}/variants/{key}'
+        #swagger.method = 'put'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('saveVariant')(req, res);
+    });
+    router.delete(`/:id/instances/:code/variants/:key`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Drop a variant'
+        #swagger.description = 'Drops a variant the instance draft proposes: the instance references the row the variant copies again.'
+        #swagger.path = '/cyberia-procedural-population/{id}/instances/{code}/variants/{key}'
+        #swagger.method = 'delete'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('dropVariant')(req, res);
+    });
+    router.get(`/:id/universes/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'A universe in the working graph'
+        #swagger.description = 'The universe as the working graph of the population holds it, with each member as the Universe Studio shows it.'
+        #swagger.path = '/cyberia-procedural-population/{id}/universes/{code}'
+        #swagger.method = 'get'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('universeDraft')(req, res);
+    });
+    router.put(`/:id/universes/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Save a universe draft'
+        #swagger.description = 'Saves the draft of a universe in the population. The canonical universe changes only at the publication.'
+        #swagger.path = '/cyberia-procedural-population/{id}/universes/{code}'
+        #swagger.method = 'put'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('saveUniverseDraft')(req, res);
+    });
+    router.delete(`/:id/universes/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Discard a universe draft'
+        #swagger.description = 'Discards the draft of a universe: the persisted universe shows again. Nothing canonical changes.'
+        #swagger.path = '/cyberia-procedural-population/{id}/universes/{code}'
+        #swagger.method = 'delete'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('discardDocumentDraft')(req, res);
+    });
+    router.post(`/:id/topology`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Portal topology in the working graph'
+        #swagger.description = 'What mapCodes and portals connect, with the maps as the population drafts them. Nothing is stored.'
+        #swagger.path = '/cyberia-procedural-population/{id}/topology'
+        #swagger.method = 'post'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('topology')(req, res);
+    });
+    router.post(`/:id/portal-connect`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Portal Connector in the working graph'
+        #swagger.description = 'The portals the Portal Connector proposes for mapCodes, with the maps as the population drafts them. Nothing is stored.'
+        #swagger.path = '/cyberia-procedural-population/{id}/portal-connect'
+        #swagger.method = 'post'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('portalConnect')(req, res);
+    });
+    router.post(`/:id/default-drafts`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Save a default'
+        #swagger.description = 'Saves the row of a default and the instances that run it to the drafts of the population, in one write at the revision the editor read. Stored defaults and confs change at the publication.'
+        #swagger.path = '/cyberia-procedural-population/{id}/default-drafts'
+        #swagger.method = 'post'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('defaultDrafts')(req, res);
+    });
+    router.get(`/:id/default-drafts/:ref`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'A default in the working graph'
+        #swagger.description = 'A stored row, a draft key or new, as the Entity Studio of the population edits it: the row, the instances that run it now and as stored, and the instances of the graph.'
+        #swagger.path = '/cyberia-procedural-population/{id}/default-drafts/{ref}'
+        #swagger.method = 'get'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('defaultDrafts')(req, res);
+    });
+    router.delete(`/:id/default-drafts/:ref`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Discard a default draft'
+        #swagger.description = 'Discards a default draft: the workspace shows the stored row again.'
+        #swagger.path = '/cyberia-procedural-population/{id}/default-drafts/{ref}'
+        #swagger.method = 'delete'
+        #swagger.produces = ['application/json']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('defaultDrafts')(req, res);
+    });
+    router.get(`/:id/map-preview`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'Map draft preview'
+        #swagger.description = 'The picture of the map draft of the population.'
+        #swagger.path = '/cyberia-procedural-population/{id}/map-preview'
+        #swagger.method = 'get'
+        #swagger.produces = ['image/png']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('mapPreview')(req, res);
+    });
+    router.get(`/:id/world-preview/:code`, ...guards, async (req, res) => {
+      /*
+        #swagger.auto = false
+        #swagger.tags = ['cyberia-procedural-population']
+        #swagger.summary = 'World draft preview'
+        #swagger.description = 'The preview of the world of an instance as the working graph of the population holds it. Nothing is stored.'
+        #swagger.path = '/cyberia-procedural-population/{id}/world-preview/{code}'
+        #swagger.method = 'get'
+        #swagger.produces = ['image/png']
+        #swagger.security = [{
+          'bearerAuth': []
+        }]
+      */
+      return await handle('worldPreview')(req, res);
+    });
     router.get(`/:id/impact`, ...guards, async (req, res) => {
       /*
         #swagger.auto = false

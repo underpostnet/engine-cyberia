@@ -23,6 +23,9 @@
  */
 import { createHash } from 'node:crypto';
 import canonicalize from 'canonicalize';
+import { DataBaseProviderService } from '../../../../db/DataBaseProvider.js';
+import { MongooseDB } from '../../../../db/mongo/MongooseDB.js';
+import { CONTENT_PARTITION } from '../../content/content-release.js';
 import {
   CLOSED_BEFORE_COMMIT,
   CyberiaProceduralPopulationDto,
@@ -408,6 +411,30 @@ function mapStep(draft, map, { missing, problems }, publication) {
   return { state: 'ready', detail: `${gridX} × ${gridY} cells · ${draft.entities.length} placements` };
 }
 
+/**
+ * The state of the optional runtime context step: the instances that list the map as the population
+ * leaves them, with the instance and universe drafts it holds.
+ */
+async function contextStep(models, population) {
+  const instances = population.instanceDrafts ?? [];
+  const drafted = new Set(instances.map(({ code }) => code));
+  const listing = new Set(
+    (await models.CyberiaInstance.distinct('code', { cyberiaMapCodes: population.mapCode })).filter(
+      (code) => !drafted.has(code),
+    ),
+  );
+  for (const { code, document } of instances)
+    if (document.cyberiaMapCodes.includes(population.mapCode)) listing.add(code);
+  const drafts = instances.length + (population.universeDrafts ?? []).length;
+  const pending = drafts > 0 ? ` · ${drafts} draft${drafts === 1 ? '' : 's'} saved to the population` : '';
+  if (listing.size === 0)
+    return {
+      state: drafts > 0 ? 'ready' : 'optional',
+      detail: `This map is not assigned to an instance or universe.${pending}`,
+    };
+  return { state: 'ready', detail: `Run by ${listing.size} instance${listing.size === 1 ? '' : 's'}${pending}` };
+}
+
 /** The state of the publish step, from its publication. */
 function publishStep(publication) {
   if (!publication || publication.status === 'cancelled_before_commit')
@@ -432,7 +459,7 @@ function publishStep(publication) {
 export async function populationView(models, population) {
   const { draft, ...fields } = population;
   const state = stateOf(population, ...(await workingState(models, [population])));
-  const [usage, map, defaults, support] = await Promise.all([
+  const [usage, map, defaults, support, context] = await Promise.all([
     targetUsage(
       models,
       state.targets.map(({ itemId }) => itemId),
@@ -441,6 +468,7 @@ export async function populationView(models, population) {
     liveMap(models, population.mapCode),
     workspaceOf(models, population, state.targets),
     itemSupport(models),
+    contextStep(models, population),
   ]);
   const drawn = draft ? await draftIssues(models, population, state.targets, draft.entities) : null;
   return {
@@ -468,6 +496,7 @@ export async function populationView(models, population) {
       items: itemsStep(state.targets),
       defaults: defaultsStep(defaults),
       map: mapStep(draft, map, drawn ?? { missing: [], problems: [] }, population.publication),
+      context,
       publish: publishStep(population.publication),
     },
   };
@@ -535,6 +564,17 @@ export function closedReason({ cancelledAt, publication }) {
   if (publication && !CLOSED_BEFORE_COMMIT.includes(publication.status)) return heldReason(publication);
   return '';
 }
+
+/**
+ * The condition a write of a population adds so it lands only while the population takes changes:
+ * no cancel, and no publication that runs or ran.
+ * @constant {Object}
+ * @memberof CyberiaPopulation
+ */
+export const STILL_OPEN = Object.freeze({
+  cancelledAt: null,
+  $or: [{ publication: null }, { 'publication.status': { $in: CLOSED_BEFORE_COMMIT } }],
+});
 
 /**
  * A population that still takes changes: not cancelled, and with no publication that runs or ran.
@@ -1291,7 +1331,7 @@ export async function saveDraft({ models, id, body, actor }) {
     savedBy: actor,
   };
   const saved = await models.CyberiaProceduralPopulation.updateOne(
-    { _id: population._id, 'draft.revision': draft ? draft.revision : { $exists: false } },
+    { _id: population._id, 'draft.revision': draft ? draft.revision : { $exists: false }, ...STILL_OPEN },
     { $set: { draft: next }, $inc: { revision: 1 } },
   );
   if (!saved.matchedCount) throw requestError('The draft changed while saving: reload it', 409);
@@ -1413,6 +1453,90 @@ export async function cancelPopulation({ models, id, actor, now = new Date() }) 
   return await getPopulation(models, id);
 }
 
+/** The databases that may hold an instance or a map of a host: its base one, the content partition it declares and serves, and every release its ledger keeps for a rollback. */
+async function contentDatabases(options) {
+  const bucket = DataBaseProviderService.getProvider(options);
+  const Release = DataBaseProviderService.servedModels(options).CyberiaContentRelease;
+  return [
+    ...new Set(
+      [
+        bucket.connection.name,
+        bucket.partitions?.[CONTENT_PARTITION]?.name,
+        DataBaseProviderService.servedDatabase(options, CONTENT_PARTITION),
+        ...(Release ? (await Release.find({}, { database: 1 }).lean()).map(({ database }) => database) : []),
+      ].filter(Boolean),
+    ),
+  ];
+}
+
+/**
+ * The files of `ids` something still references: an instance thumbnail or a map thumbnail or preview in
+ * any content database of the host, or an instance draft of any population, with the base it started
+ * from. `exclude` names the drafts of one population that go with the files.
+ * @param {Object} models - {@link populationModels}.
+ * @param {string[]} ids - File ids.
+ * @param {Object} params
+ * @param {Object} params.options - Router options.
+ * @param {{populationId:*, codes:string[]}} [params.exclude]
+ * @returns {Promise<Set<string>>}
+ * @memberof CyberiaPopulation
+ */
+export async function referencedFiles(models, ids, { options, exclude = null }) {
+  const found = new Set();
+  if (ids.length === 0) return found;
+  const add = (values) => values.filter(Boolean).forEach((value) => found.add(String(value)));
+  const { connection } = DataBaseProviderService.getProvider(options);
+  for (const database of await contentDatabases(options)) {
+    const store = connection.useDb(database, { useCache: true });
+    const Instance = await MongooseDB.bindModel(store, 'cyberia-instance');
+    const Map = await MongooseDB.bindModel(store, 'cyberia-map');
+    add(await Instance.distinct('thumbnail', { thumbnail: { $in: ids } }));
+    for (const field of ['thumbnail', 'preview']) add(await Map.distinct(field, { [field]: { $in: ids } }));
+  }
+  const holders = await models.CyberiaProceduralPopulation.find(
+    {
+      $or: [
+        { 'instanceDrafts.document.thumbnail': { $in: ids } },
+        { 'instanceDrafts.base.document.thumbnail': { $in: ids } },
+      ],
+    },
+    { instanceDrafts: 1 },
+  ).lean();
+  for (const { _id, instanceDrafts } of holders)
+    for (const entry of instanceDrafts)
+      if (!exclude || String(_id) !== String(exclude.populationId) || !exclude.codes.includes(entry.code))
+        add([entry.document.thumbnail, entry.base?.document.thumbnail].filter((value) => ids.includes(String(value))));
+  return found;
+}
+
+/**
+ * Deletes the thumbnail files of instance drafts, and of the stored documents they started from, that
+ * nothing references any more ({@link referencedFiles}). Deletes nothing without `apply`.
+ * @param {Object} models - {@link populationModels}.
+ * @param {Object[]} entries - Instance drafts.
+ * @param {Object} params
+ * @param {Object} params.options - Router options.
+ * @param {{populationId:*, codes:string[]}} [params.exclude] - Drafts that go with the files.
+ * @param {boolean} [params.apply=true]
+ * @returns {Promise<{deleted:string[], kept:string[]}>} The files nothing references, and the ones something does.
+ * @memberof CyberiaPopulation
+ */
+export async function dropDraftThumbnails(models, entries, { options, exclude, apply = true }) {
+  const ids = [
+    ...new Set(
+      entries
+        .flatMap(({ document, base }) => [document?.thumbnail, base?.document?.thumbnail])
+        .filter(Boolean)
+        .map(String),
+    ),
+  ];
+  const kept = await referencedFiles(models, ids, { options, exclude });
+  const deleted = ids.filter((id) => !kept.has(id));
+  if (apply && deleted.length > 0)
+    await DataBaseProviderService.getModel('File', options).deleteMany({ _id: { $in: deleted } });
+  return { deleted, kept: [...kept] };
+}
+
 /**
  * Deletes a population of any version, every job it stored with everything they left, and each draft
  * its items stored that nothing else keeps. A published item and a published map keep what the
@@ -1458,6 +1582,10 @@ export async function deletePopulation({ models, id, options, now = new Date() }
     const drafts = await models.ObjectLayer.distinct('cid', { cid: { $in: owned }, origin: 'draft' });
     removed.drafts += (await purgeRevisions({ models, options, cids: drafts })).length;
   }
+  await dropDraftThumbnails(models, population.instanceDrafts ?? [], {
+    options,
+    exclude: { populationId: population._id, codes: (population.instanceDrafts ?? []).map(({ code }) => code) },
+  });
   await Population.deleteOne({ _id: population._id });
   return removed;
 }

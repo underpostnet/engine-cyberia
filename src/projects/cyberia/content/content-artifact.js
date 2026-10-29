@@ -17,7 +17,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { objectLayerIdentity } from '../../../api/object-layer/object-layer.identity.js';
+import { isObjectLayerCid, objectLayerIdentity } from '../../../api/object-layer/object-layer.identity.js';
 import {
   collectInstanceItemIds,
   collectSummonedItemIds,
@@ -34,7 +34,7 @@ import {
 import { readEconomy, replaceEconomy } from '../economy/economy-policy.js';
 
 /** The artifact layout and document shapes this engine reads. */
-export const CONTENT_SCHEMA_VERSION = 10;
+export const CONTENT_SCHEMA_VERSION = 11;
 
 /**
  * The document families of the artifact by file name, in import order: a family names only what
@@ -98,6 +98,13 @@ export function contentSources() {
 export const instanceSourceDir = (code) => path.join(contentSources(), 'content', 'instances', code);
 
 /**
+ * The source directory of the global content: where its export lands, one file per definition.
+ * @returns {string}
+ * @memberof CyberiaContentArtifact
+ */
+export const globalContentSourceDir = () => path.join(contentSources(), 'content', 'global');
+
+/**
  * Whether the content root holds a built artifact. Callers that only run in a full workspace skip
  * without one, as they do without the other sibling checkouts.
  * @returns {boolean}
@@ -129,12 +136,24 @@ const isCodeList = (value) => Array.isArray(value) && value.every((code) => type
  */
 export const RELEASE_ARTIFACT_COLLECTION = 'cyberia-content-artifact';
 
+/**
+ * The collection in which a release database keeps the import files of its artifact while the
+ * release builds, so a retry imports them instead of building the artifact again.
+ * @memberof CyberiaContentArtifact
+ */
+export const RELEASE_IMPORT_COLLECTION = 'cyberia-content-artifact-import';
+
 const MANIFEST_FILE = 'manifest.json';
 
-/** The files a running engine reads: every file but the instance backups, which only an import reads. */
+/** The files only an import reads: the instance backups and the global content. */
+const IMPORT_ONLY = Object.freeze(['instances/', 'global/']);
+
+const isImportFile = (file) => IMPORT_ONLY.some((prefix) => file.startsWith(prefix));
+
+/** The files a running engine reads: every file an import alone does not read. */
 const runtimeFiles = (manifest) =>
   Object.keys(manifest.files)
-    .filter((file) => !file.startsWith('instances/'))
+    .filter((file) => !isImportFile(file))
     .sort();
 
 /** The reason a manifest is invalid, or '' when it is valid. */
@@ -146,6 +165,8 @@ function manifestDefect(manifest) {
   if (!DIGEST_PATTERN.test(manifest.contentDigest ?? '')) return 'contentDigest is not a sha256 digest';
   if (!isPlainObject(manifest.build)) return 'build is missing';
   if (!isCodeList(manifest.instances) || !isCodeList(manifest.sagas)) return 'instances and sagas must be code lists';
+  if (!Array.isArray(manifest.global) || !manifest.global.every(isObjectLayerCid))
+    return 'global must list Object Layer CIDs';
   if (!isPlainObject(manifest.files) || !Object.values(manifest.files).every((digest) => DIGEST_PATTERN.test(digest)))
     return 'files must map each artifact path to a sha256 digest';
   return '';
@@ -190,6 +211,10 @@ function artifactReader(manifest, bytesOf, instanceDir) {
       if (!manifest.instances.includes(code)) throw new Error(`The content artifact holds no instance ${code}`);
       return instanceDir(code, read);
     },
+    globalContent(cid) {
+      if (!manifest.global.includes(cid)) throw new Error(`The content artifact holds no global content ${cid}`);
+      return read(`global/${cid}.json`).toString('utf8');
+    },
   };
 }
 
@@ -221,7 +246,7 @@ export function openContentArtifact(root = contentRoot()) {
 
 /**
  * Stores the files a running engine reads in a release database: the manifest and every file but
- * the instance backups, one document per file. Replaces what the database held.
+ * the instance backups and the global content, one document per file. Replaces what the database held.
  * @param {import('mongodb').Db} db - The release database.
  * @param {Object} opened - {@link openContentArtifact} output.
  * @returns {Promise<number>} The files stored, the manifest included.
@@ -240,7 +265,8 @@ export async function storeContentArtifact(db, opened) {
 
 /**
  * Opens the content artifact a release database holds. It is verified as the artifact on disk is,
- * every file at once, and it must be the content the release records. It holds no instance backups.
+ * every file at once, and it must be the content the release records. It holds no instance backups
+ * and no global content.
  * @param {import('mongodb').Db} db - The release database.
  * @param {string} digest - The content digest the release records.
  * @returns {Promise<Object>} An opened artifact, as {@link openContentArtifact} returns one, and
@@ -268,6 +294,67 @@ export async function loadContentArtifact(db, digest) {
   const files = runtimeFiles(manifest);
   for (const file of files) opened.read(file);
   return { ...opened, files };
+}
+
+/**
+ * Stores the files only an import reads in a release database: the instance backups and the global
+ * content, one document per file. Replaces what the collection held.
+ * @param {import('mongodb').Db} db - The release database.
+ * @param {Object} opened - {@link openContentArtifact} output.
+ * @returns {Promise<number>} The files stored.
+ * @memberof CyberiaContentArtifact
+ */
+export async function stageImportArtifact(db, opened) {
+  const files = Object.keys(opened.manifest.files).filter(isImportFile).sort();
+  const collection = db.collection(RELEASE_IMPORT_COLLECTION);
+  await collection.deleteMany({});
+  for (let index = 0; index < files.length; index += 50)
+    await collection.insertMany(
+      files.slice(index, index + 50).map((file) => ({ _id: file, data: opened.read(file).toString('utf8') })),
+    );
+  return files.length;
+}
+
+/**
+ * Writes the whole artifact a release database holds to a content root: the manifest, the runtime
+ * files and the staged import files, each checked against the manifest.
+ * @param {import('mongodb').Db} db - The release database.
+ * @param {string} digest - The content digest the release records.
+ * @param {string} root - An empty directory.
+ * @returns {Promise<string>} The content root, ready for {@link openContentArtifact}.
+ * @throws {Error} When the database holds another, an incomplete or an altered artifact.
+ * @memberof CyberiaContentArtifact
+ */
+export async function materializeContentArtifact(db, digest, root) {
+  const stored = await loadContentArtifact(db, digest);
+  const imports = new Map(
+    (await db.collection(RELEASE_IMPORT_COLLECTION).find({}).toArray()).map(({ _id, data }) => [_id, data]),
+  );
+  const dist = path.join(root, 'dist');
+  for (const [file, expected] of Object.entries(stored.manifest.files)) {
+    const data = isImportFile(file)
+      ? imports.has(file)
+        ? Buffer.from(imports.get(file), 'utf8')
+        : null
+      : stored.read(file);
+    if (!data) throw new Error(`${db.databaseName} holds no ${file}: build the release artifact again`);
+    if (sha256(data) !== expected) throw new Error(`Content digest mismatch: ${file}`);
+    fs.mkdirSync(path.dirname(path.join(dist, file)), { recursive: true });
+    fs.writeFileSync(path.join(dist, file), data);
+  }
+  fs.writeFileSync(path.join(dist, MANIFEST_FILE), JSON.stringify(stored.manifest));
+  openContentArtifact(root);
+  return root;
+}
+
+/**
+ * Removes the staged import files of a release database: a validated release imports nothing more.
+ * @param {import('mongodb').Db} db - The release database.
+ * @returns {Promise<void>}
+ * @memberof CyberiaContentArtifact
+ */
+export async function dropImportArtifact(db) {
+  await db.collection(RELEASE_IMPORT_COLLECTION).deleteMany({});
 }
 
 let workspaceArtifact;
@@ -311,6 +398,7 @@ function runtimeArtifact(opened) {
       };
     },
     instanceDir: opened.instanceDir,
+    globalContent: opened.globalContent,
   });
 }
 
@@ -321,10 +409,11 @@ function runtimeArtifact(opened) {
  * @returns {{manifest:Object, foundation:Object<string,Object[]>, baseline:ReadonlyArray<Object>,
  *   itemBaseline:Object<string,string>, byItemId:Map<string,Object>, context:Object,
  *   procedural:{templates:Object[], families:string[], palettes:Object[]}, saga:(code:string)=>{saga:Object,
- *   instance:Object, families:Object<string,Object[]>}, instanceDir:(code:string)=>string}} `baseline` holds the
- *   entity-type defaults every world resolves against; `itemBaseline` the item label a new item of each type
- *   takes its function from; `context` is the index of every definition and its references; `procedural`
- *   the Genesis Templates and the palette families and templates.
+ *   instance:Object, families:Object<string,Object[]>}, instanceDir:(code:string)=>string,
+ *   globalContent:(cid:string)=>string}} `baseline` holds the entity-type defaults every world resolves
+ *   against; `itemBaseline` the item label a new item of each type takes its function from; `context` is
+ *   the index of every definition and its references; `procedural` the Genesis Templates and the palette
+ *   families and templates; `globalContent` the text of one `global/<cid>.json` file.
  * @throws {Error} When the artifact is missing, invalid, altered or of an unsupported schema.
  * @memberof CyberiaContentArtifact
  */

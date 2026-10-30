@@ -958,8 +958,9 @@ describe('deploy pipeline', () => {
   });
 
   it('deploys a pinned image, never a floating tag', () => {
-    expect(script).toMatch(/DEPLOY_IMAGE="\$\{DEPLOY_IMAGE:-underpost\/engine-cyberia:v\$\{version\}\}"/);
+    expect(script).toMatch(/image_tag="\$\{DEPLOY_IMAGE:-underpost\/engine-cyberia:v\$\{version\}\}"/);
     expect(script).toMatch(/\*:latest\)\s+if \[ "\$\{ALLOW_LATEST_IMAGE:-0\}" != "1" \]/);
+    expect(script).toMatch(/DEPLOY_IMAGE="\$\(.*node bin image --digest '\$image_tag'"/);
   });
 
   it('runs the stages in order: the data before the rollout, the promotion after readiness', () => {
@@ -1315,9 +1316,9 @@ describe('deploy pipeline', () => {
     }
   });
 
-  it('builds only the game checkouts on the host, and only `release lock` writes the lock', () => {
+  it('builds only the game checkouts on the host, without code graphs, and only `release lock` writes the lock', () => {
     expect(script).not.toMatch(/cyberia-content\.js|npm ci|merge-base|release lock/);
-    expect(script).toContain('node bin/cyberia release build cyberia-server cyberia-client');
+    expect(script).toContain('node bin/cyberia release build cyberia-server cyberia-client --no-graphify');
     expect(cli.match(/writeSourceLockFile\(/g)).toHaveLength(1);
   });
 });

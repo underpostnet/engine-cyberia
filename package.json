@@ -108,7 +108,6 @@
         "httpxy": "^0.5.5",
         "ignore-walk": "^9.0.0",
         "iovalkey": "^0.4.0",
-        "jimp": "^1.6.0",
         "js-yaml": "^5.4.1",
         "json-colorizer": "^3.0.1",
         "jsonwebtoken": "^9.0.3",
@@ -132,7 +131,6 @@
         "socket.io": "^4.8.4",
         "sortablejs": "^1.15.0",
         "split-file": "^2.3.0",
-        "swagger-autogen": "^2.23.7",
         "swagger-ui-express": "^5.0.0",
         "typedoc": "^0.28.20",
         "typescript": "6.0.3",
@@ -153,7 +151,6 @@
         "registry": "https://registry.npmjs.org/"
     },
     "overrides": {
-        "simple-xml-to-json": "1.2.4",
         "minimatch": "^10.2.2",
         "glob": "^11.0.0",
         "diff": ">=8.0.3",

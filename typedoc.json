@@ -24,10 +24,9 @@
     "**/api/object-layer/**",
     "**/client/**",
     "**/docs/**",
-    "**/hardhat/**",
     "**/node_modules/**"
   ],
-  "out": "./public/www.cyberiaonline.com/docs/",
+  "out": "./public/services.cyberiaonline.com/docs/",
   "readme": "./src/client/public/docs/cyberia/overview/index.md",
   "tsconfig": "./tsconfig.docs.json",
   "skipErrorChecking": true,

@@ -40,7 +40,7 @@ test/
     integration/                     what one domain publishes and another serves
   support/                           shared helpers: mongod, binaries, shell harness
 
-hardhat/test/                        Solidity contracts (delegated, see below)
+cyberia-hardhat/test/                Solidity contracts (delegated, see below)
 ```
 
 A domain only carries the levels it needs. MongoDB and the blockchain are
@@ -94,15 +94,15 @@ Each domain and level pair is a Vitest project. The project id is
 `<domain>:<level>`, and `<domain>:<level>:<area>` where a level runs in ordered
 areas, so a selector needs no second lookup table.
 
-| Selector                        | Runs                                  |
-| ------------------------------- | ------------------------------------- |
-| `cyberia`                       | every Cyberia project                 |
-| `cyberia:unit`                  | one project                           |
-| `underpost:integration`         | the five ordered areas                |
-| `underpost:integration:ingress` | one area                              |
-| `ecosystem:contract`            | the cross-domain contracts            |
-| `item-ledger:contract`          | `hardhat/test` — delegated, see below |
-| `all`, or no argument           | every project                         |
+| Selector                        | Runs                                          |
+| ------------------------------- | --------------------------------------------- |
+| `cyberia`                       | every Cyberia project                         |
+| `cyberia:unit`                  | one project                                   |
+| `underpost:integration`         | the five ordered areas                        |
+| `underpost:integration:ingress` | one area                                      |
+| `ecosystem:contract`            | the cross-domain contracts                    |
+| `item-ledger:contract`          | `cyberia-hardhat/test` — delegated, see below |
+| `all`, or no argument           | every project                                 |
 
 ```bash
 underpost test                          # every project, in order
@@ -300,6 +300,11 @@ failed tests, and the report to the job summary.
 Ctrl+C stops the running batch and the run. A second Ctrl+C sends SIGKILL. When
 a batch ends, the runner kills every process the batch left behind.
 
+Vitest keeps the modules it transformed in `node_modules/.vitest-cache` between
+runs. A cached module does not see a directory added after the cache was written:
+a new `src/api/<api>/` directory then fails with `Unknown variable dynamic import`.
+Run `npx vitest --clearCache` once, then run the tests again.
+
 ### Diagnosis
 
 `--diagnose` adds the peak resident memory and the CPU time of each batch to
@@ -340,18 +345,24 @@ reporters, so one run prints readably and emits the JUnit XML the dashboard
 ingests.
 
 A delegated project whose directory is absent is skipped with a warning rather
-than failing: a product build strips the projects it does not own.
+than failing: `item-ledger:contract` runs in the nested `cyberia-hardhat`
+checkout, and a tree without it has no contract suites.
 
 Solidity coverage is Hardhat's own instrumentation and is not merged into
-`coverage/lcov.info` — run `npm run coverage` in `hardhat/` for it.
+`coverage/lcov.info` — run `npm run coverage` in `cyberia-hardhat/` for it.
 
 ---
 
 ## Product contexts
 
-A product owns the test projects in the directories its catalog strips from the
-base template. `dd-cyberia` strips `test/cyberia` and `hardhat`, so it owns the
-`cyberia:*` projects and `item-ledger:contract`.
+A product owns the test projects in the directories its catalog lists in
+`templatePaths`. The product template ships these paths and the base template
+drops them. `dd-cyberia` lists `test/cyberia`, `test/object-layer`,
+`test/item-ledger` and `test/cryptokoyn`, so it owns every project in them.
+
+A project that no product owns ships with the base template, so the base
+template must also carry the sources of that project. The catalog unit test
+fails when a project tests sources that the base template drops.
 
 A product project runs only in its product context. The context is active when
 the product catalog is present and `package.json` declares every package the
@@ -439,12 +450,12 @@ A client declares its whole documentation surface in `conf.client.json`, under
   "typedoc": {
     "name": "CYBERIA Online",
     "entryPoints": ["./src/server", "./src/api"],
-    "out": "./public/www.cyberiaonline.com/docs/",
+    "out": "./public/services.cyberiaonline.com/docs/",
     "readme": "./src/client/public/docs/cyberia/overview/index.md"
   },
   "coverage": [
     { "id": "cyberia", "label": "Cyberia coverage", "suite": "cyberia" },
-    { "id": "hardhat", "label": "Hardhat coverage", "path": "./hardhat" }
+    { "id": "hardhat", "label": "Hardhat coverage", "path": "./cyberia-hardhat" }
   ],
   "references": ["./src/client/public/docs"]
 }
@@ -507,6 +518,12 @@ node bin client <deploy-id> --docs-only         # only the documentation, no cli
 node bin client <deploy-id> '' <host> / --docs watch   # development preview of one client
 node bin client <deploy-id> --env production --docs skip
 ```
+
+TypeDoc is not a dependency of the engine. Only a client with a `docs` block runs
+it. The task fetches `typedoc@latest` with `npm exec`, and npm keeps it with its
+TypeScript peer in the npm cache. The fetch needs the npm registry.
+`UNDERPOST_TYPEDOC_PACKAGE` sets another spec, such as `typedoc@0.28.20`. The run
+record and the client bundle record the TypeDoc version that built the site.
 
 A watch builds no client assets and publishes nothing. It runs the preview of one
 client at `/docs/engine/preview/`, and TypeDoc rebuilds it on every change. Ctrl+C
@@ -580,7 +597,7 @@ as one entry of the docs menu:
   selection — and `dd-cyberia` declares `cyberia`.
 - `path` names another tree that produces its own report under `coverage/`
   (`html/`, `lcov-report/` or flat) — Hardhat's Solidity coverage, from
-  `npm run coverage` in `hardhat/`.
+  `npm run coverage` in `cyberia-hardhat/`.
 
 The reports are produced by the build stage and travel with the deploy artifact;
 no workload container ever runs a test runner to obtain one.
@@ -680,12 +697,11 @@ path above covers dynamic triggering without it.
 
 ## CI
 
-| Workflow                                 | Push to `master`                                               | Pull request                    |
-| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------- |
-| `coverall.ci.yml`                        | `underpost,ecosystem,object-layer,item-ledger:unit,cryptokoyn` | `--changed` from the merge base |
-| `coverall.cyberia.ci.yml`                | the same, plus `cyberia`                                       | `--changed` from the merge base |
-| `pwa-microservices-template-test.ci.yml` | `underpost,ecosystem`                                          | —                               |
-| `hardhat.ci.yml`                         | `npm test` in `hardhat/`                                       | —                               |
+| Workflow                                 | Push to `master`                                                       | Pull request                    |
+| ---------------------------------------- | ---------------------------------------------------------------------- | ------------------------------- |
+| `coverall.ci.yml`                        | `underpost,ecosystem`                                                  | `--changed` from the merge base |
+| `coverall.cyberia.ci.yml`                | `underpost,ecosystem,object-layer,item-ledger:unit,cryptokoyn,cyberia` | `--changed` from the merge base |
+| `pwa-microservices-template-test.ci.yml` | `underpost,ecosystem`                                                  | —                               |
 
 The workflows run the default `safe` footprint. A workflow on a large runner can
 pass `--footprint ci`: one process for the whole selection.
@@ -698,10 +714,10 @@ release validation.
 
 The platform job measures the platform and the contracts, and the cyberia job the
 whole tree, so the two badges read the same metric over the surfaces each product
-ships. The base template strips `test/cyberia`; the `cyberia:*` projects then
-match no files, which is not an error as long as another project has some.
+ships. The base template drops the test directories of every product; the
+projects of a product then match no files, which is not an error as long as
+another project has some.
 
-`hardhat.ci.yml` is path-filtered to `hardhat/**` and installs only that
-project's lockfile, so it stays on Hardhat's own tasks rather than pulling the
-whole engine in to reach the runner. `underpost test item-ledger:contract` is the
-entry point everywhere else.
+The `cyberia-hardhat` repository runs its own workflow,
+`cyberia-hardhat.test.ci.yml`, on Hardhat's own tasks and its own lockfile. In the
+engine workspace, `underpost test item-ledger:contract` is the entry point.

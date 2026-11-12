@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../../sort-arrow-sprite.png);
@@ -19,6 +20,16 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../../index.html">All files</a> / <a href="index.html">src/projects/cyberia/procedural</a> engine.js</h1>
         <div class='clearfix'>
             
@@ -326,13 +337,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
+<span class="cline-any cline-yes">30x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">30x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -343,7 +351,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">30x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -361,7 +372,7 @@
 <span class="cline-any cline-yes">64x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
+<span class="cline-any cline-yes">30x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -371,7 +382,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">27x</span>
+<span class="cline-any cline-yes">30x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -560,7 +571,7 @@
  * @module src/projects/cyberia/procedural/engine.js
  * @namespace CyberiaProceduralEngine
  */
-import { DataBaseProviderService } from '../../../db/DataBaseProvider.js';
+import { DataBaseProviderService } from '../../../db/database-provider.js';
 import { purgeObjectLayers } from '../../../api/object-layer/object-layer.purge.js';
 import { isObjectLayerAuthority } from '../../../api/object-layer/object-layer.publication.js';
 import { purgeObjectLayer, resolveRegisteredCids } from '../../../server/domain/object-layer-resolver.js';
@@ -581,7 +592,7 @@ export const PROCEDURAL_APIS = Object.freeze([
 &nbsp;
 /**
  * The models of the engine in a deployment context.
- * @param {{host:string,path:string}} options - Router options.
+ * @param {{host:string,path:string}} options - The API context.
  * @returns {Object&lt;string,import('mongoose').Model&gt;}
  * @memberof CyberiaProceduralEngine
  */
@@ -741,7 +752,7 @@ export async function revisionKeepers(models, cids, besides) {
  * revision ItemLedger registers stays.
  * @param {Object} params
  * @param {Object} params.models
- * @param {Object} params.options - Router options.
+ * @param {Object} params.options - The API context.
  * @param {string[]} params.cids - Revisions to check.
  * @param {import('mongoose').Types.ObjectId|string} [params.besides] - A job whose candidates do not count.
  * @returns {Promise&lt;string[]&gt;} The revisions removed here.
@@ -771,7 +782,7 @@ export async function purgeRevisions({ models, options, cids, besides }) {
  * @param {Object} params
  * @param {Object} params.models
  * @param {import('mongoose').Types.ObjectId|string} params.jobId
- * @param {Object} params.options - Router options.
+ * @param {Object} params.options - The API context.
  * @param {Date} [params.now]
  * @returns {Promise&lt;{stopped:number,candidates:number,drafts:string[],audit:number}&gt;} What was stopped and removed.
  * @throws {Error} 404 for an unknown job.
@@ -796,7 +807,7 @@ export async function <span class="fstat-no" title="function not covered" >delet
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

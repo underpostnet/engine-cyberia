@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../sort-arrow-sprite.png);
@@ -19,6 +20,16 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/api/object-layer</a> object-layer.publication.js</h1>
         <div class='clearfix'>
             
@@ -285,7 +296,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">60x</span>
+<span class="cline-any cline-yes">72x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -294,7 +305,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">60x</span>
+<span class="cline-any cline-yes">72x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -319,7 +330,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">60x</span>
+<span class="cline-any cline-yes">72x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -327,7 +338,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">60x</span>
+<span class="cline-any cline-yes">72x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -493,7 +504,7 @@ const logger = loggerFactory(import.meta);
 /**
  * The cache of the definitions a host serves: every list, every key, and the render File an item
  * label resolves to. Every write to the host's ObjectLayer collection or its atlases invalidates it.
- * @param {{host?:string,path?:string}} [options] - Router options.
+ * @param {{host?:string,path?:string}} [options] - The API context.
  * @returns {import('../../server/storage/cache.js').CacheNamespace}
  * @memberof ObjectLayerPublication
  */
@@ -516,9 +527,9 @@ export class PublicationError extends Error {
 }
 &nbsp;
 /**
- * Router options that keep every definition a write stores as a draft: an import into a content
+ * The API context that keeps every definition a write stores as a draft: an import into a content
  * release stores its content first, and its publication stage makes each definition canonical.
- * @param {Object} options - Router options.
+ * @param {Object} options - The API context.
  * @returns {Object}
  * @memberof ObjectLayerPublication
  */
@@ -526,7 +537,7 @@ export const deferPublication = <span class="fstat-no" title="function not cover
 &nbsp;
 /**
  * Whether a host is the Object Layer authority: it serves the API and consumes it from nobody.
- * @param {{host?:string,path?:string,consumes?:Object&lt;string,string&gt;}} [options] - Router options.
+ * @param {{host?:string,path?:string,consumes?:Object&lt;string,string&gt;}} [options] - The API context.
  * @returns {boolean}
  * @memberof ObjectLayerPublication
  */
@@ -539,7 +550,7 @@ export const isObjectLayerAuthority = (options) =&gt; !consumesOf(options)['obje
  * @param {Object} params
  * @param {import('mongoose').Model} params.ObjectLayer - Bound ObjectLayer model.
  * @param {Object} params.definition - Canonical definition (document or payload).
- * @param {Object} [params.options] - Router options ({ host, path }).
+ * @param {Object} [params.options] - The host path ({ host, path }).
  * @returns {Promise&lt;boolean&gt;} True when the node holds the pin.
  * @memberof ObjectLayerPublication
  */
@@ -568,7 +579,7 @@ export async function <span class="fstat-no" title="function not covered" >pinCa
  * @param {Object} params
  * @param {import('mongoose').Model} params.ObjectLayer - Bound ObjectLayer model of this host.
  * @param {Object} params.payload - `{ profile, data, createdBy?, _id? }`.
- * @param {Object} [params.options] - Router options of this host.
+ * @param {Object} [params.options] - The API context of this host.
  * @returns {Promise&lt;Object&gt;} The stored document.
  * @memberof ObjectLayerPublication
  */
@@ -586,7 +597,7 @@ export async function <span class="fstat-no" title="function not covered" >store
  * @param {Object} params
  * @param {import('mongoose').Model} params.ObjectLayer - Bound ObjectLayer model of this host.
  * @param {Object} params.payload - `{ profile, data, createdBy?, _id? }`.
- * @param {Object} [params.options] - Router options of this host.
+ * @param {Object} [params.options] - The API context of this host.
  * @param {(definition:Object)=&gt;Promise&lt;{cid:string}&gt;} [params.publish] - Authority write; defaults to the domain client.
  * @returns {Promise&lt;Object&gt;} The stored document, `canonical` or `cache`.
  * @throws {PublicationError} When a consumer cannot get the content stored at the authority.
@@ -622,7 +633,7 @@ export async function <span class="fstat-no" title="function not covered" >publi
  * @param {Object} params
  * @param {import('mongoose').Model} params.ObjectLayer - Bound ObjectLayer model of this host.
  * @param {Object} params.definition - Stored definition (document or lean).
- * @param {Object} [params.options] - Router options of this host.
+ * @param {Object} [params.options] - The API context of this host.
  * @param {(definition:Object)=&gt;Promise&lt;{cid:string}&gt;} [params.publish] - Authority write; defaults to the domain client.
  * @returns {Promise&lt;boolean&gt;} True when the canonical bytes are pinned.
  * @throws {Error} When the authority stores the content under another identity.
@@ -641,7 +652,7 @@ export async function <span class="fstat-no" title="function not covered" >repin
  * Idempotent; a no-op on the authority.
  * @param {Object} params
  * @param {import('mongoose').Model} params.Ipfs - Bound Ipfs registry model of this host.
- * @param {Object} [params.options] - Router options of this host.
+ * @param {Object} [params.options] - The API context of this host.
  * @returns {Promise&lt;number&gt;} Records removed.
  * @memberof ObjectLayerPublication
  */
@@ -657,7 +668,7 @@ export async function <span class="fstat-no" title="function not covered" >dropC
  * @param {import('mongoose').Model} params.ObjectLayer - Bound ObjectLayer model of this host.
  * @param {string} params.cid - The cid asked for.
  * @param {Object} params.definition - The authority's answer.
- * @param {Object} [params.options] - Router options of this host.
+ * @param {Object} [params.options] - The API context of this host.
  * @returns {Promise&lt;Object&gt;} The `cache` document.
  * @memberof ObjectLayerPublication
  */
@@ -679,7 +690,7 @@ export async function cacheCanonical({ ObjectLayer, cid, definition, options }) 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

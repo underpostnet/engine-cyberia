@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../../../sort-arrow-sprite.png);
@@ -19,6 +20,16 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../../../index.html">All files</a> / <a href="index.html">src/projects/cyberia/procedural/jobs</a> worker.js</h1>
         <div class='clearfix'>
             
@@ -563,20 +574,20 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -589,7 +600,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -754,7 +765,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -945,7 +956,7 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -994,7 +1005,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">13x</span>
+<span class="cline-any cline-yes">15x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
  * The background worker of the Procedural Engine: it claims queued candidates, runs their generator,
  * stores each result as a draft Object Layer and validates it. It also runs the publications of map
@@ -1051,7 +1062,7 @@ const messageOf = <span class="fstat-no" title="function not covered" >(e</span>
  * @param {Object} params.models
  * @param {{data:Object,renderSource:Object}} params.result - A generator result.
  * @param {string} params.createdBy
- * @param {Object} params.options - Router options.
+ * @param {Object} params.options - The API context.
  * @returns {Promise&lt;Object&gt;} The stored definition.
  * @memberof CyberiaProceduralWorker
  */
@@ -1262,7 +1273,7 @@ async function <span class="fstat-no" title="function not covered" >batchOf(</sp
  * @param {Object} params.models
  * @param {Object} params.item - A claimed item.
  * @param {string} params.holder - The worker that claimed it.
- * @param {Object} [params.options] - Router options.
+ * @param {Object} [params.options] - The API context.
  * @param {typeof persistCandidate} [params.persist]
  * @param {Date} [params.now]
  * @returns {Promise&lt;void&gt;}
@@ -1379,7 +1390,7 @@ export async function <span class="fstat-no" title="function not covered" >runIt
  * worker left generated. A generator never sees the concurrency.
  * @param {Object} params
  * @param {Object} params.models
- * @param {Object} [params.options] - Router options.
+ * @param {Object} [params.options] - The API context.
  * @param {string} [params.holder] - Name of this worker.
  * @param {number} [params.concurrency=1]
  * @param {typeof persistCandidate} [params.persist]
@@ -1416,7 +1427,7 @@ const workers = new Map();
 /**
  * Starts the worker of a deployment context: it stores the shipped profiles once, then drains the
  * queue and the publications on an interval. A second start for the same context returns the first worker.
- * @param {{host:string,path:string}} options - Router options.
+ * @param {{host:string,path:string}} options - The API context.
  * @param {Object} [params]
  * @param {number} [params.intervalMs]
  * @param {number} [params.concurrency]
@@ -1468,7 +1479,7 @@ export const stopProceduralWorkers = <span class="fstat-no" title="function not 
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../../../prettify.js"></script>
         <script>

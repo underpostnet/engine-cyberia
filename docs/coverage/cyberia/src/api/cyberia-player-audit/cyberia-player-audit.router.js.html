@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../sort-arrow-sprite.png);
@@ -19,6 +20,16 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/api/cyberia-player-audit</a> cyberia-player-audit.router.js</h1>
         <div class='clearfix'>
             
@@ -39,7 +50,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>0/2</span>
             </div>
         
             
@@ -82,13 +93,11 @@
 <a name='L17'></a><a href='#L17'>17</a>
 <a name='L18'></a><a href='#L18'>18</a>
 <a name='L19'></a><a href='#L19'>19</a>
-<a name='L20'></a><a href='#L20'>20</a>
-<a name='L21'></a><a href='#L21'>21</a>
-<a name='L22'></a><a href='#L22'>22</a>
-<a name='L23'></a><a href='#L23'>23</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L20'></a><a href='#L20'>20</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -97,38 +106,31 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import express from 'express';
-import { moderatorGuard } from '../../server/security/auth.js';
 import { CyberiaPlayerAuditController } from './cyberia-player-audit.controller.js';
 &nbsp;
-class CyberiaPlayerAuditRouter {
+/** @type {import('../types.js').ApiModuleDefinition} */
+export const ApiModule = <span class="cstat-no" title="statement not covered" >{</span>
+  id: 'cyberia-player-audit',
+  services: ['database', 'auth'],
   /**
-   * @param {import('../types.js').RouterOptions} options
+   * @param {import('../types.js').ApiRouterContext} context
    * @returns {import('express').Router}
    */
-  static <span class="fstat-no" title="function not covered" >router(</span>options) {
+<span class="fstat-no" title="function not covered" >  createRouter(</span>context) {
+    const { auth } = <span class="cstat-no" title="statement not covered" >context.services;</span>
     // The player API writes the trail; moderators read it.
     const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
-<span class="cstat-no" title="statement not covered" >    router.get('/', options.authMiddleware, moderatorGuard, <span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt;</span>
-<span class="cstat-no" title="statement not covered" >      CyberiaPlayerAuditController.get(req, res, options),</span>
-    );
+<span class="cstat-no" title="statement not covered" >    router.get('/', auth.requireModerator, <span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >CyberiaPlayerAuditController.get(req, res, context))</span>;</span>
 <span class="cstat-no" title="statement not covered" >    return router;</span>
-  }
-}
-&nbsp;
-const ApiRouter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(o</span>ptions) =&gt; <span class="cstat-no" title="statement not covered" >CyberiaPlayerAuditRouter.router(options);</span></span>
-&nbsp;
-export { ApiRouter, CyberiaPlayerAuditRouter };
+  },
+};
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -136,7 +138,7 @@ export { ApiRouter, CyberiaPlayerAuditRouter };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

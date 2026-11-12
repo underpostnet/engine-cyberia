@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../sort-arrow-sprite.png);
@@ -19,6 +20,16 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/api/cyberia-server-registry</a> cyberia-server-registry.router.js</h1>
         <div class='clearfix'>
             
@@ -37,16 +48,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">25% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>1/4</span>
+                <span class='fraction'>0/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">14.28% </span>
+                <span class="strong">12.5% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>1/7</span>
+                <span class='fraction'>1/8</span>
             </div>
         
             
@@ -108,8 +119,7 @@
 <a name='L43'></a><a href='#L43'>43</a>
 <a name='L44'></a><a href='#L44'>44</a>
 <a name='L45'></a><a href='#L45'>45</a>
-<a name='L46'></a><a href='#L46'>46</a>
-<a name='L47'></a><a href='#L47'>47</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L46'></a><a href='#L46'>46</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -134,25 +144,24 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
@@ -179,28 +188,27 @@
  */
 &nbsp;
 import express from 'express';
-import { moderatorGuard } from '../../server/security/auth.js';
 import { serverKeyGuard } from '../../projects/cyberia/runtime/server-key.js';
 import { CyberiaServerRegistryController } from './cyberia-server-registry.controller.js';
 &nbsp;
-class CyberiaServerRegistryRouter {
+/** @type {import('../types.js').ApiModuleDefinition} */
+export const ApiModule = {
+  id: 'cyberia-server-registry',
+  services: ['database', 'auth'],
   /**
-   * @param {import('../types.js').RouterOptions} options
+   * @param {import('../types.js').ApiRouterContext} context
    * @returns {import('express').Router}
    */
-  static router(options) {
+<span class="fstat-no" title="function not covered" >  createRouter(</span>context) {
+    const { auth } = <span class="cstat-no" title="statement not covered" >context.services;</span>
     const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
-    const handle = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(m</span>ethod) =&gt; <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaServerRegistryController[method](req, res, options);</span></span></span>
+    const handle = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(m</span>ethod) =&gt; <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaServerRegistryController[method](req, res, context);</span></span></span>
 <span class="cstat-no" title="statement not covered" >    router.post('/', serverKeyGuard, handle('report'));</span>
-<span class="cstat-no" title="statement not covered" >    router.get('/servers', options.authMiddleware, moderatorGuard, handle('servers'));</span>
+<span class="cstat-no" title="statement not covered" >    router.get('/servers', auth.requireModerator, handle('servers'));</span>
 <span class="cstat-no" title="statement not covered" >    router.get('/', handle('endpoints'));</span>
 <span class="cstat-no" title="statement not covered" >    return router;</span>
-  }
-}
-&nbsp;
-const ApiRouter = <span class="fstat-no" title="function not covered" >(o</span>ptions) =&gt; <span class="cstat-no" title="statement not covered" >CyberiaServerRegistryRouter.router(options);</span>
-&nbsp;
-export { ApiRouter, CyberiaServerRegistryRouter };
+  },
+};
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -208,7 +216,7 @@ export { ApiRouter, CyberiaServerRegistryRouter };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

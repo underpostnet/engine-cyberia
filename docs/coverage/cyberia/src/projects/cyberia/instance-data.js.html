@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../sort-arrow-sprite.png);
@@ -19,20 +20,30 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/projects/cyberia</a> instance-data.js</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">63.13% </span>
+                <span class="strong">63.72% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>137/217</span>
+                <span class='fraction'>137/215</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">74.2% </span>
+                <span class="strong">74.93% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>305/411</span>
+                <span class='fraction'>305/407</span>
             </div>
         
             
@@ -44,9 +55,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">65.9% </span>
+                <span class="strong">66.28% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>116/176</span>
+                <span class='fraction'>116/175</span>
             </div>
         
             
@@ -844,7 +855,9 @@
 <a name='L779'></a><a href='#L779'>779</a>
 <a name='L780'></a><a href='#L780'>780</a>
 <a name='L781'></a><a href='#L781'>781</a>
-<a name='L782'></a><a href='#L782'>782</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L782'></a><a href='#L782'>782</a>
+<a name='L783'></a><a href='#L783'>783</a>
+<a name='L784'></a><a href='#L784'>784</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -894,7 +907,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1147,7 +1162,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1220,7 +1235,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">12x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">4x</span>
@@ -1299,16 +1314,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1317,7 +1326,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1474,7 +1489,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1572,7 +1586,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">16x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1625,6 +1639,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
  * Shared Cyberia instance world-load / boot data assembly.
  *
@@ -1641,8 +1656,9 @@
  */
 &nbsp;
 import crypto from 'crypto';
-import { DataBaseProviderService } from '../../db/DataBaseProvider.js';
+import { DataBaseProviderService } from '../../db/database-provider.js';
 import {
+  collectEconomyItemIds,
   collectInstanceItemIds,
   collectSummonedItemIds,
   selectInstanceSkills,
@@ -1674,13 +1690,14 @@ import {
 import { contentArtifact, servedContentArtifact } from './content/content-artifact.js';
 import { buildCyberiaMmoInstanceEnv } from './content/release-content.js';
 import { gameOriginEnv } from './runtime/game-origins.js';
+import { ssrData } from './instance/public-worlds.js';
 &nbsp;
 const logger = loggerFactory(import.meta);
 &nbsp;
 /**
  * Resolves the mongoose model bag for a DB context: the content it serves.
- * @param {{host?: string, path?: string}|string} context - RouterOptions-style
- *   context or a resolved `${host}${path}` key (the gRPC dbKey form).
+ * @param {{host?: string, path?: string}|string} context - An API context, a host path
+ *   or a resolved `${host}${path}` key (the gRPC dbKey form).
  */
 function getInstanceModels(context) {
   return DataBaseProviderService.servedModels(context);
@@ -2251,10 +2268,9 @@ async function loadWorld(models, instanceCode) {
   );
   for (const summoned of collectSummonedItemIds(skillDocs)) <span class="cstat-no" title="statement not covered" >itemIds.add(summoned);</span>
 &nbsp;
-  // The economy the world runs. What a burn of a world item salvages is an item the world grants.
+  // The economy the world runs, and every item it names.
   const economy = <span class="cstat-no" title="statement not covered" >await compileEconomySnapshot(models, confEconomyCode(conf));</span>
-<span class="cstat-no" title="statement not covered" >  for (const policy of economy.itemPolicies)</span>
-<span class="cstat-no" title="statement not covered" >    if (policy.burn &amp;&amp; itemIds.has(policy.itemId)) <span class="cstat-no" title="statement not covered" >for (const { itemId } of policy.salvage) <span class="cstat-no" title="statement not covered" >itemIds.add(itemId);</span></span></span>
+<span class="cstat-no" title="statement not covered" >  for (const itemId of collectEconomyItemIds(economy.itemPolicies)) <span class="cstat-no" title="statement not covered" >itemIds.add(itemId);</span></span>
 <span class="cstat-no" title="statement not covered" >  return {</span>
     inst,
     conf,
@@ -2378,6 +2394,7 @@ async function fetchInstanceObjectLayerItemIds(models, instanceCode) {
 &nbsp;
 export {
   buildInstanceEnv,
+  ssrData,
   fetchInstanceObjectLayerItemIds,
   getInstanceModels,
   itemTypesOf,
@@ -2413,7 +2430,7 @@ export {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

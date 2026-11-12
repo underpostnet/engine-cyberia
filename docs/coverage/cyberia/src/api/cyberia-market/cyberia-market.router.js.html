@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="../../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="../../../theme.js"></script>
     <style type='text/css'>
         .coverage-summary .sorter {
             background-image: url(../../../sort-arrow-sprite.png);
@@ -19,6 +20,16 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
+        
+        <label class="theme-select quiet">
+            Theme
+            <select id="themeSelect" autocomplete="off">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="legacy">Legacy</option>
+            </select>
+        </label>
+
         <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/api/cyberia-market</a> cyberia-market.router.js</h1>
         <div class='clearfix'>
             
@@ -39,14 +50,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/6</span>
+                <span class='fraction'>0/5</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>0/10</span>
             </div>
         
             
@@ -109,16 +120,7 @@
 <a name='L44'></a><a href='#L44'>44</a>
 <a name='L45'></a><a href='#L45'>45</a>
 <a name='L46'></a><a href='#L46'>46</a>
-<a name='L47'></a><a href='#L47'>47</a>
-<a name='L48'></a><a href='#L48'>48</a>
-<a name='L49'></a><a href='#L49'>49</a>
-<a name='L50'></a><a href='#L50'>50</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L47'></a><a href='#L47'>47</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -140,23 +142,26 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -179,37 +184,34 @@
 &nbsp;
 import express from 'express';
 import { registerCrudRoutes } from '../../server/network/middlewares.js';
-import { moderatorGuard } from '../../server/security/auth.js';
 import { CyberiaMarketController } from './cyberia-market.controller.js';
 &nbsp;
-class CyberiaMarketRouter {
+/** @type {import('../types.js').ApiModuleDefinition} */
+export const ApiModule = <span class="cstat-no" title="statement not covered" >{</span>
+  id: 'cyberia-market',
+  services: ['database', 'auth'],
   /**
-   * @param {import('../types.js').RouterOptions} options
+   * @param {import('../types.js').ApiRouterContext} context
    * @returns {import('express').Router}
    */
-  static <span class="fstat-no" title="function not covered" >router(</span>options) {
+<span class="fstat-no" title="function not covered" >  createRouter(</span>context) {
+    const { auth } = <span class="cstat-no" title="statement not covered" >context.services;</span>
     const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
-<span class="cstat-no" title="statement not covered" >    router.get('/schema/contract', <span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.contract(req, res, options))</span>;</span>
-<span class="cstat-no" title="statement not covered" >    router.get('/:id/view', <span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.view(req, res, options))</span>;</span>
+<span class="cstat-no" title="statement not covered" >    router.get('/schema/contract', <span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.contract(req, res, context))</span>;</span>
+<span class="cstat-no" title="statement not covered" >    router.get('/:id/view', <span class="fstat-no" title="function not covered" >async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.view(req, res, context))</span>;</span>
 <span class="cstat-no" title="statement not covered" >    router.post(</span>
       '/:id/clone',
-      options.authMiddleware,
-      moderatorGuard,
-<span class="fstat-no" title="function not covered" >      async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.clone(req, res, options),</span>
+      auth.requireModerator,
+<span class="fstat-no" title="function not covered" >      async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.clone(req, res, context),</span>
     );
 <span class="cstat-no" title="statement not covered" >    router.post(</span>
       '/:id/reload',
-      options.authMiddleware,
-      moderatorGuard,
-<span class="fstat-no" title="function not covered" >      async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.reload(req, res, options),</span>
+      auth.requireModerator,
+<span class="fstat-no" title="function not covered" >      async </span>(req, res) =&gt; <span class="cstat-no" title="statement not covered" >await CyberiaMarketController.reload(req, res, context),</span>
     );
-<span class="cstat-no" title="statement not covered" >    return registerCrudRoutes(router, CyberiaMarketController, options);</span>
-  }
-}
-&nbsp;
-const ApiRouter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(o</span>ptions) =&gt; <span class="cstat-no" title="statement not covered" >CyberiaMarketRouter.router(options);</span></span>
-&nbsp;
-export { ApiRouter, CyberiaMarketRouter };
+<span class="cstat-no" title="statement not covered" >    return registerCrudRoutes(router, CyberiaMarketController, context);</span>
+  },
+};
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -217,7 +219,7 @@ export { ApiRouter, CyberiaMarketRouter };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-10-30T20:41:15.099Z
+                at 2026-11-12T13:08:27.101Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

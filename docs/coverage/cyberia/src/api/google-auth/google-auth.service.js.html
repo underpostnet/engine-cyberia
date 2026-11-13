@@ -34,30 +34,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">28.65% </span>
+                <span class="strong">31.57% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>47/164</span>
+                <span class='fraction'>54/171</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">32.11% </span>
+                <span class="strong">34.51% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>35/109</span>
+                <span class='fraction'>39/113</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">39.39% </span>
+                <span class="strong">44.44% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>13/33</span>
+                <span class='fraction'>16/36</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">32.6% </span>
+                <span class="strong">34.5% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>45/138</span>
+                <span class='fraction'>49/142</span>
             </div>
         
             
@@ -519,7 +519,23 @@
 <a name='L443'></a><a href='#L443'>443</a>
 <a name='L444'></a><a href='#L444'>444</a>
 <a name='L445'></a><a href='#L445'>445</a>
-<a name='L446'></a><a href='#L446'>446</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L446'></a><a href='#L446'>446</a>
+<a name='L447'></a><a href='#L447'>447</a>
+<a name='L448'></a><a href='#L448'>448</a>
+<a name='L449'></a><a href='#L449'>449</a>
+<a name='L450'></a><a href='#L450'>450</a>
+<a name='L451'></a><a href='#L451'>451</a>
+<a name='L452'></a><a href='#L452'>452</a>
+<a name='L453'></a><a href='#L453'>453</a>
+<a name='L454'></a><a href='#L454'>454</a>
+<a name='L455'></a><a href='#L455'>455</a>
+<a name='L456'></a><a href='#L456'>456</a>
+<a name='L457'></a><a href='#L457'>457</a>
+<a name='L458'></a><a href='#L458'>458</a>
+<a name='L459'></a><a href='#L459'>459</a>
+<a name='L460'></a><a href='#L460'>460</a>
+<a name='L461'></a><a href='#L461'>461</a>
+<a name='L462'></a><a href='#L462'>462</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -596,6 +612,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -964,6 +995,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
  * GoogleAuth service: sign-in with a Google account, by the OAuth 2.0 authorization code flow
  * with PKCE.
@@ -1042,6 +1074,21 @@ const googleAuthConfig = (options) =&gt; {
       }),
     );
   return { clientID, clientSecret, callbackURL: callbackURL.href };
+};
+&nbsp;
+/**
+ * The callback of each flow. A flow that starts on a public host of the API context ends on that
+ * host, so its cookies stay on one host; any other flow ends on the callback of the configuration.
+ * `GOOGLE_CALLBACK_URL` fixes it for every flow. Google must list each callback.
+ * @param {import('../types.js').ApiRouterContext} options - The API context.
+ * @param {{callbackURL: string}} config - {@link googleAuthConfig} of the host.
+ * @returns {(req: import('express').Request) =&gt; string}
+ * @memberof GoogleAuthService
+ */
+const googleCallbackUrlFactory = (options, { callbackURL }) =&gt; {
+  if (process.env.GOOGLE_CALLBACK_URL) return () =&gt; callbackURL;
+  const target = `${options.apiBasePath}/google-auth/callback`;
+  return (req) =&gt; (options.publicHosts.includes(req.hostname) ? `https://${req.hostname}${target}` : callbackURL);
 };
 &nbsp;
 const <span class="fstat-no" title="function not covered" >flowOf = (v</span>alue) =&gt; (<span class="cstat-no" title="statement not covered" >FLOW_PATTERN.test(`${value ?? ''}`) ? value : '');</span>
@@ -1405,6 +1452,7 @@ export {
   GOOGLE_AUTH_SCOPES,
   GOOGLE_AUTH_STATUS,
   googleAuthConfig,
+  googleCallbackUrlFactory,
   googleClaims,
   returnPath,
   usernameCandidates,
@@ -1416,7 +1464,7 @@ export {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-12T13:08:27.101Z
+                at 2026-11-13T23:38:39.575Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

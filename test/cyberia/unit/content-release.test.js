@@ -5,6 +5,7 @@ import nodePath from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { Types } from 'mongoose';
 import { load } from 'js-yaml';
+import { findBinary } from '../../support/binary.js';
 
 const models = {};
 vi.mock('../../../src/db/database-provider.js', () => ({
@@ -803,7 +804,7 @@ describe('content partition binding', () => {
       name,
       models: {},
       model(key, schema) {
-        const model = { key, schema, db: conn, on: () => model };
+        const model = { key, schema, db: conn };
         conn.models[key] = model;
         return model;
       },
@@ -1115,7 +1116,7 @@ describe('deploy pipeline', () => {
     const helper = script.slice(script.indexOf('content_release_skipped() {'), script.indexOf('# ── Stage D'));
     const candidate = script.slice(script.indexOf('stage_content_candidate() {'), script.indexOf('# ── Stage E'));
     const promotion = script.slice(script.indexOf('stage_promotion() {'), script.indexOf('# ── Revert'));
-    const run = (discard, live = false, reason = 'the hotfix is in the next release') =>
+    const run = (discard, live = false, reason = 'the hotfix is in the next release', served = 'v1') =>
       spawnSync(
         'bash',
         [
@@ -1129,7 +1130,7 @@ describe('deploy pipeline', () => {
           content_release_job() { echo "job: $*"; ${live ? '[ "$1" != content-release-live-changes ]' : ':'}; }
           sudo() { :; }
           apply_release_secret() { :; }
-          served_content_release() { echo v1; }
+          served_content_release() { echo '${served}'; }
           wait_for_http() { :; }
           wait_for_content_release() { :; }
           ${helper}
@@ -1154,12 +1155,23 @@ describe('deploy pipeline', () => {
     expect(stopped.stdout).not.toContain('content-release-promote');
     expect(stopped.stderr).toContain('content source export-live');
     expect(stopped.stderr).toContain('DISCARD_LIVE_CHANGES');
+    // The live-change job checks the discard before the rollout, with the flags the promotion takes.
+    const flags = '--discard-live-changes v1 --discard-reason "the hotfix is in the next release"';
     const discarded = run('v1');
-    expect(discarded.stdout).not.toContain('content-release-live-changes');
-    expect(discarded.stdout).toContain('DISCARD_LIVE_CHANGES=v1');
-    expect(discarded.stdout).toContain(
-      'job: content-release-promote engine:1 promote v2 --discard-live-changes v1 --discard-reason "the hotfix is in the next release"',
-    );
+    expect(discarded.status).toBe(0);
+    expect(discarded.stdout).toContain(`job: content-release-live-changes engine:1 live-changes ${flags}`);
+    expect(discarded.stdout).toContain(`job: content-release-promote engine:1 promote v2 ${flags}`);
+    const refused = run('v9', true);
+    expect(refused.status).toBe(1);
+    expect(refused.stdout).not.toContain('content-release-promote');
+    // `active` names the release the engine serves, once for the check and the promotion.
+    const active = run('active');
+    expect(active.stdout).toContain(`job: content-release-live-changes engine:1 live-changes ${flags}`);
+    expect(active.stdout).toContain(`job: content-release-promote engine:1 promote v2 ${flags}`);
+    const first = run('active', false, 'the hotfix is in the next release', '');
+    expect(first.status).toBe(0);
+    expect(first.stdout).toContain('job: content-release-live-changes engine:1 live-changes\n');
+    expect(first.stdout).not.toContain('--discard-live-changes');
     // A discard without a reason, or with one a shell could read, stops before any stage.
     for (const reason of ['', 'quote"d'])
       expect(run('v1', false, reason)).toMatchObject({ status: 1, stdout: expect.not.stringContaining('job: ') });
@@ -1238,6 +1250,33 @@ describe('deploy pipeline', () => {
     );
     expect(container.volumeMounts[0].readOnly).toBe(true);
     expect(manifest).not.toMatch(/underpost-config|GITHUB_TOKEN|underpost clone/);
+  });
+
+  // `script` gives the operator script a terminal, where a quiet step hides what it prints.
+  it.skipIf(!findBinary('script'))('prints the answer of a content release on a terminal', () => {
+    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'content-release-operator-'));
+    try {
+      fs.mkdirSync(nodePath.join(root, 'lib'));
+      fs.mkdirSync(nodePath.join(root, 'dd-cyberia'));
+      const deployDir = new URL('../../../deploy/', import.meta.url).pathname;
+      for (const file of ['lib/github-actions-logging.sh', 'dd-cyberia/content-release.sh'])
+        fs.copyFileSync(`${deployDir}${file}`, nodePath.join(root, file));
+      fs.writeFileSync(nodePath.join(root, 'lib/host.sh'), 'ENGINE_ROOT=/engine\n');
+      fs.writeFileSync(
+        nodePath.join(root, 'lib/content-release.sh'),
+        'live_image() { echo engine:1; }\napply_release_secret() { echo secret; }\n' +
+          'content_release_job() { echo "Active release: v1 (db-v1)"; }\n',
+      );
+      const { stdout } = spawnSync(
+        'script',
+        ['-qec', `bash ${nodePath.join(root, 'dd-cyberia/content-release.sh')} status`, '/dev/null'],
+        { encoding: 'utf8', env: { PATH: process.env.PATH, TERM: 'xterm', COLUMNS: '120', LINES: '40' } },
+      );
+      expect(stdout).toContain('Active release: v1 (db-v1)');
+      expect(stdout).not.toContain('secret');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('prints ledger rows that start with the status and the release id', () => {
@@ -1372,9 +1411,234 @@ describe('deploy pipeline', () => {
     }
   });
 
-  it('builds only the game checkouts on the host, without code graphs, and only `release lock` writes the lock', () => {
+  it('builds the game checkouts on the host, without code graphs, and only `release lock` writes the lock', () => {
+    // The content repository builds on the host only through build_locked_content_artifact.
     expect(script).not.toMatch(/cyberia-content\.js|npm ci|merge-base|release lock/);
     expect(script).toContain('node bin/cyberia release build cyberia-server cyberia-client --no-graphify');
     expect(cli.match(/writeSourceLockFile\(/g)).toHaveLength(1);
+  });
+
+  it('builds and verifies the locked content artifact before the client bundle', () => {
+    const stage = script.slice(
+      script.indexOf('stage_configuration() {'),
+      script.indexOf('client_bundle_reference() {'),
+    );
+    const bundleMode = stage.indexOf('if [ "$BUNDLE_MODE" = "1" ]; then');
+    const built = stage.indexOf('deploy_step "Build the locked content artifact" build_locked_content_artifact');
+    expect(bundleMode).toBeGreaterThan(stage.indexOf('release build cyberia-server cyberia-client'));
+    expect(built).toBeGreaterThan(bundleMode);
+    expect(stage.indexOf('node bin run push-bundle')).toBeGreaterThan(built);
+    const run = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
+        sudo() { if [ "$#" -gt 5 ]; then echo "$4 $6 $7"; else echo "$4 $5"; fi; }
+        source "${new URL('../../../deploy/lib/content-release.sh', import.meta.url).pathname}"
+        build_locked_content_artifact /engine`,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout.split('\n').filter(Boolean)).toEqual([
+      '-lc build-locked-content /engine/cyberia-content',
+      '-lc cd /engine && node bin/cyberia release verify',
+    ]);
+  });
+});
+
+describe('locked content build on the host', () => {
+  it('fails the deploy step when the build fails, although a step runs where set -e does not apply', () => {
+    const run = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
+        sudo() { echo "$5" | head -c 4; echo; [ "$#" -le 5 ]; }
+        source "${new URL('../../../deploy/lib/content-release.sh', import.meta.url).pathname}"
+        build_locked_content_artifact /engine || echo "step failed"`,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(run.stdout).toContain('step failed');
+    expect(run.stdout).not.toContain('cd /');
+  });
+
+  it('reads the image of the live colour from a shell that has read no placement', () => {
+    const run = spawnSync(
+      'bash',
+      [
+        '-c',
+        `set -euo pipefail
+        DEPLOY_ID=dd-cyberia DEPLOY_ENV=production
+        source "${new URL('../../../deploy/lib/content-release.sh', import.meta.url).pathname}"
+        cluster_placement() { [ -n "\${UNDERPOST_NAMESPACE_WORKLOADS:-}" ] || UNDERPOST_NAMESPACE_WORKLOADS=underpost-workloads; }
+        cluster_kubectl() { if [ "$2" = service ]; then echo dd-cyberia-production-blue; else echo "$3 in $5"; fi; }
+        echo "image: $(live_image)"`,
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(run.stderr).toBe('');
+    expect(run.stdout).toBe('image: dd-cyberia-production-blue in underpost-workloads\n');
+  });
+
+  const lib = new URL('../../../deploy/lib/content-release.sh', import.meta.url).pathname;
+  let root;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'locked-content-'));
+    return () => fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const write = (file, text, mode) => {
+    fs.mkdirSync(nodePath.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text, { mode });
+  };
+
+  /**
+   * A content repository whose build records its environment and the revision it builds, and puts a
+   * symbolic or a hard link into dist/ when `link` names one; a Node runtime laid out as nvm lays it
+   * out, whose npm records its arguments; and a systemd-run that records its properties and runs the
+   * unit command with its bound input and a private /tmp, and only the environment it sets.
+   */
+  const fixture = () => {
+    const checkout = nodePath.join(root, 'engine', 'cyberia-content');
+    const git = (...args) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8' }).trim();
+    const commit = (message) => {
+      git('-c', 'user.name=t', '-c', 'user.email=t@t', 'add', '.');
+      git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', message);
+      return git('rev-parse', 'HEAD');
+    };
+    write(
+      nodePath.join(checkout, 'bin', 'cyberia-content.js'),
+      `import fs from 'node:fs';
+      fs.mkdirSync('dist', { recursive: true });
+      const revision = fs.readFileSync('.git/HEAD', 'utf8').trim();
+      fs.writeFileSync('dist/manifest.json', JSON.stringify({ revision, env: Object.keys(process.env), home: process.env.HOME }));
+      const link = fs.existsSync('link') ? fs.readFileSync('link', 'utf8') : '';
+      if (link === 'symbolic') fs.symlinkSync('/etc/hostname', 'dist/host');
+      if (link === 'hard') fs.linkSync('dist/manifest.json', 'dist/copy.json');`,
+    );
+    write(nodePath.join(checkout, 'package.json'), '{"type":"module"}');
+    execFileSync('git', ['init', '-q', checkout]);
+    const pinned = commit('content');
+    write(nodePath.join(checkout, 'link'), 'symbolic');
+    const symbolic = commit('symbolic link');
+    write(nodePath.join(checkout, 'link'), 'hard');
+    const hard = commit('hard link');
+
+    const runtime = nodePath.join(root, 'nvm');
+    const calls = nodePath.join(root, 'calls');
+    write(nodePath.join(runtime, 'bin', 'node'), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, 0o755);
+    write(
+      nodePath.join(runtime, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      `#!/bin/sh\necho "npm $*" >> "${calls}"\n`,
+      0o755,
+    );
+    fs.symlinkSync('../lib/node_modules/npm/bin/npm-cli.js', nodePath.join(runtime, 'bin', 'npm'));
+    const stubs = nodePath.join(root, 'stubs');
+    write(
+      nodePath.join(stubs, 'systemd-run'),
+      `#!/bin/bash
+printf 'systemd-run' >> "${calls}"; printf ' %q' "$@" >> "${calls}"; echo >> "${calls}"
+private="$(mktemp -d "${root}/private.XXXXXX")"
+env=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -p) case "$2" in BindReadOnlyPaths=*) bind="\${2#BindReadOnlyPaths=}" ;; esac; shift 2 ;;
+    -E) env+=("$2"); shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+map() { local value="\${1//\\/tmp/$private}"; printf '%s' "\${value//\${bind#*:}/\${bind%%:*}}"; }
+command=(); for arg in "$@"; do command+=("$(map "$arg")"); done
+variables=(); for pair in "\${env[@]}"; do variables+=("$(map "$pair")"); done
+exec env -i "\${variables[@]}" "\${command[@]}"
+`,
+      0o755,
+    );
+    // Root sees the checkout of a shared workspace as owned by another user. The upload-pack that
+    // serves a clone of it checks that too, and reads no -c of its parent.
+    write(
+      nodePath.join(stubs, 'git'),
+      `#!/bin/bash
+for arg in "$@"; do
+  [ "$arg" != "${checkout}" ] || export GIT_TEST_ASSUME_DIFFERENT_OWNER=1
+  case "$arg" in --upload-pack=*"safe.directory=${checkout}/.git "*) served=1 ;; esac
+done
+if [ -n "\${GIT_TEST_ASSUME_DIFFERENT_OWNER:-}" ] && [[ " $* " == *" clone "* ]] && [ -z "\${served:-}" ]; then
+  echo "fatal: detected dubious ownership in repository at '${checkout}/.git'" >&2
+  exit 128
+fi
+exec "${findBinary('git')}" "$@"
+`,
+      0o755,
+    );
+    const tmp = nodePath.join(root, 'tmp');
+    fs.mkdirSync(tmp);
+
+    const build = (revision) => {
+      git('checkout', '-q', '--detach', revision);
+      fs.rmSync(calls, { force: true });
+      const run = spawnSync(
+        'bash',
+        ['-c', `source "${lib}"; bash -c "$LOCKED_CONTENT_BUILD" build-locked-content "$1"`, 'test', checkout],
+        {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${stubs}:${runtime}/bin:${process.env.PATH}`,
+            TMPDIR: tmp,
+            DB_PASSWORD: 'host-secret',
+          },
+        },
+      );
+      return { ...run, calls: fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').trim().split('\n') : [] };
+    };
+    return { checkout, tmp, pinned, symbolic, hard, build };
+  };
+
+  it('builds the pinned revision in a sandbox of its own, with an empty environment and no install script', () => {
+    const { checkout, tmp, pinned, build } = fixture();
+    write(nodePath.join(checkout, 'dist', 'stale.json'), '{}');
+    const run = build(pinned);
+    expect(run.status, run.stderr).toBe(0);
+    const manifest = JSON.parse(fs.readFileSync(nodePath.join(checkout, 'dist', 'manifest.json'), 'utf8'));
+    expect(manifest.revision).toBe(pinned);
+    expect(manifest.env.filter((key) => !['PWD', 'SHLVL', '_', 'OLDPWD'].includes(key)).sort()).toEqual([
+      'CI',
+      'HOME',
+      'PATH',
+    ]);
+    expect(manifest.home).toMatch(new RegExp(`^${root}/private\\.`));
+    const [unit, npm] = run.calls;
+    for (const property of [
+      'DynamicUser=yes',
+      'ProtectHome=yes',
+      'CapabilityBoundingSet=',
+      'RestrictNamespaces=yes',
+      'BindReadOnlyPaths=',
+      'IPAddressDeny=127.0.0.0/8\\ ::1/128\\ 169.254.0.0/16',
+    ])
+      expect(unit).toContain(`-p ${property}`);
+    expect(unit).not.toMatch(/ -p User=/);
+    expect(npm).toBe('npm ci --include=dev --ignore-scripts --engine-strict --no-audit --no-fund');
+    // dist/ is the new build alone, and the staging directories and the throwaway input are gone.
+    expect(fs.readdirSync(nodePath.join(checkout, 'dist'))).toEqual(['manifest.json']);
+    expect(fs.readdirSync(checkout).filter((name) => name.startsWith('dist'))).toEqual(['dist']);
+    expect(fs.readdirSync(tmp)).toEqual([]);
+  });
+
+  it.each(['symbolic', 'hard'])('installs no dist/ that holds a %s link', (kind) => {
+    const fixtures = fixture();
+    const { checkout, tmp, build } = fixtures;
+    const run = build(fixtures[kind]);
+    expect(run.status).not.toBe(0);
+    expect(run.stderr).toContain(
+      'The content build is refused: dist/ holds an entry that is not a file or a directory',
+    );
+    expect(fs.existsSync(nodePath.join(checkout, 'dist'))).toBe(false);
+    expect(fs.readdirSync(tmp)).toEqual([]);
   });
 });

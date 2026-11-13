@@ -34,9 +34,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">5.26% </span>
+                <span class="strong">4.54% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>1/19</span>
+                <span class='fraction'>1/22</span>
             </div>
         
             
@@ -50,14 +50,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/7</span>
+                <span class='fraction'>0/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">5.88% </span>
+                <span class="strong">5% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>1/17</span>
+                <span class='fraction'>1/20</span>
             </div>
         
             
@@ -147,7 +147,15 @@
 <a name='L71'></a><a href='#L71'>71</a>
 <a name='L72'></a><a href='#L72'>72</a>
 <a name='L73'></a><a href='#L73'>73</a>
-<a name='L74'></a><a href='#L74'>74</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -188,6 +196,8 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -204,6 +214,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -229,6 +243,7 @@ import {
   GOOGLE_AUTH_STATUS,
   GoogleAuthService,
   googleAuthConfig,
+  googleCallbackUrlFactory,
   returnPath,
 } from './google-auth.service.js';
 &nbsp;
@@ -260,7 +275,9 @@ export const ApiModule = {
     const { auth } = <span class="cstat-no" title="statement not covered" >context.services;</span>
     const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
     const passport = <span class="cstat-no" title="statement not covered" >new Passport();</span>
-<span class="cstat-no" title="statement not covered" >    passport.use(GoogleAuthService.strategy(context, googleAuthConfig(context)));</span>
+    const config = <span class="cstat-no" title="statement not covered" >googleAuthConfig(context);</span>
+    const callbackURL = <span class="cstat-no" title="statement not covered" >googleCallbackUrlFactory(context, config);</span>
+<span class="cstat-no" title="statement not covered" >    passport.use(GoogleAuthService.strategy(context, config));</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    if (!process.env.DISABLE_API_RATE_LIMIT)</span>
 <span class="cstat-no" title="statement not covered" >      router.use(</span>
@@ -276,13 +293,17 @@ export const ApiModule = {
         }),
       );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >    router.get(</span>
-      '/',
-      passport.authenticate('google', { session: false, scope: GOOGLE_AUTH_SCOPES, prompt: 'select_account' }),
+<span class="cstat-no" title="statement not covered" >    router.get('/', <span class="fstat-no" title="function not covered" >(r</span>eq, res, next) =&gt;</span>
+<span class="cstat-no" title="statement not covered" >      passport.authenticate('google', {</span>
+        session: false,
+        scope: GOOGLE_AUTH_SCOPES,
+        prompt: 'select_account',
+        callbackURL: callbackURL(req),
+      })(req, res, next),
     );
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    router.get('/callback', <span class="fstat-no" title="function not covered" >(r</span>eq, res, next) =&gt;</span>
-<span class="cstat-no" title="statement not covered" >      passport.authenticate('google', { session: false }, <span class="fstat-no" title="function not covered" >(e</span>rror, identity, info) =&gt;</span>
+<span class="cstat-no" title="statement not covered" >      passport.authenticate('google', { session: false, callbackURL: callbackURL(req) }, <span class="fstat-no" title="function not covered" >(e</span>rror, identity, info) =&gt;</span>
 <span class="cstat-no" title="statement not covered" >        GoogleAuthController.callback(req, res, context, { error, identity, info }),</span>
       )(req, res, next),
     );
@@ -300,7 +321,7 @@ export const ApiModule = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-11-12T13:08:27.101Z
+                at 2026-11-13T23:38:39.575Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
